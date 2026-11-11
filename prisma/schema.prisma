@@ -361,6 +361,17 @@ enum LocationType {
   LANDING_SITE
 }
 
+/// Used by location charges now and by Aircraft from M3 step 3.
+enum AircraftCategory {
+  TURBOPROP
+  LIGHT_JET
+  MIDSIZE_JET
+  HEAVY_JET
+  HELICOPTER
+  AIR_AMBULANCE_FIXED
+  AIR_AMBULANCE_ROTARY
+}
+
 /// Airports, heliports and landing sites. Seeded from prisma/data (OurAirports)
 /// and managed by operations. `capabilities` and `charges` shapes:
 /// docs/architecture/database-design.md. The name and city trigram indexes
