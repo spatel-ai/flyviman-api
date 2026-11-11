@@ -10,7 +10,7 @@ export interface TemplateDefinition {
 /**
  * Built-in wording, used when the NotificationTemplate table has no active
  * row for a key and channel. `npm run db:seed` copies these into the table,
- * where administrators will be able to edit them (M8). Placeholders are
+ * where administrators will be able to edit them (M9). Placeholders are
  * `{{name}}`. SMS and WhatsApp wording must be registered with the provider
  * before launch in India.
  */
