@@ -284,6 +284,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 10000,
               "default": 1,
               "type": "number"
             }
@@ -514,6 +515,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 10000,
               "default": 1,
               "type": "number"
             }
@@ -1066,6 +1068,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 10000,
               "default": 1,
               "type": "number"
             }
@@ -1450,6 +1453,104 @@
         ]
       }
     },
+    "/api/v1/locations": {
+      "get": {
+        "description": "Active locations only. Without `q`, lists them by name, airports first.",
+        "operationId": "LocationsController_search",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Part of a name or city, or an IATA or ICAO code. Exact codes rank first.",
+            "schema": {
+              "example": "mumbai",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LocationType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocationResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search airports and heliports",
+        "tags": [
+          "locations"
+        ]
+      }
+    },
+    "/api/v1/locations/{id}": {
+      "get": {
+        "operationId": "LocationsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One location",
+        "tags": [
+          "locations"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "description": "Newest first. Filter by entity, actor, action and time range.",
@@ -1461,6 +1562,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
+              "maximum": 10000,
               "default": 1,
               "type": "number"
             }
@@ -3027,6 +3129,111 @@
         "required": [
           "url",
           "expiresAt"
+        ]
+      },
+      "LocationType": {
+        "type": "string",
+        "enum": [
+          "AIRPORT",
+          "HELIPORT",
+          "CITY",
+          "LANDING_SITE"
+        ]
+      },
+      "LocationCapabilitiesDto": {
+        "type": "object",
+        "properties": {
+          "runwayLengthM": {
+            "type": "number",
+            "nullable": true,
+            "description": "Longest usable runway in metres; null for heliports and where unknown."
+          },
+          "nightOperations": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null where unknown."
+          },
+          "helicopterApproved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runwayLengthM",
+          "nightOperations",
+          "helicopterApproved"
+        ]
+      },
+      "LocationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocationType"
+              }
+            ]
+          },
+          "name": {
+            "type": "string",
+            "example": "Chhatrapati Shivaji Maharaj International Airport"
+          },
+          "iata": {
+            "type": "string",
+            "nullable": true,
+            "example": "BOM"
+          },
+          "icao": {
+            "type": "string",
+            "nullable": true,
+            "example": "VABB"
+          },
+          "city": {
+            "type": "string",
+            "nullable": true,
+            "example": "Mumbai"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true,
+            "example": "Maharashtra"
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2.",
+            "example": "IN"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "timeZone": {
+            "type": "string",
+            "description": "IANA time zone.",
+            "example": "Asia/Kolkata"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/LocationCapabilitiesDto"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "iata",
+          "icao",
+          "city",
+          "state",
+          "country",
+          "latitude",
+          "longitude",
+          "timeZone",
+          "capabilities"
         ]
       },
       "AuditLogResponseDto": {

@@ -1,7 +1,14 @@
 import 'dotenv/config';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from './generated/prisma/client.js';
-import { ContentKind, Role, UserStatus } from './generated/prisma/enums.js';
+import { type Prisma, PrismaClient } from './generated/prisma/client.js';
+import {
+  ContentKind,
+  LocationType,
+  Role,
+  UserStatus,
+} from './generated/prisma/enums.js';
 import { DEFAULT_TEMPLATES } from './modules/notifications/templates.js';
 import { hashPassword, PASSWORD_MIN_LENGTH } from './common/crypto/password.js';
 
@@ -105,6 +112,53 @@ async function ensureContent() {
   }
 }
 
+interface SeedLocation {
+  externalRef: string;
+  type: LocationType;
+  name: string;
+  iata: string | null;
+  icao: string | null;
+  city: string | null;
+  state: string | null;
+  country: string;
+  latitude: number;
+  longitude: number;
+  timeZone: string;
+  capabilities: Prisma.InputJsonObject;
+}
+
+/**
+ * Reference airports and heliports (OurAirports, built by
+ * scripts/build-locations.mjs). Rows already present are left alone, so
+ * changes made by operations are never overwritten.
+ */
+async function ensureLocations() {
+  const file = path.resolve(
+    import.meta.dirname,
+    '../prisma/data/locations-in.json',
+  );
+  const { locations } = JSON.parse(await readFile(file, 'utf8')) as {
+    locations: SeedLocation[];
+  };
+  const existing = new Set(
+    (
+      await prisma.location.findMany({
+        where: { externalRef: { not: null } },
+        select: { externalRef: true },
+      })
+    ).map((row) => row.externalRef),
+  );
+  const missing = locations.filter(
+    (location) => !existing.has(location.externalRef),
+  );
+  if (missing.length === 0) return;
+  const { count } = await prisma.location.createMany({
+    data: missing,
+    skipDuplicates: true,
+  });
+  console.log(`created  locations      ${count}`);
+}
+
 async function ensureCustomerProfile(email: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
   await prisma.customerProfile.upsert({
@@ -135,6 +189,7 @@ async function ensureOperator(email: string) {
 
 try {
   await ensureContent();
+  await ensureLocations();
   await ensureUser(
     required('SEED_ADMIN_EMAIL').toLowerCase(),
     Role.SUPER_ADMIN,

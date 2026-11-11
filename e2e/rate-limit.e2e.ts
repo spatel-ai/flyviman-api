@@ -2,34 +2,9 @@ import { expect, test } from '@playwright/test';
 import { uniqueEmail } from './support/data.js';
 import { ACCOUNTS, STRICT_BASE_URL } from './support/accounts.js';
 
-test('sign-in attempts are rate limited per address', async ({
-  playwright,
-}) => {
-  const request = await playwright.request.newContext({
-    baseURL: STRICT_BASE_URL,
-  });
-
-  // The limit is 5 a minute. A sixth attempt inside the window is refused;
-  // earlier ones may be too if this test ran within the last minute.
-  const statuses: number[] = [];
-  let blocked;
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await request.post('auth/login', {
-      data: { email: uniqueEmail('nobody'), password: 'not-the-password' },
-    });
-    statuses.push(response.status());
-    if (response.status() === 429) blocked = response;
-  }
-
-  expect(
-    statuses.filter((status) => status === 401).length,
-  ).toBeLessThanOrEqual(5);
-  expect(blocked, `statuses: ${statuses.join(', ')}`).toBeDefined();
-  expect((await blocked!.json()).error.code).toBe('RATE_LIMITED');
-  expect(Number(blocked!.headers()['retry-after'])).toBeGreaterThan(0);
-
-  await request.dispose();
-});
+// Every test here signs in from the same address on the strict server, and
+// the last one uses up that address's sign-in allowance, so they run in order.
+test.describe.configure({ mode: 'serial' });
 
 test('responses carry the standard rate limit headers', async ({
   playwright,
@@ -83,4 +58,33 @@ test('keeping a session alive is counted per session, not per address', async ({
     ).status(),
   ).toBe(204);
   for (const session of sessions) await session.dispose();
+});
+
+test('sign-in attempts are rate limited per address', async ({
+  playwright,
+}) => {
+  const request = await playwright.request.newContext({
+    baseURL: STRICT_BASE_URL,
+  });
+
+  // The limit is 5 a minute. A sixth attempt inside the window is refused;
+  // earlier ones may be too if this test ran within the last minute.
+  const statuses: number[] = [];
+  let blocked;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const response = await request.post('auth/login', {
+      data: { email: uniqueEmail('nobody'), password: 'not-the-password' },
+    });
+    statuses.push(response.status());
+    if (response.status() === 429) blocked = response;
+  }
+
+  expect(
+    statuses.filter((status) => status === 401).length,
+  ).toBeLessThanOrEqual(5);
+  expect(blocked, `statuses: ${statuses.join(', ')}`).toBeDefined();
+  expect((await blocked!.json()).error.code).toBe('RATE_LIMITED');
+  expect(Number(blocked!.headers()['retry-after'])).toBeGreaterThan(0);
+
+  await request.dispose();
 });

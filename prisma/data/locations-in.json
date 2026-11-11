@@ -1,0 +1,3085 @@
+{
+  "source": "https://github.com/davidmegginson/ourairports-data",
+  "licence": "Public domain",
+  "retrievedAt": "2026-11-11",
+  "locations": [
+    {
+      "externalRef": "ourairports:VIAX",
+      "type": "AIRPORT",
+      "name": "Adampur Airport",
+      "iata": "AIP",
+      "icao": "VIAX",
+      "city": "Adampur",
+      "state": "Punjab",
+      "country": "IN",
+      "latitude": 31.4338,
+      "longitude": 75.758797,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2755,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEAT",
+      "type": "AIRPORT",
+      "name": "Agartala - Maharaja Bir Bikram Airport",
+      "iata": "IXA",
+      "icao": "VEAT",
+      "city": "Agartala",
+      "state": "Tripura",
+      "country": "IN",
+      "latitude": 23.886999,
+      "longitude": 91.240402,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2286,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOAT",
+      "type": "AIRPORT",
+      "name": "Agatti Airport",
+      "iata": "AGX",
+      "icao": "VOAT",
+      "city": "Agatti",
+      "state": "Lakshadweep",
+      "country": "IN",
+      "latitude": 10.8237,
+      "longitude": 72.176003,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1291,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIAG",
+      "type": "AIRPORT",
+      "name": "Agra Airport / Agra Air Force Station",
+      "iata": "AGR",
+      "icao": "VIAG",
+      "city": "Agra",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 27.157975,
+      "longitude": 77.961025,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAAK",
+      "type": "AIRPORT",
+      "name": "Akola Airport",
+      "iata": "AKD",
+      "icao": "VAAK",
+      "city": "Akola",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 20.698931,
+      "longitude": 77.056883,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1402,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOVI",
+      "type": "AIRPORT",
+      "name": "Alluri Sitarama Raju International Airport (Vizag)",
+      "iata": "VTZ",
+      "icao": "VOVI",
+      "city": "Visakhapatnam",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 17.971512,
+      "longitude": 83.503617,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3800,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEAN",
+      "type": "AIRPORT",
+      "name": "Along Airport",
+      "iata": "IXV",
+      "icao": "VEAN",
+      "city": "Along",
+      "state": "Arunachal Pradesh",
+      "country": "IN",
+      "latitude": 28.175301,
+      "longitude": 94.802002,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1120,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0065",
+      "type": "AIRPORT",
+      "name": "Amravati  Airport",
+      "iata": "AVR",
+      "icao": "VAAM",
+      "city": "Amravati",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 20.814608,
+      "longitude": 77.717765,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1850,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAAU",
+      "type": "AIRPORT",
+      "name": "Aurangabad Airport",
+      "iata": "IXU",
+      "icao": "VAAU",
+      "city": "Aurangabad",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 19.862875,
+      "longitude": 75.396312,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2839,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEBD",
+      "type": "AIRPORT",
+      "name": "Bagdogra Airport",
+      "iata": "IXB",
+      "icao": "VEBD",
+      "city": "Siliguri",
+      "state": "West Bengal",
+      "country": "IN",
+      "latitude": 26.6812,
+      "longitude": 88.328598,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2754,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0015",
+      "type": "AIRPORT",
+      "name": "Baljek Airport",
+      "iata": null,
+      "icao": null,
+      "city": "Tura",
+      "state": "Meghalaya",
+      "country": "IN",
+      "latitude": 25.661488,
+      "longitude": 90.345039,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0024",
+      "type": "AIRPORT",
+      "name": "Baramati Airport",
+      "iata": null,
+      "icao": null,
+      "city": "Pune",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 18.226944,
+      "longitude": 74.590833,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1676,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIBY",
+      "type": "AIRPORT",
+      "name": "Bareilly Air Force Station",
+      "iata": "BEK",
+      "icao": "VIBY",
+      "city": "Bareilly",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 28.4221,
+      "longitude": 79.450798,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOHY",
+      "type": "AIRPORT",
+      "name": "Begumpet Airport",
+      "iata": "BPM",
+      "icao": "VOHY",
+      "city": "Hyderabad",
+      "state": "Telangana",
+      "country": "IN",
+      "latitude": 17.4531,
+      "longitude": 78.467598,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3231,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VABM",
+      "type": "AIRPORT",
+      "name": "Belagavi Airport",
+      "iata": "IXG",
+      "icao": "VOBM",
+      "city": "Belgaum",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 15.8593,
+      "longitude": 74.618301,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2300,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOBI",
+      "type": "AIRPORT",
+      "name": "Bellary Airport",
+      "iata": "BEP",
+      "icao": "VOBI",
+      "city": "Bellary",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 15.1628,
+      "longitude": 76.882797,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1106,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VABV",
+      "type": "AIRPORT",
+      "name": "Bhavnagar Airport",
+      "iata": "BHU",
+      "icao": "VABV",
+      "city": "Bhavnagar",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 21.752199,
+      "longitude": 72.185204,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1920,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VABJ",
+      "type": "AIRPORT",
+      "name": "Bhuj Airport",
+      "iata": "BHJ",
+      "icao": "VABJ",
+      "city": "Bhuj",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 23.2878,
+      "longitude": 69.670197,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2501,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEBS",
+      "type": "AIRPORT",
+      "name": "Biju Patnaik International Airport",
+      "iata": "BBI",
+      "icao": "VEBS",
+      "city": "Bhubaneswar",
+      "state": "Odisha",
+      "country": "IN",
+      "latitude": 20.251021,
+      "longitude": 85.814747,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2744,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEBU",
+      "type": "AIRPORT",
+      "name": "Bilaspur Airport",
+      "iata": "PAB",
+      "icao": "VEBU",
+      "city": "Bilaspur",
+      "state": "Chhattisgarh",
+      "country": "IN",
+      "latitude": 21.9884,
+      "longitude": 82.111,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1535,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEIM",
+      "type": "AIRPORT",
+      "name": "Bir Tikendrajit International Airport",
+      "iata": "IMF",
+      "icao": "VEIM",
+      "city": "Imphal",
+      "state": "Manipur",
+      "country": "IN",
+      "latitude": 24.76,
+      "longitude": 93.896698,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2746,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VERC",
+      "type": "AIRPORT",
+      "name": "Birsa Munda Airport",
+      "iata": "IXR",
+      "icao": "VERC",
+      "city": "Ranchi",
+      "state": "Jharkhand",
+      "country": "IN",
+      "latitude": 23.314301,
+      "longitude": 85.321701,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2699,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOCL",
+      "type": "AIRPORT",
+      "name": "Calicut International Airport",
+      "iata": "CCJ",
+      "icao": "VOCL",
+      "city": "Calicut",
+      "state": "Kerala",
+      "country": "IN",
+      "latitude": 11.135996,
+      "longitude": 75.955152,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2860,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VILK",
+      "type": "AIRPORT",
+      "name": "Chaudhary Charan Singh International Airport",
+      "iata": "LKO",
+      "icao": "VILK",
+      "city": "Lucknow",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 26.760599,
+      "longitude": 80.889297,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2742,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOMM",
+      "type": "AIRPORT",
+      "name": "Chennai International Airport",
+      "iata": "MAA",
+      "icao": "VOMM",
+      "city": "Chennai",
+      "state": "Tamil Nadu",
+      "country": "IN",
+      "latitude": 12.990005,
+      "longitude": 80.169296,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3661,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VABB",
+      "type": "AIRPORT",
+      "name": "Chhatrapati Shivaji Maharaj International Airport",
+      "iata": "BOM",
+      "icao": "VABB",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 19.088699,
+      "longitude": 72.867897,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3509,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOCI",
+      "type": "AIRPORT",
+      "name": "Cochin International Airport",
+      "iata": "COK",
+      "icao": "VOCI",
+      "city": "Kochi",
+      "state": "Kerala",
+      "country": "IN",
+      "latitude": 10.151047,
+      "longitude": 76.400838,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3400,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOCB",
+      "type": "AIRPORT",
+      "name": "Coimbatore International Airport",
+      "iata": "CJB",
+      "icao": "VOCB",
+      "city": "Coimbatore",
+      "state": "Tamil Nadu",
+      "country": "IN",
+      "latitude": 11.03,
+      "longitude": 77.043404,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2585,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VADN",
+      "type": "AIRPORT",
+      "name": "Daman Airport",
+      "iata": "NMB",
+      "icao": "VADN",
+      "city": "Daman",
+      "state": "Dadra and Nagar Haveli and Daman and Diu",
+      "country": "IN",
+      "latitude": 20.434401,
+      "longitude": 72.843201,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1801,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEDH",
+      "type": "AIRPORT",
+      "name": "Darbhanga Airport",
+      "iata": "DBR",
+      "icao": "VEDH",
+      "city": "Darbhanga",
+      "state": "Bihar",
+      "country": "IN",
+      "latitude": 26.192801,
+      "longitude": 85.916901,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIDN",
+      "type": "AIRPORT",
+      "name": "Dehradun Jolly Grant Airport",
+      "iata": "DED",
+      "icao": "VIDN",
+      "city": "Dehradun (Jauligrant)",
+      "state": "Uttarakhand",
+      "country": "IN",
+      "latitude": 30.189243,
+      "longitude": 78.176651,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2134,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEDO",
+      "type": "AIRPORT",
+      "name": "Deoghar Airport",
+      "iata": "DGH",
+      "icao": "VEDO",
+      "city": "Deoghar",
+      "state": "Jharkhand",
+      "country": "IN",
+      "latitude": 24.446842,
+      "longitude": 86.704955,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 731,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAID",
+      "type": "AIRPORT",
+      "name": "Devi Ahilya Bai Holkar International Airport",
+      "iata": "IDR",
+      "icao": "VAID",
+      "city": "Indore",
+      "state": "Madhya Pradesh",
+      "country": "IN",
+      "latitude": 22.721404,
+      "longitude": 75.80051,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2754,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEDB",
+      "type": "AIRPORT",
+      "name": "Dhanbad Airport",
+      "iata": "DBD",
+      "icao": "VEDB",
+      "city": "Dhanbad",
+      "state": "Bihar",
+      "country": "IN",
+      "latitude": 23.834,
+      "longitude": 86.425301,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1136,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEMN",
+      "type": "AIRPORT",
+      "name": "Dibrugarh Airport",
+      "iata": "DIB",
+      "icao": "VEMN",
+      "city": "Dibrugarh",
+      "state": "Assam",
+      "country": "IN",
+      "latitude": 27.4839,
+      "longitude": 95.016899,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1829,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEMR",
+      "type": "AIRPORT",
+      "name": "Dimapur Airport",
+      "iata": "DMU",
+      "icao": "VEMR",
+      "city": "Dimapur",
+      "state": "Nagaland",
+      "country": "IN",
+      "latitude": 25.8839,
+      "longitude": 93.771103,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2290,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VA1P",
+      "type": "AIRPORT",
+      "name": "Diu Airport",
+      "iata": "DIU",
+      "icao": "VADU",
+      "city": "Diu",
+      "state": "Dadra and Nagar Haveli and Daman and Diu",
+      "country": "IN",
+      "latitude": 20.714185,
+      "longitude": 70.921855,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1823,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VANP",
+      "type": "AIRPORT",
+      "name": "Dr. Babasaheb Ambedkar International Airport",
+      "iata": "NAG",
+      "icao": "VANP",
+      "city": "Nagpur",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 21.092199,
+      "longitude": 79.047203,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3200,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEGY",
+      "type": "AIRPORT",
+      "name": "Gaya Airport",
+      "iata": "GAY",
+      "icao": "VEGY",
+      "city": "Gaya",
+      "state": "Bihar",
+      "country": "IN",
+      "latitude": 24.744301,
+      "longitude": 84.951202,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2286,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOGO",
+      "type": "AIRPORT",
+      "name": "Goa Dabolim International Airport",
+      "iata": "GOI",
+      "icao": "VOGO",
+      "city": "Vasco da Gama",
+      "state": "Goa",
+      "country": "IN",
+      "latitude": 15.380062,
+      "longitude": 73.833328,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3458,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VA2C",
+      "type": "AIRPORT",
+      "name": "Gondia Airport",
+      "iata": "GDB",
+      "icao": "VAGD",
+      "city": "Gondia",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 21.526817,
+      "longitude": 80.290347,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2286,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEGK",
+      "type": "AIRPORT",
+      "name": "Gorakhpur Airport",
+      "iata": "GOP",
+      "icao": "VEGK",
+      "city": "Gorakhpur",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 26.7397,
+      "longitude": 83.449699,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIGR",
+      "type": "AIRPORT",
+      "name": "Gwalior Airport",
+      "iata": "GWL",
+      "icao": "VIGR",
+      "city": "Gwalior",
+      "state": "Madhya Pradesh",
+      "country": "IN",
+      "latitude": 26.293301,
+      "longitude": 78.227798,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOBG",
+      "type": "AIRPORT",
+      "name": "HAL Airport",
+      "iata": null,
+      "icao": "VOBG",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 12.95,
+      "longitude": 77.668198,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3307,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIHX",
+      "type": "AIRPORT",
+      "name": "Halwara International Airport",
+      "iata": "HWR",
+      "icao": "VIHX",
+      "city": "Halwara",
+      "state": "Punjab",
+      "country": "IN",
+      "latitude": 30.748501,
+      "longitude": 75.629799,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3050,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIDX",
+      "type": "AIRPORT",
+      "name": "Hindon Airport / Hindon Air Force Station",
+      "iata": "HDO",
+      "icao": "VIDX",
+      "city": "Ghaziabad",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 28.707701,
+      "longitude": 77.358902,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAHB",
+      "type": "AIRPORT",
+      "name": "Hubballi Airport",
+      "iata": "HBX",
+      "icao": "VOHB",
+      "city": "Hubballi",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 15.361084,
+      "longitude": 75.082096,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1670,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIDP",
+      "type": "AIRPORT",
+      "name": "Indira Gandhi International Airport",
+      "iata": "DEL",
+      "icao": "VIDP",
+      "city": "New Delhi",
+      "state": "Delhi",
+      "country": "IN",
+      "latitude": 28.55563,
+      "longitude": 77.09519,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 4430,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0308",
+      "type": "AIRPORT",
+      "name": "Itanagar Donyi Polo Hollongi Airport",
+      "iata": "HGI",
+      "icao": "VEHO",
+      "city": "Hollongi",
+      "state": "Arunachal Pradesh",
+      "country": "IN",
+      "latitude": 26.96683,
+      "longitude": 93.638792,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2300,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAJB",
+      "type": "AIRPORT",
+      "name": "Jabalpur Airport",
+      "iata": "JLR",
+      "icao": "VAJB",
+      "city": "Jabalpur",
+      "state": "Madhya Pradesh",
+      "country": "IN",
+      "latitude": 23.177799,
+      "longitude": 80.052002,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2750,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-JGB",
+      "type": "AIRPORT",
+      "name": "Jagdalpur Airport",
+      "iata": "JGB",
+      "icao": "VEJR",
+      "city": "Jagdalpur",
+      "state": "Chhattisgarh",
+      "country": "IN",
+      "latitude": 19.074301,
+      "longitude": 82.036797,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIJP",
+      "type": "AIRPORT",
+      "name": "Jaipur International Airport",
+      "iata": "JAI",
+      "icao": "VIJP",
+      "city": "Jaipur",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 26.8242,
+      "longitude": 75.812202,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2797,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIJR",
+      "type": "AIRPORT",
+      "name": "Jaisalmer Airport",
+      "iata": "JSA",
+      "icao": "VIJR",
+      "city": "Jaisalmer",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 26.8887,
+      "longitude": 70.864998,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAJL",
+      "type": "AIRPORT",
+      "name": "Jalgaon Airport",
+      "iata": "JLG",
+      "icao": "VAJL",
+      "city": "Jalgaon",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 20.962678,
+      "longitude": 75.627492,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1700,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIJU",
+      "type": "AIRPORT",
+      "name": "Jammu Airport",
+      "iata": "IXJ",
+      "icao": "VIJU",
+      "city": "Jammu",
+      "state": "Jammu and Kashmir",
+      "country": "IN",
+      "latitude": 32.688849,
+      "longitude": 74.838152,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2042,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAJM",
+      "type": "AIRPORT",
+      "name": "Jamnagar Airport",
+      "iata": "JGA",
+      "icao": "VAJM",
+      "city": "Jamnagar",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 22.4655,
+      "longitude": 70.012604,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2512,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEPT",
+      "type": "AIRPORT",
+      "name": "Jay Prakash Narayan Airport",
+      "iata": "PAT",
+      "icao": "VEPT",
+      "city": "Patna",
+      "state": "Bihar",
+      "country": "IN",
+      "latitude": 25.591299,
+      "longitude": 85.087997,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1954,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEJH",
+      "type": "AIRPORT",
+      "name": "Jharsuguda Airport",
+      "iata": "JRG",
+      "icao": "VEJH",
+      "city": "Jharsuguda",
+      "state": "Odisha",
+      "country": "IN",
+      "latitude": 21.9135,
+      "longitude": 84.0504,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2391,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIJO",
+      "type": "AIRPORT",
+      "name": "Jodhpur Airport",
+      "iata": "JDH",
+      "icao": "VIJO",
+      "city": "Jodhpur",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 26.251101,
+      "longitude": 73.048897,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2745,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEJT",
+      "type": "AIRPORT",
+      "name": "Jorhat Airport",
+      "iata": "JRH",
+      "icao": "VEJT",
+      "city": "Jorhat",
+      "state": "Assam",
+      "country": "IN",
+      "latitude": 26.730456,
+      "longitude": 94.175416,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAJJ",
+      "type": "AIRPORT",
+      "name": "Juhu Aerodrome",
+      "iata": null,
+      "icao": "VAJJ",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 19.098101,
+      "longitude": 72.834198,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1143,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOCP",
+      "type": "AIRPORT",
+      "name": "Kadapa Airport",
+      "iata": "CDP",
+      "icao": "VOCP",
+      "city": "Kadapa",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 14.513154,
+      "longitude": 78.769183,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2000,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEKR",
+      "type": "AIRPORT",
+      "name": "Kailashahar Airport",
+      "iata": "IXH",
+      "icao": "VEKR",
+      "city": "Kailashahar",
+      "state": "Tripura",
+      "country": "IN",
+      "latitude": 24.308657,
+      "longitude": 92.00768,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1006,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOGB",
+      "type": "AIRPORT",
+      "name": "Kalaburagi Airport",
+      "iata": "GBI",
+      "icao": "VOGB",
+      "city": "Kalaburagi",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 17.308154,
+      "longitude": 76.965246,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3175,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAKE",
+      "type": "AIRPORT",
+      "name": "Kandla Airport",
+      "iata": "IXY",
+      "icao": "VAKE",
+      "city": "Kandla",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 23.1127,
+      "longitude": 70.100304,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1523,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIGG",
+      "type": "AIRPORT",
+      "name": "Kangra Airport",
+      "iata": "DHM",
+      "icao": "VIGG",
+      "city": "Kangra",
+      "state": "Himachal Pradesh",
+      "country": "IN",
+      "latitude": 32.164902,
+      "longitude": 76.263018,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1408,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOKN",
+      "type": "AIRPORT",
+      "name": "Kannur International Airport",
+      "iata": "CNN",
+      "icao": "VOKN",
+      "city": "Kannur",
+      "state": "Kerala",
+      "country": "IN",
+      "latitude": 11.916343,
+      "longitude": 75.544979,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3050,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VICX",
+      "type": "AIRPORT",
+      "name": "Kanpur Airport",
+      "iata": "KNU",
+      "icao": "VECX",
+      "city": "Kanpur",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 26.404301,
+      "longitude": 80.410103,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEDG",
+      "type": "AIRPORT",
+      "name": "Kazi Nazrul Islam Airport",
+      "iata": "RDP",
+      "icao": "VEDG",
+      "city": "Durgapur",
+      "state": "West Bengal",
+      "country": "IN",
+      "latitude": 23.6225,
+      "longitude": 87.243,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2800,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOBL",
+      "type": "AIRPORT",
+      "name": "Kempegowda International Airport Bengaluru",
+      "iata": "BLR",
+      "icao": "VOBL",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 13.1979,
+      "longitude": 77.706299,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 4000,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAKS",
+      "type": "AIRPORT",
+      "name": "Keshod Airport",
+      "iata": "IXK",
+      "icao": "VAKS",
+      "city": "Keshod",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 21.317101,
+      "longitude": 70.270401,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1372,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAKJ",
+      "type": "AIRPORT",
+      "name": "Khajuraho Airport",
+      "iata": "HJR",
+      "icao": "VEKO",
+      "city": "Khajuraho",
+      "state": "Madhya Pradesh",
+      "country": "IN",
+      "latitude": 24.8172,
+      "longitude": 79.918602,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2274,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIKG",
+      "type": "AIRPORT",
+      "name": "Kishangarh Airport Ajmer",
+      "iata": "KQH",
+      "icao": "VIKG",
+      "city": "Ajmer (Kishangarh)",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 26.591007,
+      "longitude": 74.812956,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2152,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAKP",
+      "type": "AIRPORT",
+      "name": "Kolhapur Airport",
+      "iata": "KLH",
+      "icao": "VAKP",
+      "city": "Kolhapur",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 16.6647,
+      "longitude": 74.289398,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1930,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIKO",
+      "type": "AIRPORT",
+      "name": "Kota Airport",
+      "iata": "KTU",
+      "icao": "VIKO",
+      "city": "Kota",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 25.1602,
+      "longitude": 75.845596,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1243,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIBR",
+      "type": "AIRPORT",
+      "name": "Kullu Manali Airport",
+      "iata": "KUU",
+      "icao": "VIBR",
+      "city": "Bhuntar",
+      "state": "Himachal Pradesh",
+      "country": "IN",
+      "latitude": 31.876699,
+      "longitude": 77.154404,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1125,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOKU",
+      "type": "AIRPORT",
+      "name": "Kurnool Airport",
+      "iata": "KJB",
+      "icao": "VOKU",
+      "city": "Orvakal",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 15.716288,
+      "longitude": 78.16923,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2000,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEKI",
+      "type": "AIRPORT",
+      "name": "Kushinagar International Airport",
+      "iata": "KBK",
+      "icao": "VEKI",
+      "city": "Kushinagar",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 26.776534,
+      "longitude": 83.889214,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3200,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEBN",
+      "type": "AIRPORT",
+      "name": "Lal Bahadur Shastri International Airport",
+      "iata": "VNS",
+      "icao": "VEBN",
+      "city": "Varanasi",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 25.452171,
+      "longitude": 82.862549,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2745,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VILH",
+      "type": "AIRPORT",
+      "name": "Leh Kushok Bakula Rimpochee Airport",
+      "iata": "IXL",
+      "icao": "VILH",
+      "city": "Leh",
+      "state": "Ladakh",
+      "country": "IN",
+      "latitude": 34.135899,
+      "longitude": 77.546501,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2755,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VELP",
+      "type": "AIRPORT",
+      "name": "Lengpui Airport",
+      "iata": "AJL",
+      "icao": "VELP",
+      "city": "Aizawl (Lengpui)",
+      "state": "Mizoram",
+      "country": "IN",
+      "latitude": 23.840599,
+      "longitude": 92.619698,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2500,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VELR",
+      "type": "AIRPORT",
+      "name": "Lilabari North Lakhimpur Airport",
+      "iata": "IXI",
+      "icao": "VELR",
+      "city": "Lilabari",
+      "state": "Assam",
+      "country": "IN",
+      "latitude": 27.295682,
+      "longitude": 94.097266,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2286,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEGT",
+      "type": "AIRPORT",
+      "name": "Lokpriya Gopinath Bordoloi International Airport",
+      "iata": "GAU",
+      "icao": "VEGT",
+      "city": "Guwahati",
+      "state": "Assam",
+      "country": "IN",
+      "latitude": 26.106654,
+      "longitude": 91.585226,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2743,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VILD",
+      "type": "AIRPORT",
+      "name": "Ludhiana Airport",
+      "iata": "LUH",
+      "icao": "VILD",
+      "city": "Ludhiana",
+      "state": "Punjab",
+      "country": "IN",
+      "latitude": 30.8547,
+      "longitude": 75.952599,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1463,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0393",
+      "type": "AIRPORT",
+      "name": "Maa Mahamaya Airport",
+      "iata": "AHA",
+      "icao": "VEAP",
+      "city": "Ambikapur",
+      "state": "Chhattisgarh",
+      "country": "IN",
+      "latitude": 22.98753,
+      "longitude": 83.19612,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1920,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOMD",
+      "type": "AIRPORT",
+      "name": "Madurai Airport",
+      "iata": "IXM",
+      "icao": "VOMD",
+      "city": "Madurai",
+      "state": "Tamil Nadu",
+      "country": "IN",
+      "latitude": 9.83451,
+      "longitude": 78.093399,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1826,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIHR",
+      "type": "AIRPORT",
+      "name": "Maharaja Agrasen International Airport",
+      "iata": "HSS",
+      "icao": "VIHR",
+      "city": "Hisar",
+      "state": "Haryana",
+      "country": "IN",
+      "latitude": 29.186065,
+      "longitude": 75.74142,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3120,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAUD",
+      "type": "AIRPORT",
+      "name": "Maharana Pratap Airport",
+      "iata": "UDR",
+      "icao": "VAUD",
+      "city": "Udaipur",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 24.617701,
+      "longitude": 73.896103,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2281,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0025",
+      "type": "AIRPORT",
+      "name": "Maharshi Valmiki International Airport",
+      "iata": "AYJ",
+      "icao": "VEAY",
+      "city": "Faizabad",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 26.747736,
+      "longitude": 82.163664,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2250,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOML",
+      "type": "AIRPORT",
+      "name": "Mangaluru International Airport",
+      "iata": "IXE",
+      "icao": "VOML",
+      "city": "Mangaluru",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 12.95471,
+      "longitude": 74.886812,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2449,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOGA",
+      "type": "AIRPORT",
+      "name": "Manohar International Airport",
+      "iata": "GOX",
+      "icao": "VOGA",
+      "city": "Mopa",
+      "state": "Goa",
+      "country": "IN",
+      "latitude": 15.744257,
+      "longitude": 73.860625,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3500,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIMB",
+      "type": "AIRPORT",
+      "name": "Moradabad Airport",
+      "iata": "MZS",
+      "icao": "VIMB",
+      "city": "Moradabad",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 28.81746,
+      "longitude": 78.92187,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VALT",
+      "type": "AIRPORT",
+      "name": "Murod Kond Airport",
+      "iata": "LTU",
+      "icao": "VALT",
+      "city": "Latur",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 18.411501,
+      "longitude": 76.464699,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2300,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEMZ",
+      "type": "AIRPORT",
+      "name": "Muzaffarpur Airport",
+      "iata": "MZU",
+      "icao": "VEMZ",
+      "city": "Muzaffarpur",
+      "state": "Bihar",
+      "country": "IN",
+      "latitude": 26.119101,
+      "longitude": 85.313698,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1216,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOMY",
+      "type": "AIRPORT",
+      "name": "Mysore Airport",
+      "iata": "MYQ",
+      "icao": "VOMY",
+      "city": "Mysore",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 12.229751,
+      "longitude": 76.653683,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1740,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIBK",
+      "type": "AIRPORT",
+      "name": "Nal Airport",
+      "iata": "BKB",
+      "icao": "VIBK",
+      "city": "Bikaner",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 28.070601,
+      "longitude": 73.207199,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2731,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAND",
+      "type": "AIRPORT",
+      "name": "Nanded Airport",
+      "iata": "NDC",
+      "icao": "VAND",
+      "city": "Nanded",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 19.1833,
+      "longitude": 77.316704,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2300,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAOZ",
+      "type": "AIRPORT",
+      "name": "Nashik International Airport",
+      "iata": "ISK",
+      "icao": "VAOZ",
+      "city": "Nashik",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 20.119101,
+      "longitude": 73.912903,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3000,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0276",
+      "type": "AIRPORT",
+      "name": "Navi Mumbai International Airport",
+      "iata": "NMI",
+      "icao": "VANM",
+      "city": "Navi Mumbai",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 18.984597,
+      "longitude": 73.065253,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3700,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VECC",
+      "type": "AIRPORT",
+      "name": "Netaji Subhash Chandra Bose International Airport",
+      "iata": "CCU",
+      "icao": "VECC",
+      "city": "Kolkata",
+      "state": "West Bengal",
+      "country": "IN",
+      "latitude": 22.654012,
+      "longitude": 88.44765,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3633,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0392",
+      "type": "AIRPORT",
+      "name": "Noida International Airport",
+      "iata": "DXN",
+      "icao": "VIND",
+      "city": "Gautam Buddha Nagar",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 28.179868,
+      "longitude": 77.611843,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3955,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIPT",
+      "type": "AIRPORT",
+      "name": "Pantnagar Airport",
+      "iata": "PGH",
+      "icao": "VIPT",
+      "city": "Pantnagar",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 29.0334,
+      "longitude": 79.473701,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1372,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIPK",
+      "type": "AIRPORT",
+      "name": "Pathankot Airport",
+      "iata": "IXP",
+      "icao": "VIPK",
+      "city": "Pathankot",
+      "state": "Punjab",
+      "country": "IN",
+      "latitude": 32.233611,
+      "longitude": 75.634444,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2734,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOPC",
+      "type": "AIRPORT",
+      "name": "Pondicherry Airport",
+      "iata": "PNY",
+      "icao": "VOPC",
+      "city": "Puducherry (Pondicherry)",
+      "state": "Puducherry",
+      "country": "IN",
+      "latitude": 11.968,
+      "longitude": 79.812,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1500,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAPR",
+      "type": "AIRPORT",
+      "name": "Porbandar Airport",
+      "iata": "PBD",
+      "icao": "VAPR",
+      "city": "Porbandar",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 21.649524,
+      "longitude": 69.656405,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1372,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIAL",
+      "type": "AIRPORT",
+      "name": "Prayagraj Airport",
+      "iata": "IXD",
+      "icao": "VEAB",
+      "city": "Allahabad",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 25.4401,
+      "longitude": 81.733902,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2560,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAPO",
+      "type": "AIRPORT",
+      "name": "Pune International Airport",
+      "iata": "PNQ",
+      "icao": "VAPO",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 18.5821,
+      "longitude": 73.919701,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3048,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VABP",
+      "type": "AIRPORT",
+      "name": "Raja Bhoj International Airport",
+      "iata": "BHO",
+      "icao": "VABP",
+      "city": "Bhopal",
+      "state": "Madhya Pradesh",
+      "country": "IN",
+      "latitude": 23.2875,
+      "longitude": 77.337402,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2750,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VORY",
+      "type": "AIRPORT",
+      "name": "Rajahmundry Airport",
+      "iata": "RJA",
+      "icao": "VORY",
+      "city": "Madhurapudi",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 17.105799,
+      "longitude": 81.813204,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3165,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOHS",
+      "type": "AIRPORT",
+      "name": "Rajiv Gandhi International Airport",
+      "iata": "HYD",
+      "icao": "VOHS",
+      "city": "Hyderabad",
+      "state": "Telangana",
+      "country": "IN",
+      "latitude": 17.231318,
+      "longitude": 78.429855,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 4260,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VARK",
+      "type": "AIRPORT",
+      "name": "Rajkot Airport",
+      "iata": "RAJ",
+      "icao": "VARK",
+      "city": "Rajkot",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 22.3092,
+      "longitude": 70.779503,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1841,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAHS",
+      "type": "AIRPORT",
+      "name": "Rajkot International Airport",
+      "iata": "HSR",
+      "icao": "VAHS",
+      "city": "Rajkot",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 22.378824,
+      "longitude": 71.039391,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3040,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0301",
+      "type": "AIRPORT",
+      "name": "Rashtrakavi Kuvempu Airport",
+      "iata": "RQY",
+      "icao": "VOSH",
+      "city": "Shimoga",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 13.858024,
+      "longitude": 75.618868,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VARG",
+      "type": "AIRPORT",
+      "name": "Ratnagiri Airport",
+      "iata": "RTC",
+      "icao": "VARG",
+      "city": "Ratnagiri",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 17.013599,
+      "longitude": 73.327797,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2100,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VA1G",
+      "type": "AIRPORT",
+      "name": "Rewa Airport, Chorhata, REWA",
+      "iata": "REW",
+      "icao": "VERW",
+      "city": "Rewa",
+      "state": "Madhya Pradesh",
+      "country": "IN",
+      "latitude": 24.503401,
+      "longitude": 81.220299,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1800,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VERK",
+      "type": "AIRPORT",
+      "name": "Rourkela Airport",
+      "iata": "RRK",
+      "icao": "VERK",
+      "city": "Rourkela",
+      "state": "Odisha",
+      "country": "IN",
+      "latitude": 22.256571,
+      "longitude": 84.815193,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1825,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIDD",
+      "type": "AIRPORT",
+      "name": "Safdarjung Airport",
+      "iata": null,
+      "icao": "VIDD",
+      "city": "New Delhi",
+      "state": "Delhi",
+      "country": "IN",
+      "latitude": 28.585453,
+      "longitude": 77.203563,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1378,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOSM",
+      "type": "AIRPORT",
+      "name": "Salem Airport",
+      "iata": "SXV",
+      "icao": "VOSM",
+      "city": "Salem",
+      "state": "Tamil Nadu",
+      "country": "IN",
+      "latitude": 11.7833,
+      "longitude": 78.065598,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1806,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0369",
+      "type": "AIRPORT",
+      "name": "Sant Gadge Baba Yavatmal Airport",
+      "iata": null,
+      "icao": null,
+      "city": "Yavatmal",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 20.395781,
+      "longitude": 78.216272,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2300,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VAAH",
+      "type": "AIRPORT",
+      "name": "Sardar Vallabh Patel International Airport",
+      "iata": "AMD",
+      "icao": "VAAH",
+      "city": "Ahmedabad",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 23.0772,
+      "longitude": 72.634697,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3505,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VICG",
+      "type": "AIRPORT",
+      "name": "Shaheed Bhagat Singh International Airport",
+      "iata": "IXC",
+      "icao": "VICG",
+      "city": "Chandigarh",
+      "state": "Chandigarh",
+      "country": "IN",
+      "latitude": 30.6735,
+      "longitude": 76.788498,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3800,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEBI",
+      "type": "AIRPORT",
+      "name": "Shillong Airport",
+      "iata": "SHL",
+      "icao": "VEBI",
+      "city": "Shillong",
+      "state": "Meghalaya",
+      "country": "IN",
+      "latitude": 25.7036,
+      "longitude": 91.978699,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1829,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VASD",
+      "type": "AIRPORT",
+      "name": "Shirdi International Airport",
+      "iata": "SAG",
+      "icao": "VASD",
+      "city": "Kakadi",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 19.689211,
+      "longitude": 74.373655,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2500,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VISV",
+      "type": "AIRPORT",
+      "name": "Shravasti Airport",
+      "iata": "VSV",
+      "icao": "VISV",
+      "city": "Shravasti",
+      "state": "Uttar Pradesh",
+      "country": "IN",
+      "latitude": 27.499732,
+      "longitude": 82.032927,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1530,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEKU",
+      "type": "AIRPORT",
+      "name": "Silchar Airport",
+      "iata": "IXS",
+      "icao": "VEKU",
+      "city": "Silchar",
+      "state": "Assam",
+      "country": "IN",
+      "latitude": 24.912901,
+      "longitude": 92.978699,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1827,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0107",
+      "type": "AIRPORT",
+      "name": "Sindhudurg Airport",
+      "iata": "SDW",
+      "icao": "VOSR",
+      "city": "Chipi",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 16.002552,
+      "longitude": 73.529846,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2500,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VASL",
+      "type": "AIRPORT",
+      "name": "Solapur Airport",
+      "iata": "SSE",
+      "icao": "VASL",
+      "city": "Solapur",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 17.628,
+      "longitude": 75.934799,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2009,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEJS",
+      "type": "AIRPORT",
+      "name": "Sonari Airport",
+      "iata": "IXW",
+      "icao": "VEJS",
+      "city": "Jamshedpur",
+      "state": "Jharkhand",
+      "country": "IN",
+      "latitude": 22.813706,
+      "longitude": 86.168981,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1222,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VIAR",
+      "type": "AIRPORT",
+      "name": "Sri Guru Ram Das Ji International Airport",
+      "iata": "ATQ",
+      "icao": "VIAR",
+      "city": "Amritsar",
+      "state": "Punjab",
+      "country": "IN",
+      "latitude": 31.7096,
+      "longitude": 74.797302,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3658,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOPN",
+      "type": "AIRPORT",
+      "name": "Sri Sathya Sai Airport",
+      "iata": "PUT",
+      "icao": "VOPN",
+      "city": "Puttaparthi",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 14.1493,
+      "longitude": 77.7911,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2230,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VISR",
+      "type": "AIRPORT",
+      "name": "Srinagar International Airport",
+      "iata": "SXR",
+      "icao": "VISR",
+      "city": "Srinagar",
+      "state": "Jammu and Kashmir",
+      "country": "IN",
+      "latitude": 33.987099,
+      "longitude": 74.7742,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3685,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VASU",
+      "type": "AIRPORT",
+      "name": "Surat International Airport",
+      "iata": "STV",
+      "icao": "VASU",
+      "city": "Surat",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 21.115531,
+      "longitude": 72.743251,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2905,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VARP",
+      "type": "AIRPORT",
+      "name": "Swami Vivekananda Airport",
+      "iata": "RPR",
+      "icao": "VERP",
+      "city": "Raipur",
+      "state": "Chhattisgarh",
+      "country": "IN",
+      "latitude": 21.180401,
+      "longitude": 81.7388,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1955,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VETZ",
+      "type": "AIRPORT",
+      "name": "Tezpur Airport",
+      "iata": "TEZ",
+      "icao": "VETZ",
+      "city": "Tezpur",
+      "state": "Assam",
+      "country": "IN",
+      "latitude": 26.709101,
+      "longitude": 92.784698,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2746,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOTV",
+      "type": "AIRPORT",
+      "name": "Thiruvananthapuram International Airport",
+      "iata": "TRV",
+      "icao": "VOTV",
+      "city": "Thiruvananthapuram",
+      "state": "Kerala",
+      "country": "IN",
+      "latitude": 8.481889,
+      "longitude": 76.920029,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3398,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOTR",
+      "type": "AIRPORT",
+      "name": "Tiruchirappalli International Airport",
+      "iata": "TRZ",
+      "icao": "VOTR",
+      "city": "Tiruchirappalli",
+      "state": "Tamil Nadu",
+      "country": "IN",
+      "latitude": 10.762915,
+      "longitude": 78.717741,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1864,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOTP",
+      "type": "AIRPORT",
+      "name": "Tirupati International Airport",
+      "iata": "TIR",
+      "icao": "VOTP",
+      "city": "Tirupati",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 13.631988,
+      "longitude": 79.539869,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3810,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOTK",
+      "type": "AIRPORT",
+      "name": "Tuticorin Airport",
+      "iata": "TCR",
+      "icao": "VOTK",
+      "city": "Vagaikulam",
+      "state": "Tamil Nadu",
+      "country": "IN",
+      "latitude": 8.724241,
+      "longitude": 78.025803,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1351,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEUK",
+      "type": "AIRPORT",
+      "name": "Utkela Airport",
+      "iata": "UKE",
+      "icao": "VEUK",
+      "city": "Bhawanipatna",
+      "state": "Odisha",
+      "country": "IN",
+      "latitude": 20.097778,
+      "longitude": 83.183333,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 914,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VABO",
+      "type": "AIRPORT",
+      "name": "Vadodara International Airport",
+      "iata": "BDQ",
+      "icao": "VABO",
+      "city": "Vadodara",
+      "state": "Gujarat",
+      "country": "IN",
+      "latitude": 22.336201,
+      "longitude": 73.226303,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 2469,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOPB",
+      "type": "AIRPORT",
+      "name": "Veer Savarkar International Airport / INS Utkrosh",
+      "iata": "IXZ",
+      "icao": "VOPB",
+      "city": "Port Blair",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 11.640194,
+      "longitude": 92.72902,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3290,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VOBZ",
+      "type": "AIRPORT",
+      "name": "Vijayawada International Airport",
+      "iata": "VGA",
+      "icao": "VOBZ",
+      "city": "Vijayawada",
+      "state": "Andhra Pradesh",
+      "country": "IN",
+      "latitude": 16.530011,
+      "longitude": 80.804888,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 3360,
+        "nightOperations": true,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:VEZO",
+      "type": "AIRPORT",
+      "name": "Ziro Airport",
+      "iata": "ZER",
+      "icao": "VEZO",
+      "city": "Ziro",
+      "state": "Arunachal Pradesh",
+      "country": "IN",
+      "latitude": 27.588301,
+      "longitude": 93.828102,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": 1222,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0081",
+      "type": "HELIPORT",
+      "name": "Annadale Helipad",
+      "iata": null,
+      "icao": null,
+      "city": "Shimla",
+      "state": "Himachal Pradesh",
+      "country": "IN",
+      "latitude": 31.111405,
+      "longitude": 77.157015,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0160",
+      "type": "HELIPORT",
+      "name": "Bangaram Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Bangaram",
+      "state": "Lakshadweep",
+      "country": "IN",
+      "latitude": 10.94592,
+      "longitude": 72.28765,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0108",
+      "type": "HELIPORT",
+      "name": "Digha Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Digha",
+      "state": "West Bengal",
+      "country": "IN",
+      "latitude": 21.62606,
+      "longitude": 87.501056,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0285",
+      "type": "HELIPORT",
+      "name": "Diglipur Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Diglipur",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 13.25542,
+      "longitude": 93.00137,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0009",
+      "type": "HELIPORT",
+      "name": "Gangtok Helipad",
+      "iata": null,
+      "icao": null,
+      "city": "Gangtok",
+      "state": "Sikkim",
+      "country": "IN",
+      "latitude": 27.355736,
+      "longitude": 88.614156,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0288",
+      "type": "HELIPORT",
+      "name": "Havelock Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Govind Nagar",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 12.03744,
+      "longitude": 92.98318,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0309",
+      "type": "HELIPORT",
+      "name": "HeliTaxii Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "country": "IN",
+      "latitude": 12.84305,
+      "longitude": 77.668188,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0292",
+      "type": "HELIPORT",
+      "name": "Hut Bay Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Kwate-tu-kwage (Hut Bay)",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 10.60307,
+      "longitude": 92.53432,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0075",
+      "type": "HELIPORT",
+      "name": "Itanagar (Naharlagun) Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Itanagar",
+      "state": "Arunachal Pradesh",
+      "country": "IN",
+      "latitude": 27.111675,
+      "longitude": 93.696106,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0158",
+      "type": "HELIPORT",
+      "name": "Kadmat Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Kadmat",
+      "state": "Lakshadweep",
+      "country": "IN",
+      "latitude": 11.18231,
+      "longitude": 72.76175,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0326",
+      "type": "HELIPORT",
+      "name": "Kalpa Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Kalpa",
+      "state": "Himachal Pradesh",
+      "country": "IN",
+      "latitude": 31.5392,
+      "longitude": 78.2723,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0303",
+      "type": "HELIPORT",
+      "name": "Kargil Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Kargil",
+      "state": "Ladakh",
+      "country": "IN",
+      "latitude": 34.5577,
+      "longitude": 76.13505,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0008",
+      "type": "HELIPORT",
+      "name": "Kavaratti Helipad",
+      "iata": null,
+      "icao": null,
+      "city": "Kavaratti",
+      "state": "Lakshadweep",
+      "country": "IN",
+      "latitude": 10.541668,
+      "longitude": 72.616043,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0049",
+      "type": "HELIPORT",
+      "name": "Kohima Helipad",
+      "iata": null,
+      "icao": null,
+      "city": "Kohima",
+      "state": "Nagaland",
+      "country": "IN",
+      "latitude": 25.663067,
+      "longitude": 94.113933,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0004",
+      "type": "HELIPORT",
+      "name": "Leh Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Leh",
+      "state": "Ladakh",
+      "country": "IN",
+      "latitude": 34.129295,
+      "longitude": 77.537205,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0047",
+      "type": "HELIPORT",
+      "name": "Mahalaxmi Race Course Helipad",
+      "iata": null,
+      "icao": null,
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "country": "IN",
+      "latitude": 18.982033,
+      "longitude": 72.821567,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0286",
+      "type": "HELIPORT",
+      "name": "Mayabunder Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Mayabunder",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 12.91375,
+      "longitude": 92.8976,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0007",
+      "type": "HELIPORT",
+      "name": "Minicoy Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Minicoy",
+      "state": "Lakshadweep",
+      "country": "IN",
+      "latitude": 8.27363,
+      "longitude": 73.022301,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0289",
+      "type": "HELIPORT",
+      "name": "Neil Island Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Lakshmanpur",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 11.84177,
+      "longitude": 93.01838,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0386",
+      "type": "HELIPORT",
+      "name": "Pahalgam Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Pahalgam",
+      "state": "Jammu and Kashmir",
+      "country": "IN",
+      "latitude": 34.01434,
+      "longitude": 75.31333,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0036",
+      "type": "HELIPORT",
+      "name": "Pelling Helipad",
+      "iata": null,
+      "icao": null,
+      "city": "Pelling City",
+      "state": "Sikkim",
+      "country": "IN",
+      "latitude": 27.3005,
+      "longitude": 88.23085,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0110",
+      "type": "HELIPORT",
+      "name": "Puri Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Puri",
+      "state": "Odisha",
+      "country": "IN",
+      "latitude": 19.81035,
+      "longitude": 85.84752,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0246",
+      "type": "HELIPORT",
+      "name": "Pushkar Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Pushkar",
+      "state": "Rajasthan",
+      "country": "IN",
+      "latitude": 26.485927,
+      "longitude": 74.543235,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0287",
+      "type": "HELIPORT",
+      "name": "Rangat Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Rangat",
+      "state": "Andaman and Nicobar Islands",
+      "country": "IN",
+      "latitude": 12.50765,
+      "longitude": 92.96071,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0209",
+      "type": "HELIPORT",
+      "name": "Rohini Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Rohini",
+      "state": "Delhi",
+      "country": "IN",
+      "latitude": 28.752659,
+      "longitude": 77.058718,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0267",
+      "type": "HELIPORT",
+      "name": "Sabarimala Nilakkal Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Perunad",
+      "state": "Kerala",
+      "country": "IN",
+      "latitude": 9.3863,
+      "longitude": 77.0102,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0403",
+      "type": "HELIPORT",
+      "name": "Sahastradhara Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Dehradun",
+      "state": "Uttarakhand",
+      "country": "IN",
+      "latitude": 30.3758,
+      "longitude": 78.09828,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    },
+    {
+      "externalRef": "ourairports:IN-0384",
+      "type": "HELIPORT",
+      "name": "Sonamarg Heliport",
+      "iata": null,
+      "icao": null,
+      "city": "Sonamarg",
+      "state": "Jammu and Kashmir",
+      "country": "IN",
+      "latitude": 34.30261,
+      "longitude": 75.28678,
+      "timeZone": "Asia/Kolkata",
+      "capabilities": {
+        "runwayLengthM": null,
+        "nightOperations": null,
+        "helicopterApproved": true
+      }
+    }
+  ]
+}

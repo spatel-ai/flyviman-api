@@ -350,6 +350,48 @@ enum ContentKind {
   POLICY
 }
 
+// ---------------------------------------------------------------------------
+// M3. Locations
+// ---------------------------------------------------------------------------
+
+enum LocationType {
+  AIRPORT
+  HELIPORT
+  CITY
+  LANDING_SITE
+}
+
+/// Airports, heliports and landing sites. Seeded from prisma/data (OurAirports)
+/// and managed by operations. `capabilities` and `charges` shapes:
+/// docs/architecture/database-design.md. The name and city trigram indexes
+/// need the pg_trgm extension, created in the migration.
+model Location {
+  id           String       @id @default(uuid()) @db.Uuid
+  type         LocationType
+  name         String
+  iata         String?      @unique @db.Char(3)
+  icao         String?      @unique @db.Char(4)
+  city         String?
+  state        String?
+  /// ISO 3166-1 alpha-2.
+  country      String       @db.Char(2)
+  latitude     Float
+  longitude    Float
+  /// IANA time zone, for example Asia/Kolkata.
+  timeZone     String
+  capabilities Json
+  charges      Json?
+  isActive     Boolean      @default(true)
+  /// Where a seeded row came from, for example `ourairports:VABB`.
+  externalRef  String?      @unique
+  createdAt    DateTime     @default(now()) @db.Timestamptz
+  updatedAt    DateTime     @updatedAt @db.Timestamptz
+
+  @@index([type, isActive])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_name_trgm_idx")
+  @@index([city(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_city_trgm_idx")
+}
+
 model ContentItem {
   id          String      @id @default(uuid()) @db.Uuid
   kind        ContentKind

@@ -39,7 +39,7 @@ Run from this directory.
 | Type check | `npm run typecheck` |
 | Unit tests | `npm test` |
 | Integration tests | `npm run test:e2e` (builds, migrates, seeds and starts the API itself; needs `npm run db:up`) |
-| Seed accounts, policies and templates | `npm run db:seed` |
+| Seed accounts, policies, templates and locations | `npm run db:seed` |
 | Export the API description for the web app | `npm run openapi:export` (writes `openapi.json`; then `npm run api:types` in `flyviman-web`) |
 | Build | `npm run build` |
 | Format | `npm run format` |
@@ -68,6 +68,8 @@ src/
   generated/prisma/       generated client, not committed
 prisma/schema.prisma      database schema
 prisma/migrations/        migrations; hand-written SQL where Prisma cannot express a constraint
+prisma/data/              reference data the seed loads (locations-in.json, from OurAirports)
+scripts/build-locations.mjs  rebuilds prisma/data/locations-in.json; run only to refresh the data
 prisma7.config.ts         Prisma configuration
 e2e/                      Playwright API tests; helpers in e2e/support (sign-in, test data, outbox)
 openapi.json              exported API description, read by flyviman-web
