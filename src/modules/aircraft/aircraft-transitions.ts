@@ -1,7 +1,7 @@
 import { AircraftListingStatus, Role } from '../../generated/prisma/enums.js';
 
 export type AircraftAction =
-  'submit' | 'approve' | 'reject' | 'suspend' | 'reinstate';
+  'submit' | 'returnToReview' | 'approve' | 'reject' | 'suspend' | 'reinstate';
 
 interface Transition {
   from: AircraftListingStatus[];
@@ -16,6 +16,13 @@ const REVIEWERS = [Role.OPS, Role.SUPER_ADMIN];
 export const AIRCRAFT_TRANSITIONS: Record<AircraftAction, Transition> = {
   submit: {
     from: [AircraftListingStatus.DRAFT, AircraftListingStatus.REJECTED],
+    to: AircraftListingStatus.PENDING_REVIEW,
+    roles: [Role.OPERATOR_ADMIN],
+    reasonRequired: false,
+  },
+  /** A material edit, or a document change, on an approved listing. */
+  returnToReview: {
+    from: [AircraftListingStatus.APPROVED],
     to: AircraftListingStatus.PENDING_REVIEW,
     roles: [Role.OPERATOR_ADMIN],
     reasonRequired: false,

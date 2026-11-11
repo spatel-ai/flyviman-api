@@ -486,7 +486,7 @@ model Aircraft {
   createdAt          DateTime                   @default(now()) @db.Timestamptz
   updatedAt          DateTime                   @updatedAt @db.Timestamptz
 
-  operator        Operator           @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  operator        Operator           @relation(fields: [operatorId], references: [id], onDelete: Restrict)
   homeBase        Location?          @relation("AircraftHomeBase", fields: [homeBaseId], references: [id], onDelete: SetNull)
   currentLocation Location?          @relation("AircraftCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
   media           AircraftMedia[]

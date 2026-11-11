@@ -228,26 +228,20 @@ test.describe('operator aircraft', () => {
     expect(removeLocked.status()).toBe(409);
   });
 
-  test('a draft operator cannot submit an aircraft', async ({ request }) => {
+  test('an operator who is not approved cannot create an aircraft', async ({
+    request,
+  }) => {
     await registerOperator(request);
     const locations = await request.get('locations', {
       params: { pageSize: 1 },
     });
     const homeBaseId = (await locations.json()).data[0].id as string;
-    const headers = await csrfHeaders(request);
-
-    const draftCreate = await request.post('operator/aircraft', {
-      headers,
+    const created = await request.post('operator/aircraft', {
+      headers: await csrfHeaders(request),
       data: aircraftBody(homeBaseId),
     });
-    expect(draftCreate.status()).toBe(201);
-    const draftId = (await draftCreate.json()).data.id as string;
-    const notApproved = await request.post(
-      `operator/aircraft/${draftId}/submit`,
-      { headers },
-    );
-    expect(notApproved.status()).toBe(409);
-    expect((await notApproved.json()).error.code).toBe('OPERATOR_NOT_APPROVED');
+    expect(created.status()).toBe(409);
+    expect((await created.json()).error.code).toBe('OPERATOR_NOT_APPROVED');
   });
 
   test('an approved operator cannot submit an incomplete aircraft', async ({
@@ -400,5 +394,152 @@ test.describe('operator aircraft', () => {
     });
     expect(material.status()).toBe(200);
     expect((await material.json()).data.listingStatus).toBe('PENDING_REVIEW');
+  });
+
+  test('a suspended aircraft cannot be edited back into review', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const aircraft = (await created.json()).data;
+    await withPrisma(async (prisma) => {
+      await prisma.aircraft.update({
+        where: { id: aircraft.id },
+        data: { listingStatus: 'SUSPENDED', reviewNote: 'Grounded' },
+      });
+    });
+    const edit = await request.patch(`operator/aircraft/${aircraft.id}`, {
+      headers,
+      data: { cruiseSpeedKmh: 400 },
+    });
+    expect(edit.status()).toBe(409);
+    expect((await edit.json()).error.code).toBe('AIRCRAFT_SUSPENDED');
+    const detail = await request.get(`operator/aircraft/${aircraft.id}`);
+    expect((await detail.json()).data).toMatchObject({
+      listingStatus: 'SUSPENDED',
+      reviewNote: 'Grounded',
+    });
+  });
+
+  test('another operator cannot read or change this aircraft or its file', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const aircraft = (await created.json()).data;
+    const media = await request.post(`operator/aircraft/${aircraft.id}/media`, {
+      headers,
+      data: {
+        fileId: await uploadJpeg(request, headers),
+        kind: 'PHOTO',
+      },
+    });
+    const fileId = (await media.json()).data.fileId as string;
+
+    const other = await playwright.request.newContext({ baseURL });
+    await registerOperator(other);
+    expect((await other.get(`operator/aircraft/${aircraft.id}`)).status()).toBe(
+      404,
+    );
+    expect((await other.get(`documents/${fileId}/download`)).status()).toBe(
+      404,
+    );
+
+    const rival = await playwright.request.newContext({ baseURL });
+    await approvedOperator(rival, playwright, baseURL);
+    const rivalHeaders = await csrfHeaders(rival);
+    expect(
+      (
+        await rival.patch(`operator/aircraft/${aircraft.id}`, {
+          headers: rivalHeaders,
+          data: { passengerCapacity: 4 },
+        })
+      ).status(),
+    ).toBe(404);
+    expect(
+      (
+        await rival.post(`operator/aircraft/${aircraft.id}/media`, {
+          headers: rivalHeaders,
+          data: {
+            fileId: await uploadJpeg(rival, rivalHeaders),
+            kind: 'PHOTO',
+          },
+        })
+      ).status(),
+    ).toBe(404);
+    expect(
+      (
+        await rival.post(`operator/aircraft/${aircraft.id}/documents`, {
+          headers: rivalHeaders,
+          data: {
+            type: 'INSURANCE',
+            fileId: await uploadPdf(
+              rival,
+              rivalHeaders,
+              'insurance.pdf',
+              'AIRCRAFT_DOCUMENT',
+            ),
+          },
+        })
+      ).status(),
+    ).toBe(404);
+    await other.dispose();
+    await rival.dispose();
+  });
+
+  test('a document cannot expire before it is issued, or already be expired', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const id = (await created.json()).data.id as string;
+    const fileId = await uploadPdf(
+      request,
+      headers,
+      'insurance.pdf',
+      'AIRCRAFT_DOCUMENT',
+    );
+    const expired = await request.post(`operator/aircraft/${id}/documents`, {
+      headers,
+      data: { type: 'INSURANCE', fileId, expiresAt: '2000-01-01' },
+    });
+    expect(expired.status()).toBe(400);
+    expect((await expired.json()).error.details[0].field).toBe('expiresAt');
+
+    const fileId2 = await uploadPdf(
+      request,
+      headers,
+      'insurance-2.pdf',
+      'AIRCRAFT_DOCUMENT',
+    );
+    const reversed = await request.post(`operator/aircraft/${id}/documents`, {
+      headers,
+      data: {
+        type: 'INSURANCE',
+        fileId: fileId2,
+        issuedAt: '2030-12-31',
+        expiresAt: '2030-01-01',
+      },
+    });
+    expect(reversed.status()).toBe(400);
+    expect((await reversed.json()).error.details[0].field).toBe('issuedAt');
   });
 });

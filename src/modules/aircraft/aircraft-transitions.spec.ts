@@ -13,6 +13,7 @@ describe('aircraft listing state machine', () => {
     [
       ['submit', S.DRAFT, Role.OPERATOR_ADMIN, S.PENDING_REVIEW],
       ['submit', S.REJECTED, Role.OPERATOR_ADMIN, S.PENDING_REVIEW],
+      ['returnToReview', S.APPROVED, Role.OPERATOR_ADMIN, S.PENDING_REVIEW],
       ['approve', S.PENDING_REVIEW, Role.OPS, S.APPROVED],
       ['reject', S.PENDING_REVIEW, Role.SUPER_ADMIN, S.REJECTED],
       ['suspend', S.APPROVED, Role.OPS, S.SUSPENDED],
@@ -37,6 +38,7 @@ describe('aircraft listing state machine', () => {
       [
         'DRAFT>PENDING_REVIEW',
         'REJECTED>PENDING_REVIEW',
+        'APPROVED>PENDING_REVIEW',
         'PENDING_REVIEW>APPROVED',
         'PENDING_REVIEW>REJECTED',
         'APPROVED>SUSPENDED',

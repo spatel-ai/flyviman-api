@@ -50,7 +50,7 @@ export class OperatorAircraftController {
   constructor(private readonly aircraft: AircraftService) {}
 
   @Get()
-  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
+  @Roles(Role.OPERATOR_ADMIN)
   @ApiOperation({ summary: "List this operator's aircraft" })
   @ApiOkResponse({ type: [AircraftSummaryResponseDto] })
   async list(
@@ -78,7 +78,7 @@ export class OperatorAircraftController {
   }
 
   @Get(':id')
-  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
+  @Roles(Role.OPERATOR_ADMIN)
   @ApiOperation({ summary: 'Aircraft detail' })
   @ApiOkResponse({ type: AircraftResponseDto })
   async get(
@@ -89,7 +89,7 @@ export class OperatorAircraftController {
   }
 
   @Patch(':id')
-  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
+  @Roles(Role.OPERATOR_ADMIN)
   @ApiOperation({
     summary: 'Update an aircraft profile',
     description:
@@ -127,7 +127,7 @@ export class OperatorAircraftController {
   }
 
   @Patch(':id/availability-status')
-  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
+  @Roles(Role.OPERATOR_ADMIN)
   @ApiOperation({ summary: 'Set available, unavailable or maintenance' })
   @ApiOkResponse({ type: AircraftResponseDto })
   async setAvailability(
@@ -141,7 +141,7 @@ export class OperatorAircraftController {
   }
 
   @Post(':id/media')
-  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
+  @Roles(Role.OPERATOR_ADMIN)
   @ApiOperation({
     summary: 'Add a photo or floor plan',
     description:
@@ -157,7 +157,7 @@ export class OperatorAircraftController {
   }
 
   @Delete(':id/media/:mediaId')
-  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
+  @Roles(Role.OPERATOR_ADMIN)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove a photo or floor plan' })
   @ApiNoContentResponse()

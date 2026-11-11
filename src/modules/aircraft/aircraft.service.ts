@@ -40,6 +40,8 @@ export const REQUIRED_AIRCRAFT_DOCUMENTS: AircraftDocumentType[] = [
 
 const MAX_AIRCRAFT_DOCUMENTS = 20;
 const MAX_AIRCRAFT_MEDIA = 30;
+const MAX_AIRCRAFT = 50;
+const MAX_OPERATOR_FILES = 200;
 
 const ROTARY: AircraftCategory[] = [
   AircraftCategory.HELICOPTER,
@@ -96,12 +98,8 @@ export class AircraftService implements OnModuleInit {
     user: AuthUser,
   ): Promise<boolean> {
     if (INTERNAL_READERS.includes(user.role)) return true;
-    if (
-      user.role !== Role.OPERATOR_ADMIN &&
-      user.role !== Role.OPERATOR_STAFF
-    ) {
-      return false;
-    }
+    // Staff have no aircraft access until step 7 (D-056).
+    if (user.role !== Role.OPERATOR_ADMIN) return false;
     const media = await this.prisma.aircraftMedia.findFirst({
       where: {
         fileId,
@@ -149,14 +147,70 @@ export class AircraftService implements OnModuleInit {
     if (aircraft.listingStatus === AircraftListingStatus.PENDING_REVIEW) {
       throw this.underReview();
     }
+    if (aircraft.listingStatus === AircraftListingStatus.SUSPENDED) {
+      throw new AppException(
+        'AIRCRAFT_SUSPENDED',
+        'A suspended aircraft stays suspended until operations reinstate it.',
+        HttpStatus.CONFLICT,
+      );
+    }
   }
 
-  /** Approved and suspended listings both need re-review after a material change. */
+  /** Only an approved listing returns to review after a material change. */
   private needsReReview(status: AircraftListingStatus): boolean {
-    return (
-      status === AircraftListingStatus.APPROVED ||
-      status === AircraftListingStatus.SUSPENDED
-    );
+    return status === AircraftListingStatus.APPROVED;
+  }
+
+  /**
+   * The only place a listing status is written. The conditional update locks
+   * the row, so a document removed in the same moment cannot land afterwards.
+   */
+  private async moveListing(
+    tx: Prisma.TransactionClient,
+    aircraft: Aircraft,
+    action: AircraftAction,
+    role: Role,
+    extra: Prisma.AircraftUpdateManyMutationInput = {},
+  ): Promise<void> {
+    const next = nextAircraftStatus(action, aircraft.listingStatus, role);
+    if ('refused' in next) throw this.refusal(next.refused, aircraft, action);
+    const { count } = await tx.aircraft.updateMany({
+      where: { id: aircraft.id, listingStatus: aircraft.listingStatus },
+      data: {
+        ...extra,
+        listingStatus: next.to,
+        submittedAt: new Date(),
+        reviewedById: null,
+        reviewedAt: null,
+        reviewNote: null,
+      },
+    });
+    if (count !== 1) throw this.refusal('state', aircraft, action);
+  }
+
+  private listingSnapshot(row: Aircraft) {
+    return {
+      listingStatus: row.listingStatus,
+      registration: row.registration,
+      passengerCapacity: row.passengerCapacity,
+      category: row.category,
+      rangeKm: row.rangeKm,
+      cruiseSpeedKmh: row.cruiseSpeedKmh,
+      homeBaseId: row.homeBaseId,
+      pricingModel: row.pricingModel,
+      medicalEquipment: row.medicalEquipment,
+    };
+  }
+
+  /** Fleet changes are for an approved operator only (D-056). */
+  private assertApprovedOperator(status: OperatorStatus): void {
+    if (status !== OperatorStatus.APPROVED) {
+      throw new AppException(
+        'OPERATOR_NOT_APPROVED',
+        'Only an approved operator can manage aircraft.',
+        HttpStatus.CONFLICT,
+      );
+    }
   }
 
   /**
@@ -213,19 +267,26 @@ export class AircraftService implements OnModuleInit {
 
   // --- Completeness -------------------------------------------------------
 
-  async missing(aircraft: Aircraft): Promise<string[]> {
+  async missing(
+    aircraft: Aircraft,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<string[]> {
     const gaps: string[] = [];
     if (!aircraft.homeBaseId) gaps.push('homeBaseId');
     if (aircraft.rangeKm == null) gaps.push('rangeKm');
-    const held = await this.prisma.aircraftDocument.findMany({
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const held = await db.aircraftDocument.findMany({
       where: {
         aircraftId: aircraft.id,
         verificationStatus: { not: DocumentVerificationStatus.REJECTED },
       },
-      select: { type: true },
+      select: { type: true, expiresAt: true },
     });
     for (const type of REQUIRED_AIRCRAFT_DOCUMENTS) {
-      if (!held.some((document) => document.type === type)) {
+      const current = held.find((document) => document.type === type);
+      if (!current) gaps.push(`document:${type}`);
+      else if (current.expiresAt && current.expiresAt < today) {
         gaps.push(`document:${type}`);
       }
     }
@@ -315,6 +376,17 @@ export class AircraftService implements OnModuleInit {
     },
   ): Promise<AircraftDetail> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
+    const held = await this.prisma.aircraft.count({
+      where: { operatorId: operator.id },
+    });
+    if (held >= MAX_AIRCRAFT) {
+      throw new AppException(
+        'AIRCRAFT_LIMIT_REACHED',
+        `An operator can list up to ${MAX_AIRCRAFT} aircraft.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
     this.assertWingMatch(input.category, input.wingType);
     await this.assertActiveLocation(input.homeBaseId, 'homeBaseId');
     await this.assertActiveLocation(
@@ -402,6 +474,7 @@ export class AircraftService implements OnModuleInit {
     }>,
   ): Promise<AircraftDetail> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
 
@@ -513,25 +586,26 @@ export class AircraftService implements OnModuleInit {
     const revertToReview =
       materialTouched.length > 0 && this.needsReReview(aircraft.listingStatus);
 
-    if (revertToReview) {
-      data.listingStatus = AircraftListingStatus.PENDING_REVIEW;
-      data.submittedAt = new Date();
-      data.reviewedById = null;
-      data.reviewedAt = null;
-      data.reviewNote = null;
-    }
-
     const updated = await uniqueOrNull(() =>
       this.prisma.$transaction(async (tx) => {
-        // Conditional on the status just read: a concurrent submit must win.
-        const { count } = await tx.aircraft.updateMany({
-          where: {
-            id: aircraft.id,
-            listingStatus: aircraft.listingStatus,
-          },
-          data,
-        });
-        if (count !== 1) throw this.underReview();
+        if (revertToReview) {
+          await this.moveListing(
+            tx,
+            aircraft,
+            'returnToReview',
+            Role.OPERATOR_ADMIN,
+            data,
+          );
+        } else {
+          const { count } = await tx.aircraft.updateMany({
+            where: {
+              id: aircraft.id,
+              listingStatus: aircraft.listingStatus,
+            },
+            data,
+          });
+          if (count !== 1) throw this.underReview();
+        }
         const row = await tx.aircraft.findUniqueOrThrow({
           where: { id: aircraft.id },
         });
@@ -543,12 +617,12 @@ export class AircraftService implements OnModuleInit {
             entityType: 'Aircraft',
             entityId: row.id,
             before: {
-              listingStatus: aircraft.listingStatus,
-              registration: aircraft.registration,
+              ...this.listingSnapshot(aircraft),
+              fields: materialTouched,
             },
             after: {
-              listingStatus: row.listingStatus,
-              registration: row.registration,
+              ...this.listingSnapshot(row),
+              fields: materialTouched,
               revertedToReview: revertToReview,
             },
           },
@@ -574,8 +648,10 @@ export class AircraftService implements OnModuleInit {
     status: AircraftAvailabilityStatus,
   ): Promise<AircraftDetail> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
-    // Availability may change while a listing is under review (D-055).
+    // Availability may change while a listing is under review.
+    // It does not change a suspended listing's status.
     const updated = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.aircraft.updateMany({
         where: { id: aircraft.id },
@@ -602,13 +678,7 @@ export class AircraftService implements OnModuleInit {
 
   async submit(user: AuthUser, aircraftId: string): Promise<AircraftDetail> {
     const operator = await this.forOperatorMember(user.id);
-    if (operator.status !== OperatorStatus.APPROVED) {
-      throw new AppException(
-        'OPERATOR_NOT_APPROVED',
-        'Only an approved operator can submit an aircraft for review.',
-        HttpStatus.CONFLICT,
-      );
-    }
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     const next = nextAircraftStatus(
       'submit',
@@ -618,28 +688,20 @@ export class AircraftService implements OnModuleInit {
     if ('refused' in next) {
       throw this.refusal(next.refused, aircraft, 'submit');
     }
-    const gaps = await this.missing(aircraft);
-    if (gaps.length > 0) {
-      throw new AppException(
-        'AIRCRAFT_PROFILE_INCOMPLETE',
-        'Complete the aircraft profile before submitting it.',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        gaps.map((field) => ({ field, issue: 'is required' })),
-      );
-    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.aircraft.updateMany({
-        where: { id: aircraft.id, listingStatus: aircraft.listingStatus },
-        data: {
-          listingStatus: next.to,
-          submittedAt: new Date(),
-          reviewedById: null,
-          reviewedAt: null,
-          reviewNote: null,
-        },
-      });
-      if (count !== 1) throw this.refusal('state', aircraft, 'submit');
+      // Lock the row by taking the status first. The document check then
+      // sees a stable set, and a failure rolls the status change back.
+      await this.moveListing(tx, aircraft, 'submit', user.role);
+      const gaps = await this.missing(aircraft, tx);
+      if (gaps.length > 0) {
+        throw new AppException(
+          'AIRCRAFT_PROFILE_INCOMPLETE',
+          'Complete the aircraft profile before submitting it. Required documents must be present and unexpired.',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          gaps.map((field) => ({ field, issue: 'is required' })),
+        );
+      }
       const row = await tx.aircraft.findUniqueOrThrow({
         where: { id: aircraft.id },
       });
@@ -670,8 +732,10 @@ export class AircraftService implements OnModuleInit {
     },
   ): Promise<AircraftMediaRecord> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
+    await this.assertFileRoom(operator.id);
     const held = await this.prisma.aircraftMedia.count({
       where: { aircraftId: aircraft.id },
     });
@@ -695,6 +759,14 @@ export class AircraftService implements OnModuleInit {
         purpose,
         tx,
       );
+      if (!file.contentType.startsWith('image/')) {
+        throw new AppException(
+          'VALIDATION_ERROR',
+          'A photo or floor plan must be a JPEG or PNG.',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'fileId', issue: 'must be an image' }],
+        );
+      }
       const row = await tx.aircraftMedia.create({
         data: {
           aircraftId: aircraft.id,
@@ -722,6 +794,7 @@ export class AircraftService implements OnModuleInit {
     mediaId: string,
   ): Promise<void> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
     const media = await this.prisma.aircraftMedia.findFirst({
@@ -763,8 +836,10 @@ export class AircraftService implements OnModuleInit {
     },
   ): Promise<AircraftDocumentRecord> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
+    await this.assertFileRoom(operator.id);
     const held = await this.prisma.aircraftDocument.count({
       where: { aircraftId: aircraft.id },
     });
@@ -776,25 +851,20 @@ export class AircraftService implements OnModuleInit {
       );
     }
 
+    this.assertDocumentDates(input.issuedAt, input.expiresAt);
     const revertToReview = this.needsReReview(aircraft.listingStatus);
 
     return this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.aircraft.updateMany({
-        where: {
-          id: aircraft.id,
-          listingStatus: aircraft.listingStatus,
-        },
-        data: revertToReview
-          ? {
-              listingStatus: AircraftListingStatus.PENDING_REVIEW,
-              submittedAt: new Date(),
-              reviewedById: null,
-              reviewedAt: null,
-              reviewNote: null,
-            }
-          : { listingStatus: aircraft.listingStatus },
-      });
-      if (count !== 1) throw this.underReview();
+      if (revertToReview) {
+        await this.moveListing(
+          tx,
+          aircraft,
+          'returnToReview',
+          Role.OPERATOR_ADMIN,
+        );
+      } else {
+        await this.assertStillEditable(tx, aircraft);
+      }
 
       const file = await this.documents.claim(
         input.fileId,
@@ -834,6 +904,7 @@ export class AircraftService implements OnModuleInit {
     documentId: string,
   ): Promise<void> {
     const operator = await this.forOperatorMember(userId);
+    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
     const document = await this.prisma.aircraftDocument.findFirst({
@@ -855,22 +926,16 @@ export class AircraftService implements OnModuleInit {
     const revertToReview = this.needsReReview(aircraft.listingStatus);
 
     await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.aircraft.updateMany({
-        where: {
-          id: aircraft.id,
-          listingStatus: aircraft.listingStatus,
-        },
-        data: revertToReview
-          ? {
-              listingStatus: AircraftListingStatus.PENDING_REVIEW,
-              submittedAt: new Date(),
-              reviewedById: null,
-              reviewedAt: null,
-              reviewNote: null,
-            }
-          : { listingStatus: aircraft.listingStatus },
-      });
-      if (count !== 1) throw this.underReview();
+      if (revertToReview) {
+        await this.moveListing(
+          tx,
+          aircraft,
+          'returnToReview',
+          Role.OPERATOR_ADMIN,
+        );
+      } else {
+        await this.assertStillEditable(tx, aircraft);
+      }
       await tx.aircraftDocument.delete({ where: { id: document.id } });
       await this.audit.record(
         {
@@ -893,6 +958,47 @@ export class AircraftService implements OnModuleInit {
         }`,
       );
     });
+  }
+
+  private assertDocumentDates(
+    issuedAt?: string | null,
+    expiresAt?: string | null,
+  ): void {
+    const today = new Date().toISOString().slice(0, 10);
+    if (expiresAt && expiresAt < today) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'The expiry date cannot be in the past.',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'expiresAt', issue: 'must not be in the past' }],
+      );
+    }
+    if (issuedAt && expiresAt && issuedAt > expiresAt) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'The issue date cannot be after the expiry date.',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'issuedAt', issue: 'must not be after the expiry date' }],
+      );
+    }
+  }
+
+  private async assertFileRoom(operatorId: string): Promise<void> {
+    const [media, documents] = await this.prisma.$transaction([
+      this.prisma.aircraftMedia.count({
+        where: { aircraft: { operatorId } },
+      }),
+      this.prisma.aircraftDocument.count({
+        where: { aircraft: { operatorId } },
+      }),
+    ]);
+    if (media + documents >= MAX_OPERATOR_FILES) {
+      throw new AppException(
+        'AIRCRAFT_FILE_LIMIT_REACHED',
+        `An operator can attach up to ${MAX_OPERATOR_FILES} aircraft files.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
   }
 
   private refusal(
