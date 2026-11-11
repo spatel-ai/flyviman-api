@@ -152,7 +152,13 @@ export class CsrfGuard implements CanActivate {
       (origin !== undefined && origin !== this.webOrigin) ||
       site === 'cross-site'
     ) {
-      throw this.refused();
+      // A different code from a token mismatch: repeating the request with
+      // a fresh token cannot help, so the web client does not retry it.
+      throw new AppException(
+        'CSRF_ORIGIN_REFUSED',
+        'This request came from another site and was refused.',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
     const jar = cookies(request);

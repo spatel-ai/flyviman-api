@@ -27,8 +27,9 @@ export enum NodeEnv {
  * module that reads them is implemented. See `.env.example`.
  */
 export class EnvironmentVariables {
+  /** Required: a deployment that forgets it must not start as development. */
   @IsEnum(NodeEnv)
-  NODE_ENV: NodeEnv = NodeEnv.Development;
+  NODE_ENV!: NodeEnv;
 
   @Type(() => Number)
   @IsInt()

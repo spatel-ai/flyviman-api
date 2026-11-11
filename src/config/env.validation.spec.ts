@@ -1,6 +1,7 @@
 import { NodeEnv, validateEnv } from './env.validation.js';
 
 const valid = {
+  NODE_ENV: 'development',
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
   JWT_ACCESS_SECRET: 'x'.repeat(32),
   DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
@@ -47,6 +48,11 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...valid, PORT: '70000' })).toThrow(
       /Invalid environment configuration/,
     );
+  });
+
+  it('rejects a missing NODE_ENV', () => {
+    const { NODE_ENV: _omitted, ...rest } = valid;
+    expect(() => validateEnv(rest)).toThrow(/NODE_ENV/);
   });
 
   it('rejects an unknown NODE_ENV', () => {

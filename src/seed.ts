@@ -145,7 +145,7 @@ try {
   // records a registration would have created.
   if (
     process.env.ENABLE_DEV_TOOLS === 'true' &&
-    process.env.NODE_ENV !== 'production'
+    (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')
   ) {
     const local = password('SEED_LOCAL_PASSWORD');
     await ensureUser('customer@flyviman.test', Role.CUSTOMER, local);

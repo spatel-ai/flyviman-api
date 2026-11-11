@@ -112,7 +112,7 @@ describe('CsrfGuard', () => {
     for (const headers of crossSite) {
       expect(() =>
         guard.canActivate(context(request('POST', {}, undefined, headers))),
-      ).toThrow(expect.objectContaining({ code: 'CSRF_TOKEN_INVALID' }));
+      ).toThrow(expect.objectContaining({ code: 'CSRF_ORIGIN_REFUSED' }));
     }
   });
 

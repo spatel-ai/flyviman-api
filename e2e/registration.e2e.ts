@@ -563,7 +563,7 @@ test.describe('cross-site requests', () => {
       data: { email, password },
     });
     expect(response.status()).toBe(403);
-    expect((await response.json()).error.code).toBe('CSRF_TOKEN_INVALID');
+    expect((await response.json()).error.code).toBe('CSRF_ORIGIN_REFUSED');
     expect(await cookie(request, 'access_token')).toBeUndefined();
   });
 
