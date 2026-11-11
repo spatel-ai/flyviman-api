@@ -1,0 +1,84 @@
+// Flyviman database schema.
+// Design and conventions: ../../docs/architecture/database-design.md
+// This file holds the foundation models. Each milestone adds its own models
+// through a migration (see the /db-migration skill).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CUSTOMER
+  OPERATOR_ADMIN
+  OPERATOR_STAFF
+  OPS
+  FINANCE_ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String?    @unique
+  phone           String?    @unique
+  passwordHash    String?
+  role            Role       @default(CUSTOMER)
+  status          UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt DateTime?  @db.Timestamptz
+  phoneVerifiedAt DateTime?  @db.Timestamptz
+  lastLoginAt     DateTime?  @db.Timestamptz
+  createdAt       DateTime   @default(now()) @db.Timestamptz
+  updatedAt       DateTime   @updatedAt @db.Timestamptz
+
+  sessions  Session[]
+  auditLogs AuditLog[]
+
+  @@index([role, status])
+}
+
+/// One row per signed-in device. Refresh tokens are stored hashed and rotate.
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime  @db.Timestamptz
+  revokedAt        DateTime? @db.Timestamptz
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Append-only record of administrative and financial actions.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  actorRole  Role?
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  ipAddress  String?
+  requestId  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
