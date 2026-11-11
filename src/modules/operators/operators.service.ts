@@ -229,6 +229,39 @@ export class OperatorsService implements OnModuleInit {
     return member.operator;
   }
 
+  /**
+   * An operator's status. Inside a transaction the row is share-locked, so a
+   * suspension cannot commit between this read and the caller's change.
+   */
+  async statusOf(
+    operatorId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<OperatorStatus> {
+    if (tx) {
+      const rows = await tx.$queryRaw<{ status: OperatorStatus }[]>`
+        SELECT status FROM "Operator" WHERE id = ${operatorId}::uuid FOR SHARE`;
+      if (rows.length === 0) throw notFound();
+      return rows[0].status;
+    }
+    const row = await this.prisma.operator.findUnique({
+      where: { id: operatorId },
+      select: { status: true },
+    });
+    if (!row) throw notFound();
+    return row.status;
+  }
+
+  /** The operator's administrators, who receive fleet notifications. */
+  async administrators(
+    operatorId: string,
+  ): Promise<{ id: string; email: string | null }[]> {
+    const members = await this.prisma.operatorMember.findMany({
+      where: { operatorId, user: { role: Role.OPERATOR_ADMIN } },
+      select: { user: { select: { id: true, email: true } } },
+    });
+    return members.map((member) => member.user);
+  }
+
   async updateProfile(
     userId: string,
     changes: Prisma.OperatorUpdateInput,

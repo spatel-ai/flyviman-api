@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -474,4 +476,61 @@ export class AircraftSummaryResponseDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   homeBaseId: string | null;
+}
+
+export class AdminAircraftQueryDto extends PageQueryDto {
+  @ApiPropertyOptional({
+    enum: AircraftListingStatus,
+    enumName: 'AircraftListingStatus',
+  })
+  @IsOptional()
+  @IsEnum(AircraftListingStatus)
+  listingStatus?: AircraftListingStatus;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
+}
+
+export class AdminAircraftSummaryDto extends AircraftSummaryResponseDto {
+  @ApiProperty()
+  operatorName: string;
+
+  @ApiProperty({ format: 'uuid' })
+  operatorId: string;
+}
+
+export class AdminAircraftDetailDto extends AircraftResponseDto {
+  @ApiProperty()
+  operatorName: string;
+}
+
+export class AircraftReasonDto {
+  @ApiProperty()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(3)
+  @MaxLength(1000)
+  reason: string;
+}
+
+export const AIRCRAFT_DOCUMENT_DECISIONS = [
+  DocumentVerificationStatus.VERIFIED,
+  DocumentVerificationStatus.REJECTED,
+] as const;
+
+export class VerifyAircraftDocumentDto {
+  @ApiProperty({ enum: AIRCRAFT_DOCUMENT_DECISIONS })
+  @IsIn(AIRCRAFT_DOCUMENT_DECISIONS)
+  decision: DocumentVerificationStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(1000)
+  reason?: string;
 }

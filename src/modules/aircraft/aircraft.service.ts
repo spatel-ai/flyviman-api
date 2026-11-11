@@ -19,6 +19,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import {
   nextAircraftStatus,
@@ -48,11 +49,8 @@ const ROTARY: AircraftCategory[] = [
   AircraftCategory.AIR_AMBULANCE_ROTARY,
 ];
 
-const INTERNAL_READERS: Role[] = [
-  Role.OPS,
-  Role.FINANCE_ADMIN,
-  Role.SUPER_ADMIN,
-];
+/** Internal roles that may open aircraft files. Finance has no aircraft access. */
+const INTERNAL_READERS: Role[] = [Role.OPS, Role.SUPER_ADMIN];
 
 function notFound(what = 'Aircraft'): AppException {
   return new AppException(
@@ -75,6 +73,7 @@ export class AircraftService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly operators: OperatorsService,
     private readonly documents: DocumentsService,
+    private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -135,6 +134,20 @@ export class AircraftService implements OnModuleInit {
     return aircraft;
   }
 
+  /** The operator's own aircraft, for modules that hang data off it (availability). */
+  async ownedBy(operatorId: string, aircraftId: string): Promise<Aircraft> {
+    return this.loadOwned(operatorId, aircraftId);
+  }
+
+  /** IDs of every aircraft the operator owns. */
+  async idsOf(operatorId: string): Promise<string[]> {
+    const rows = await this.prisma.aircraft.findMany({
+      where: { operatorId },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
+
   private underReview(): AppException {
     return new AppException(
       'AIRCRAFT_UNDER_REVIEW',
@@ -171,8 +184,14 @@ export class AircraftService implements OnModuleInit {
     action: AircraftAction,
     role: Role,
     extra: Prisma.AircraftUpdateManyMutationInput = {},
+    reason?: string,
   ): Promise<void> {
-    const next = nextAircraftStatus(action, aircraft.listingStatus, role);
+    const next = nextAircraftStatus(
+      action,
+      aircraft.listingStatus,
+      role,
+      reason,
+    );
     if ('refused' in next) throw this.refusal(next.refused, aircraft, action);
     // Operator-side moves open a fresh review. Review decisions (step 4) pass
     // their own reviewer, time and note through `extra` and keep them.
@@ -1030,6 +1049,360 @@ export class AircraftService implements OnModuleInit {
         `An operator can attach up to ${MAX_OPERATOR_FILES} aircraft files.`,
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
+    }
+  }
+
+  // --- Administration -----------------------------------------------------
+
+  async adminList(query: {
+    page: number;
+    pageSize: number;
+    listingStatus?: AircraftListingStatus;
+    operatorId?: string;
+  }): Promise<Paginated<Aircraft & { operatorName: string }>> {
+    const where: Prisma.AircraftWhereInput = {
+      ...(query.listingStatus ? { listingStatus: query.listingStatus } : {}),
+      ...(query.operatorId ? { operatorId: query.operatorId } : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.aircraft.findMany({
+        where,
+        include: { operator: { select: { legalName: true } } },
+        orderBy: [
+          { submittedAt: { sort: 'asc', nulls: 'last' } },
+          { updatedAt: 'desc' },
+          { id: 'asc' },
+        ],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.aircraft.count({ where }),
+    ]);
+    return new Paginated(
+      rows.map((row) => ({ ...row, operatorName: row.operator.legalName })),
+      query.page,
+      query.pageSize,
+      total,
+    );
+  }
+
+  async adminGet(
+    id: string,
+  ): Promise<AircraftDetail & { operatorName: string }> {
+    const aircraft = await this.prisma.aircraft.findUnique({
+      where: { id },
+      include: { operator: { select: { legalName: true } } },
+    });
+    if (!aircraft) throw notFound();
+    const { operator, ...row } = aircraft;
+    const detail = await this.withDetail(row);
+    return { ...detail, operatorName: operator.legalName };
+  }
+
+  async review(
+    actor: AuthUser,
+    aircraftId: string,
+    action: 'approve' | 'reject' | 'suspend' | 'reinstate',
+    reason?: string,
+  ): Promise<AircraftDetail> {
+    const aircraft = await this.prisma.aircraft.findUnique({
+      where: { id: aircraftId },
+    });
+    if (!aircraft) throw notFound();
+    const next = nextAircraftStatus(
+      action,
+      aircraft.listingStatus,
+      actor.role,
+      reason,
+    );
+    if ('refused' in next) throw this.refusal(next.refused, aircraft, action);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.moveListing(
+        tx,
+        aircraft,
+        action,
+        actor.role,
+        {
+          reviewedById: actor.id,
+          reviewedAt: new Date(),
+          reviewNote: reason?.trim() || null,
+        },
+        reason,
+      );
+      // Only an approved operator's aircraft can be put (back) on sale.
+      if (action === 'approve' || action === 'reinstate') {
+        const status = await this.operators.statusOf(aircraft.operatorId, tx);
+        if (status !== OperatorStatus.APPROVED) {
+          throw new AppException(
+            'OPERATOR_NOT_APPROVED',
+            'The operator is not approved, so its aircraft cannot be approved or reinstated.',
+            HttpStatus.CONFLICT,
+          );
+        }
+      }
+      if (action === 'approve') {
+        const gaps = await this.approvalGaps(tx, aircraft.id);
+        if (gaps.length > 0) {
+          throw new AppException(
+            'AIRCRAFT_DOCUMENTS_UNVERIFIED',
+            'Verify the required documents, and check they have not expired, before approving this aircraft.',
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            gaps.map((field) => ({ field, issue: 'is not verified' })),
+          );
+        }
+      }
+      const row = await tx.aircraft.findUniqueOrThrow({
+        where: { id: aircraft.id },
+      });
+      await this.audit.record(
+        {
+          action: `aircraft.${action}`,
+          entityType: 'Aircraft',
+          entityId: row.id,
+          before: { listingStatus: aircraft.listingStatus },
+          after: { listingStatus: row.listingStatus },
+          reason: reason?.trim() || undefined,
+        },
+        tx,
+      );
+      return row;
+    });
+    await this.notifyOperator(updated, action, reason);
+    return this.withDetail(updated);
+  }
+
+  async verifyAircraftDocument(
+    actor: AuthUser,
+    documentId: string,
+    decision: DocumentVerificationStatus,
+    reason?: string,
+  ): Promise<AircraftDocumentRecord> {
+    if (decision === DocumentVerificationStatus.REJECTED && !reason?.trim()) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'A reason is required.',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'reason', issue: 'is required' }],
+      );
+    }
+    let suspended: Aircraft | null = null;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const document = await tx.aircraftDocument.findUnique({
+        where: { id: documentId },
+      });
+      if (!document) throw notFound('Document');
+      // Lock the aircraft first, so an approval in flight waits for this
+      // decision instead of reading the document as still verified.
+      await tx.$queryRaw`SELECT id FROM "Aircraft" WHERE id = ${document.aircraftId}::uuid FOR UPDATE`;
+      const aircraft = await tx.aircraft.findUniqueOrThrow({
+        where: { id: document.aircraftId },
+      });
+      const updated = await tx.aircraftDocument.update({
+        where: { id: documentId },
+        data: {
+          verificationStatus: decision,
+          verifiedById: actor.id,
+          verifiedAt: new Date(),
+          verificationNote: reason?.trim() || null,
+        },
+      });
+      await this.audit.record(
+        {
+          action:
+            decision === DocumentVerificationStatus.VERIFIED
+              ? 'aircraft_document.verify'
+              : 'aircraft_document.reject',
+          entityType: 'AircraftDocument',
+          entityId: documentId,
+          before: { verificationStatus: document.verificationStatus },
+          after: { verificationStatus: decision },
+          reason: reason?.trim() || undefined,
+        },
+        tx,
+      );
+      // An approved aircraft must not stay on sale without a valid required
+      // document (rule 4): rejecting the last one suspends the listing.
+      if (
+        decision === DocumentVerificationStatus.REJECTED &&
+        aircraft.listingStatus === AircraftListingStatus.APPROVED &&
+        REQUIRED_AIRCRAFT_DOCUMENTS.includes(document.type)
+      ) {
+        const gaps = await this.approvalGaps(tx, aircraft.id);
+        if (gaps.length > 0) {
+          const note = `Required document rejected: ${reason?.trim() ?? ''}`;
+          await this.moveListing(
+            tx,
+            aircraft,
+            'suspend',
+            actor.role,
+            {
+              reviewedById: actor.id,
+              reviewedAt: new Date(),
+              reviewNote: note,
+            },
+            note,
+          );
+          suspended = await tx.aircraft.findUniqueOrThrow({
+            where: { id: aircraft.id },
+          });
+          await this.audit.record(
+            {
+              action: 'aircraft.suspend',
+              entityType: 'Aircraft',
+              entityId: aircraft.id,
+              before: { listingStatus: aircraft.listingStatus },
+              after: { listingStatus: suspended.listingStatus },
+              reason: note,
+            },
+            tx,
+          );
+        }
+      }
+      return updated;
+    });
+    if (suspended) {
+      await this.notifyOperator(
+        suspended,
+        'suspend',
+        `A required document was rejected: ${reason?.trim() ?? ''}`,
+      );
+    }
+    const files = await this.documents.describe([row.fileId]);
+    return { ...row, fileName: files.get(row.fileId)?.fileName ?? 'document' };
+  }
+
+  /** Frees a registration mark that was claimed in error. Draft or rejected only. */
+  async releaseRegistration(
+    actor: AuthUser,
+    aircraftId: string,
+    reason: string,
+  ): Promise<void> {
+    const aircraft = await this.prisma.aircraft.findUnique({
+      where: { id: aircraftId },
+    });
+    if (!aircraft) throw notFound();
+    if (
+      aircraft.listingStatus !== AircraftListingStatus.DRAFT &&
+      aircraft.listingStatus !== AircraftListingStatus.REJECTED
+    ) {
+      throw new AppException(
+        'AIRCRAFT_REGISTRATION_LOCKED',
+        'Only a draft or rejected aircraft can have its registration released. Reject or leave it in draft first.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const files = await this.prisma.$transaction(async (tx) => {
+      // Lock first, so an upload committing now is either listed here or
+      // refused afterwards, never left behind without its aircraft.
+      await tx.$queryRaw`SELECT id FROM "Aircraft" WHERE id = ${aircraft.id}::uuid FOR UPDATE`;
+      const attached = await tx.aircraft.findUnique({
+        where: { id: aircraft.id },
+        include: { media: true, documents: true },
+      });
+      // Conditional on the status, so a submit in the same moment wins.
+      const { count } = await tx.aircraft.deleteMany({
+        where: {
+          id: aircraft.id,
+          listingStatus: {
+            in: [AircraftListingStatus.DRAFT, AircraftListingStatus.REJECTED],
+          },
+        },
+      });
+      if (count !== 1) {
+        throw new AppException(
+          'AIRCRAFT_REGISTRATION_LOCKED',
+          'Only a draft or rejected aircraft can have its registration released.',
+          HttpStatus.CONFLICT,
+        );
+      }
+      await this.audit.record(
+        {
+          action: 'aircraft.release_registration',
+          entityType: 'Aircraft',
+          entityId: aircraft.id,
+          before: {
+            registration: aircraft.registration,
+            listingStatus: aircraft.listingStatus,
+            operatorId: aircraft.operatorId,
+          },
+          reason: reason.trim(),
+        },
+        tx,
+      );
+      return attached;
+    });
+    const fileIds = [
+      ...(files?.media.map((row) => row.fileId) ?? []),
+      ...(files?.documents.map((row) => row.fileId) ?? []),
+    ];
+    await Promise.all(
+      fileIds.map((fileId) =>
+        this.documents.remove(fileId).catch((error: unknown) => {
+          this.logger.error(
+            `Could not remove a file after releasing a registration: ${
+              error instanceof Error ? error.name : 'unknown error'
+            }`,
+          );
+        }),
+      ),
+    );
+  }
+
+  private async approvalGaps(
+    tx: Prisma.TransactionClient,
+    aircraftId: string,
+  ): Promise<string[]> {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const held = await tx.aircraftDocument.findMany({
+      where: {
+        aircraftId,
+        verificationStatus: DocumentVerificationStatus.VERIFIED,
+      },
+      select: { type: true, expiresAt: true },
+    });
+    const gaps: string[] = [];
+    for (const type of REQUIRED_AIRCRAFT_DOCUMENTS) {
+      const current = held.some(
+        (document) =>
+          document.type === type &&
+          (!document.expiresAt || document.expiresAt >= today),
+      );
+      if (!current) gaps.push(`document:${type}`);
+    }
+    return gaps;
+  }
+
+  private async notifyOperator(
+    aircraft: Aircraft,
+    action: 'approve' | 'reject' | 'suspend' | 'reinstate',
+    reason?: string,
+  ): Promise<void> {
+    const administrators = await this.operators.administrators(
+      aircraft.operatorId,
+    );
+    const templateKey = `aircraft.${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : action === 'suspend' ? 'suspended' : 'reinstated'}`;
+    const variables = {
+      registration: aircraft.registration,
+      reason: reason?.trim() ?? '',
+    };
+    for (const user of administrators) {
+      await this.notifications.send({
+        userId: user.id,
+        channel: 'IN_APP',
+        templateKey,
+        variables,
+      });
+      if (user.email) {
+        await this.notifications.send({
+          userId: user.id,
+          channel: 'EMAIL',
+          templateKey,
+          to: user.email,
+          variables,
+        });
+      }
     }
   }
 

@@ -402,8 +402,9 @@ model Location {
   createdAt    DateTime     @default(now()) @db.Timestamptz
   updatedAt    DateTime     @updatedAt @db.Timestamptz
 
-  homeBasedAircraft     Aircraft[] @relation("AircraftHomeBase")
-  currentlyHereAircraft Aircraft[] @relation("AircraftCurrentLocation")
+  homeBasedAircraft     Aircraft[]         @relation("AircraftHomeBase")
+  currentlyHereAircraft Aircraft[]         @relation("AircraftCurrentLocation")
+  departureSlots        AvailabilitySlot[]
 
   @@index([type, isActive])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_name_trgm_idx")
@@ -486,11 +487,13 @@ model Aircraft {
   createdAt          DateTime                   @default(now()) @db.Timestamptz
   updatedAt          DateTime                   @updatedAt @db.Timestamptz
 
-  operator        Operator           @relation(fields: [operatorId], references: [id], onDelete: Restrict)
-  homeBase        Location?          @relation("AircraftHomeBase", fields: [homeBaseId], references: [id], onDelete: SetNull)
-  currentLocation Location?          @relation("AircraftCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  operator        Operator            @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  homeBase        Location?           @relation("AircraftHomeBase", fields: [homeBaseId], references: [id], onDelete: SetNull)
+  currentLocation Location?           @relation("AircraftCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
   media           AircraftMedia[]
   documents       AircraftDocument[]
+  slots           AvailabilitySlot[]
+  blocks          AvailabilityBlock[]
 
   @@index([operatorId, listingStatus])
   @@index([listingStatus, category, passengerCapacity])
@@ -532,6 +535,58 @@ model AircraftDocument {
 
   @@index([aircraftId, type])
   @@index([expiresAt])
+}
+
+enum AvailabilitySlotKind {
+  OPEN
+  DEPARTURE_SLOT
+}
+
+enum AvailabilityBlockReason {
+  MAINTENANCE
+  BLACKOUT
+  SOFT_HOLD
+  BOOKING
+  OTHER
+}
+
+/// Time the aircraft is offered.
+model AvailabilitySlot {
+  id         String               @id @default(uuid()) @db.Uuid
+  aircraftId String               @db.Uuid
+  startsAt   DateTime             @db.Timestamptz
+  endsAt     DateTime             @db.Timestamptz
+  originId   String?              @db.Uuid
+  kind       AvailabilitySlotKind
+  createdAt  DateTime             @default(now()) @db.Timestamptz
+  updatedAt  DateTime             @updatedAt @db.Timestamptz
+
+  aircraft Aircraft  @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  origin   Location? @relation(fields: [originId], references: [id], onDelete: SetNull)
+
+  @@index([aircraftId, startsAt, endsAt])
+  @@index([originId])
+}
+
+/// Time the aircraft is not free. Two BOOKING blocks for one aircraft may
+/// never overlap; that exclusion constraint is raw SQL in the migration.
+model AvailabilityBlock {
+  id         String                  @id @default(uuid()) @db.Uuid
+  aircraftId String                  @db.Uuid
+  startsAt   DateTime                @db.Timestamptz
+  endsAt     DateTime                @db.Timestamptz
+  reason     AvailabilityBlockReason
+  /// Set when bookings exist (M7). No foreign key until that table ships.
+  bookingId  String?                 @db.Uuid
+  expiresAt  DateTime?               @db.Timestamptz
+  note       String?
+  createdAt  DateTime                @default(now()) @db.Timestamptz
+  updatedAt  DateTime                @updatedAt @db.Timestamptz
+
+  aircraft Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+
+  @@index([aircraftId, startsAt, endsAt])
+  @@index([reason, expiresAt])
 }
 
 model ContentItem {

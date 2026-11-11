@@ -104,6 +104,54 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     subject: 'Account reinstated',
     body: '{{operatorName}} is active again.',
   },
+  {
+    key: 'aircraft.approved',
+    channel: 'EMAIL',
+    subject: 'Your aircraft is approved on Flyviman',
+    body: '{{registration}} has been approved and can be offered.',
+  },
+  {
+    key: 'aircraft.approved',
+    channel: 'IN_APP',
+    subject: 'Aircraft approved',
+    body: '{{registration}} has been approved.',
+  },
+  {
+    key: 'aircraft.rejected',
+    channel: 'EMAIL',
+    subject: 'Your aircraft listing needs changes',
+    body: '{{registration}} was not approved. Reason: {{reason}}\nYou can update it and submit it again.',
+  },
+  {
+    key: 'aircraft.rejected',
+    channel: 'IN_APP',
+    subject: 'Aircraft not approved',
+    body: '{{registration}} was not approved. Reason: {{reason}}',
+  },
+  {
+    key: 'aircraft.suspended',
+    channel: 'EMAIL',
+    subject: 'Your aircraft is suspended on Flyviman',
+    body: '{{registration}} has been suspended. Reason: {{reason}}',
+  },
+  {
+    key: 'aircraft.suspended',
+    channel: 'IN_APP',
+    subject: 'Aircraft suspended',
+    body: '{{registration}} has been suspended. Reason: {{reason}}',
+  },
+  {
+    key: 'aircraft.reinstated',
+    channel: 'EMAIL',
+    subject: 'Your aircraft is active again',
+    body: '{{registration}} has been reinstated on Flyviman.',
+  },
+  {
+    key: 'aircraft.reinstated',
+    channel: 'IN_APP',
+    subject: 'Aircraft reinstated',
+    body: '{{registration}} is active again.',
+  },
 ];
 
 /** Fills `{{name}}` placeholders. An unknown placeholder becomes empty. */

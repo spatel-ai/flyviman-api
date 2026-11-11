@@ -1881,6 +1881,665 @@
         ]
       }
     },
+    "/api/v1/admin/aircraft": {
+      "get": {
+        "operationId": "AdminAircraftController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "listingStatus",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AircraftListingStatus"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAircraftSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List aircraft for review",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/{id}": {
+      "get": {
+        "operationId": "AdminAircraftController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAircraftDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Aircraft detail for review",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/{id}/approve": {
+      "post": {
+        "description": "Required documents must be verified and unexpired. Audited. The operator is notified.",
+        "operationId": "AdminAircraftController_approve",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAircraftDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Approve an aircraft listing",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/{id}/reject": {
+      "post": {
+        "operationId": "AdminAircraftController_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AircraftReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAircraftDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reject an aircraft listing",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/{id}/suspend": {
+      "post": {
+        "operationId": "AdminAircraftController_suspend",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AircraftReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAircraftDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Suspend an approved aircraft",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/{id}/reinstate": {
+      "post": {
+        "operationId": "AdminAircraftController_reinstate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAircraftDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reinstate a suspended aircraft",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/{id}/release-registration": {
+      "post": {
+        "description": "Deletes a draft or rejected aircraft so the mark can be reused. Cannot be undone; a reason is required and audited.",
+        "operationId": "AdminAircraftController_release",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AircraftReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Release a registration mark claimed in error",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/admin/aircraft/documents/{documentId}/verify": {
+      "post": {
+        "operationId": "AdminAircraftController_verifyDocument",
+        "parameters": [
+          {
+            "name": "documentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyAircraftDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Verify or reject an aircraft document",
+        "tags": [
+          "admin-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/availability/conflicts": {
+      "get": {
+        "operationId": "AvailabilityController_conflicts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SoftHoldConflictDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Overlapping soft holds on this operator's aircraft",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/availability": {
+      "get": {
+        "operationId": "AvailabilityController_calendar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-31T00:00:00.000Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Slots and blocks overlapping a date range",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/availability/slots": {
+      "post": {
+        "operationId": "AvailabilityController_addSlot",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSlotDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add an availability or departure slot",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/availability/slots/{slotId}": {
+      "patch": {
+        "operationId": "AvailabilityController_updateSlot",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slotId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSlotDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change a slot",
+        "tags": [
+          "availability"
+        ]
+      },
+      "delete": {
+        "operationId": "AvailabilityController_removeSlot",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slotId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove a slot",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/availability/blocks": {
+      "post": {
+        "operationId": "AvailabilityController_addBlock",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBlockDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Block time (maintenance, blackout, soft hold)",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/availability/blocks/{blockId}": {
+      "delete": {
+        "operationId": "AvailabilityController_removeBlock",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "blockId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove a block that is not a booking hold",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
     "/api/v1/locations": {
       "get": {
         "description": "Active locations only. Without `q`, lists them by name, airports first.",
@@ -4341,6 +5000,482 @@
         "required": [
           "type",
           "fileId"
+        ]
+      },
+      "AdminAircraftSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          },
+          "availabilityStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          },
+          "listingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftListingStatus"
+              }
+            ]
+          },
+          "homeBaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "registration",
+          "manufacturer",
+          "model",
+          "category",
+          "passengerCapacity",
+          "availabilityStatus",
+          "listingStatus",
+          "operatorName",
+          "operatorId"
+        ]
+      },
+      "AdminAircraftDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "wingType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WingType"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          },
+          "baggageCapacityKg": {
+            "type": "number",
+            "nullable": true
+          },
+          "rangeKm": {
+            "type": "number",
+            "nullable": true
+          },
+          "cruiseSpeedKmh": {
+            "type": "number",
+            "nullable": true
+          },
+          "homeBaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "currentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restrictions": {
+            "type": "object",
+            "nullable": true
+          },
+          "availabilityStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          },
+          "listingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftListingStatus"
+              }
+            ]
+          },
+          "pricingModel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftPricingModel"
+              }
+            ]
+          },
+          "specifications": {
+            "type": "object",
+            "nullable": true
+          },
+          "medicalEquipment": {
+            "type": "object",
+            "nullable": true
+          },
+          "submittedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "missing": {
+            "description": "Missing fields for submit.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AircraftMediaResponseDto"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AircraftDocumentResponseDto"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "operatorName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "operatorId",
+          "registration",
+          "manufacturer",
+          "model",
+          "category",
+          "wingType",
+          "passengerCapacity",
+          "operatingRegions",
+          "availabilityStatus",
+          "listingStatus",
+          "pricingModel",
+          "missing",
+          "media",
+          "documents",
+          "createdAt",
+          "updatedAt",
+          "operatorName"
+        ]
+      },
+      "AircraftReasonDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "VerifyAircraftDocumentDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "REJECTED"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "AvailabilityBlockReason": {
+        "type": "string",
+        "enum": [
+          "MAINTENANCE",
+          "BLACKOUT",
+          "SOFT_HOLD",
+          "BOOKING",
+          "OTHER"
+        ]
+      },
+      "BlockResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilityBlockReason"
+              }
+            ]
+          },
+          "bookingId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "aircraftId",
+          "startsAt",
+          "endsAt",
+          "reason"
+        ]
+      },
+      "SoftHoldConflictDto": {
+        "type": "object",
+        "properties": {
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/BlockResponseDto"
+          },
+          "overlaps": {
+            "$ref": "#/components/schemas/BlockResponseDto"
+          }
+        },
+        "required": [
+          "aircraftId",
+          "hold",
+          "overlaps"
+        ]
+      },
+      "AvailabilitySlotKind": {
+        "type": "string",
+        "enum": [
+          "OPEN",
+          "DEPARTURE_SLOT"
+        ]
+      },
+      "SlotResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilitySlotKind"
+              }
+            ]
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "aircraftId",
+          "startsAt",
+          "endsAt",
+          "kind"
+        ]
+      },
+      "CalendarResponseDto": {
+        "type": "object",
+        "properties": {
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlotResponseDto"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockResponseDto"
+            }
+          }
+        },
+        "required": [
+          "slots",
+          "blocks"
+        ]
+      },
+      "CreateSlotDto": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilitySlotKind"
+              }
+            ]
+          },
+          "originId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "startsAt",
+          "endsAt",
+          "kind"
+        ]
+      },
+      "UpdateSlotDto": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilitySlotKind"
+              }
+            ]
+          },
+          "originId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "CreateBlockDto": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MAINTENANCE",
+              "BLACKOUT",
+              "SOFT_HOLD",
+              "OTHER"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Required for a soft hold. When the hold lapses."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "endsAt",
+          "reason"
         ]
       },
       "LocationType": {
