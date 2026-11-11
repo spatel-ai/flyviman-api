@@ -11,7 +11,10 @@ import { AppException, ErrorDetail } from '../errors/app.exception.js';
 
 const STATUS_CODES: Record<number, string> = {
   [HttpStatus.BAD_REQUEST]: 'VALIDATION_ERROR',
-  [HttpStatus.UNAUTHORIZED]: 'UNAUTHENTICATED',
+  // Not UNAUTHENTICATED: the web client renews the session and repeats a
+  // request refused with that code, which is safe only for the explicit
+  // session checks. Any other 401 is reported as it is and never repeated.
+  [HttpStatus.UNAUTHORIZED]: 'UNAUTHORIZED',
   [HttpStatus.FORBIDDEN]: 'FORBIDDEN',
   [HttpStatus.NOT_FOUND]: 'NOT_FOUND',
   [HttpStatus.CONFLICT]: 'CONFLICT',

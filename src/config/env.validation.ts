@@ -143,6 +143,16 @@ export class EnvironmentVariables {
   LOG_LEVEL: string = 'info';
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function isLocalOrigin(origin: string | undefined): boolean {
+  try {
+    return LOCAL_HOSTS.has(new URL(origin ?? '').hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function validateEnv(
   config: Record<string, unknown>,
 ): EnvironmentVariables {
@@ -152,6 +162,14 @@ export function validateEnv(
   if (validated.ENABLE_DEV_TOOLS && validated.NODE_ENV === NodeEnv.Production) {
     throw new Error(
       'Invalid environment configuration: ENABLE_DEV_TOOLS must not be set in production',
+    );
+  }
+  // Development tools expose reset and invitation links through a public
+  // route, so they are only for a developer's machine and automated tests:
+  // the web app they serve must be on this machine too.
+  if (validated.ENABLE_DEV_TOOLS && !isLocalOrigin(validated.WEB_ORIGIN)) {
+    throw new Error(
+      'Invalid environment configuration: ENABLE_DEV_TOOLS is allowed only when WEB_ORIGIN is on localhost. Shared servers need a real messaging and storage provider.',
     );
   }
 

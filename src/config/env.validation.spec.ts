@@ -40,6 +40,28 @@ describe('validateEnv', () => {
     ).toThrow(/ENABLE_DEV_TOOLS/);
   });
 
+  it('allows the development helpers only for a web app on localhost', () => {
+    const devTools = { ...valid, ENABLE_DEV_TOOLS: 'true' };
+    for (const origin of [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://[::1]:3000',
+    ]) {
+      expect(
+        validateEnv({ ...devTools, WEB_ORIGIN: origin }).ENABLE_DEV_TOOLS,
+      ).toBe(true);
+    }
+    for (const origin of [
+      'https://staging.flyviman.com',
+      'http://localhost.evil.example',
+      'not a url',
+    ]) {
+      expect(() => validateEnv({ ...devTools, WEB_ORIGIN: origin })).toThrow(
+        /localhost/,
+      );
+    }
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     expect(() => validateEnv({})).toThrow(/Invalid environment configuration/);
   });

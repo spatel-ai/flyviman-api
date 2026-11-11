@@ -55,7 +55,9 @@ describe('maskRecipient', () => {
   it.each([
     ['asha@example.com', 'a***@example.com'],
     ['+919876543210', '+91******3210'],
-    ['12345', '*****'],
+    ['1234567', '*****67'],
+    ['12345', '****45'],
+    ['@example.com', '***@example.com'],
   ])('masks %s as %s', (to, masked) => {
     expect(maskRecipient(to)).toBe(masked);
   });

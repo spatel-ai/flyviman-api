@@ -14,12 +14,17 @@ export interface MockMessage extends OutboundMessage {
 
 const KEEP = 500;
 
-/** `a***@example.com`, `+91******3210`: enough to recognise, not to collect. */
+/**
+ * `a***@example.com`, `+91******3210`: enough to recognise, not to collect.
+ * Short values keep at most their last two characters.
+ */
 export function maskRecipient(to: string): string {
   const at = to.indexOf('@');
-  if (at > 0) return `${to.slice(0, 1)}***${to.slice(at)}`;
-  if (to.length <= 6) return '*'.repeat(to.length);
-  return `${to.slice(0, 3)}${'*'.repeat(to.length - 7)}${to.slice(-4)}`;
+  if (at >= 0) return `${to.slice(0, Math.min(at, 1))}***${to.slice(at)}`;
+  if (to.length >= 11) {
+    return `${to.slice(0, 3)}${'*'.repeat(to.length - 7)}${to.slice(-4)}`;
+  }
+  return `${'*'.repeat(Math.max(to.length - 2, 4))}${to.slice(-2)}`;
 }
 
 /**
