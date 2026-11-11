@@ -123,11 +123,12 @@ export async function uploadPdf(
   request: APIRequestContext,
   csrf: Record<string, string>,
   fileName = 'certificate.pdf',
+  purpose = 'OPERATOR_DOCUMENT',
 ): Promise<string> {
   const presign = await request.post('uploads/presign', {
     headers: csrf,
     data: {
-      purpose: 'OPERATOR_DOCUMENT',
+      purpose,
       fileName,
       contentType: 'application/pdf',
       sizeBytes: PDF.length,
@@ -139,6 +140,36 @@ export async function uploadPdf(
     method: upload.method,
     headers: upload.headers,
     data: PDF,
+  });
+  expect(put.status()).toBe(200);
+  return fileId;
+}
+
+/** Minimal JPEG bytes (signature only; the mock storage does not decode). */
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+
+/** Uploads a JPEG through the signed URL and returns its file ID. */
+export async function uploadJpeg(
+  request: APIRequestContext,
+  csrf: Record<string, string>,
+  purpose: 'AIRCRAFT_PHOTO' | 'AIRCRAFT_FLOOR_PLAN' = 'AIRCRAFT_PHOTO',
+  fileName = 'photo.jpg',
+): Promise<string> {
+  const presign = await request.post('uploads/presign', {
+    headers: csrf,
+    data: {
+      purpose,
+      fileName,
+      contentType: 'image/jpeg',
+      sizeBytes: JPEG.length,
+    },
+  });
+  expect(presign.status()).toBe(201);
+  const { fileId, upload } = (await presign.json()).data;
+  const put = await request.fetch(upload.url, {
+    method: upload.method,
+    headers: upload.headers,
+    data: JPEG,
   });
   expect(put.status()).toBe(200);
   return fileId;

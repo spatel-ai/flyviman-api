@@ -1453,6 +1453,434 @@
         ]
       }
     },
+    "/api/v1/operator/aircraft": {
+      "get": {
+        "operationId": "OperatorAircraftController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "listingStatus",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AircraftListingStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AircraftSummaryResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List this operator's aircraft",
+        "tags": [
+          "operator-aircraft"
+        ]
+      },
+      "post": {
+        "operationId": "OperatorAircraftController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAircraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create an aircraft profile",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}": {
+      "get": {
+        "operationId": "OperatorAircraftController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Aircraft detail",
+        "tags": [
+          "operator-aircraft"
+        ]
+      },
+      "patch": {
+        "description": "Editing a material field on an approved aircraft returns it to PENDING_REVIEW. Photos and specifications do not.",
+        "operationId": "OperatorAircraftController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAircraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update an aircraft profile",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/submit": {
+      "post": {
+        "description": "Only an approved operator can submit. Needs a home base, range and the required documents (registration, airworthiness, insurance).",
+        "operationId": "OperatorAircraftController_submit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Submit an aircraft for approval",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/availability-status": {
+      "patch": {
+        "operationId": "OperatorAircraftController_setAvailability",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAvailabilityStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Set available, unavailable or maintenance",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/media": {
+      "post": {
+        "description": "Upload first with `POST /uploads/presign` using purpose AIRCRAFT_PHOTO or AIRCRAFT_FLOOR_PLAN.",
+        "operationId": "OperatorAircraftController_addMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAircraftMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftMediaResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add a photo or floor plan",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/media/{mediaId}": {
+      "delete": {
+        "operationId": "OperatorAircraftController_removeMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mediaId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove a photo or floor plan",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/documents": {
+      "post": {
+        "description": "Upload first with `POST /uploads/presign` using purpose AIRCRAFT_DOCUMENT. Adding a document to an approved aircraft returns it to PENDING_REVIEW.",
+        "operationId": "OperatorAircraftController_addDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAircraftDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add an aircraft document",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/documents/{documentId}": {
+      "delete": {
+        "operationId": "OperatorAircraftController_removeDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "documentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove an aircraft document",
+        "tags": [
+          "operator-aircraft"
+        ]
+      }
+    },
     "/api/v1/locations": {
       "get": {
         "description": "Active locations only. Without `q`, lists them by name, airports first.",
@@ -3225,7 +3653,10 @@
       "FilePurpose": {
         "type": "string",
         "enum": [
-          "OPERATOR_DOCUMENT"
+          "OPERATOR_DOCUMENT",
+          "AIRCRAFT_PHOTO",
+          "AIRCRAFT_FLOOR_PLAN",
+          "AIRCRAFT_DOCUMENT"
         ]
       },
       "PresignUploadDto": {
@@ -3325,6 +3756,591 @@
         "required": [
           "url",
           "expiresAt"
+        ]
+      },
+      "AircraftListingStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "PENDING_REVIEW",
+          "APPROVED",
+          "REJECTED",
+          "SUSPENDED"
+        ]
+      },
+      "AircraftCategory": {
+        "type": "string",
+        "enum": [
+          "TURBOPROP",
+          "LIGHT_JET",
+          "MIDSIZE_JET",
+          "HEAVY_JET",
+          "HELICOPTER",
+          "AIR_AMBULANCE_FIXED",
+          "AIR_AMBULANCE_ROTARY"
+        ]
+      },
+      "AircraftAvailabilityStatus": {
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "UNAVAILABLE",
+          "MAINTENANCE"
+        ]
+      },
+      "AircraftSummaryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          },
+          "availabilityStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          },
+          "listingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftListingStatus"
+              }
+            ]
+          },
+          "homeBaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "registration",
+          "manufacturer",
+          "model",
+          "category",
+          "passengerCapacity",
+          "availabilityStatus",
+          "listingStatus"
+        ]
+      },
+      "WingType": {
+        "type": "string",
+        "enum": [
+          "FIXED_WING",
+          "HELICOPTER"
+        ]
+      },
+      "AircraftPricingModel": {
+        "type": "string",
+        "enum": [
+          "HOURLY",
+          "SECTOR",
+          "FIXED_ROUTE"
+        ]
+      },
+      "CreateAircraftDto": {
+        "type": "object",
+        "properties": {
+          "registration": {
+            "type": "string",
+            "example": "VT-ABC"
+          },
+          "manufacturer": {
+            "type": "string",
+            "example": "Cessna"
+          },
+          "model": {
+            "type": "string",
+            "example": "Citation CJ3+"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "wingType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WingType"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number",
+            "example": 8
+          },
+          "baggageCapacityKg": {
+            "type": "number",
+            "nullable": true
+          },
+          "rangeKm": {
+            "type": "number",
+            "nullable": true
+          },
+          "cruiseSpeedKmh": {
+            "type": "number",
+            "nullable": true
+          },
+          "homeBaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "currentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restrictions": {
+            "type": "object",
+            "nullable": true
+          },
+          "pricingModel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftPricingModel"
+              }
+            ]
+          },
+          "specifications": {
+            "type": "object",
+            "nullable": true
+          },
+          "medicalEquipment": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "registration",
+          "manufacturer",
+          "model",
+          "category",
+          "wingType",
+          "passengerCapacity"
+        ]
+      },
+      "AircraftMediaKind": {
+        "type": "string",
+        "enum": [
+          "PHOTO",
+          "FLOOR_PLAN"
+        ]
+      },
+      "AircraftMediaResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftMediaKind"
+              }
+            ]
+          },
+          "sortOrder": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "fileId",
+          "fileName",
+          "kind",
+          "sortOrder"
+        ]
+      },
+      "AircraftDocumentType": {
+        "type": "string",
+        "enum": [
+          "REGISTRATION",
+          "AIRWORTHINESS",
+          "INSURANCE",
+          "OTHER"
+        ]
+      },
+      "AircraftDocumentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftDocumentType"
+              }
+            ]
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "verificationStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentVerificationStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "fileId",
+          "fileName",
+          "verificationStatus"
+        ]
+      },
+      "AircraftResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "wingType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WingType"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          },
+          "baggageCapacityKg": {
+            "type": "number",
+            "nullable": true
+          },
+          "rangeKm": {
+            "type": "number",
+            "nullable": true
+          },
+          "cruiseSpeedKmh": {
+            "type": "number",
+            "nullable": true
+          },
+          "homeBaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "currentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restrictions": {
+            "type": "object",
+            "nullable": true
+          },
+          "availabilityStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          },
+          "listingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftListingStatus"
+              }
+            ]
+          },
+          "pricingModel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftPricingModel"
+              }
+            ]
+          },
+          "specifications": {
+            "type": "object",
+            "nullable": true
+          },
+          "medicalEquipment": {
+            "type": "object",
+            "nullable": true
+          },
+          "submittedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "missing": {
+            "description": "Missing fields for submit.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AircraftMediaResponseDto"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AircraftDocumentResponseDto"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "operatorId",
+          "registration",
+          "manufacturer",
+          "model",
+          "category",
+          "wingType",
+          "passengerCapacity",
+          "operatingRegions",
+          "availabilityStatus",
+          "listingStatus",
+          "pricingModel",
+          "missing",
+          "media",
+          "documents",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateAircraftDto": {
+        "type": "object",
+        "properties": {
+          "registration": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "wingType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WingType"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          },
+          "baggageCapacityKg": {
+            "type": "number",
+            "nullable": true
+          },
+          "rangeKm": {
+            "type": "number",
+            "nullable": true
+          },
+          "cruiseSpeedKmh": {
+            "type": "number",
+            "nullable": true
+          },
+          "homeBaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "currentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restrictions": {
+            "type": "object",
+            "nullable": true
+          },
+          "pricingModel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftPricingModel"
+              }
+            ]
+          },
+          "specifications": {
+            "type": "object",
+            "nullable": true
+          },
+          "medicalEquipment": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "SetAvailabilityStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "AddAircraftMediaDto": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftMediaKind"
+              }
+            ]
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "fileId",
+          "kind"
+        ]
+      },
+      "AddAircraftDocumentDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftDocumentType"
+              }
+            ]
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "nullable": true,
+            "example": "2024-01-15"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "example": "2030-12-31"
+          }
+        },
+        "required": [
+          "type",
+          "fileId"
         ]
       },
       "LocationType": {
@@ -3430,18 +4446,6 @@
           "longitude",
           "timeZone",
           "capabilities"
-        ]
-      },
-      "AircraftCategory": {
-        "type": "string",
-        "enum": [
-          "TURBOPROP",
-          "LIGHT_JET",
-          "MIDSIZE_JET",
-          "HEAVY_JET",
-          "HELICOPTER",
-          "AIR_AMBULANCE_FIXED",
-          "AIR_AMBULANCE_ROTARY"
         ]
       },
       "CategoryChargeResponseDto": {

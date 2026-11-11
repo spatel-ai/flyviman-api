@@ -219,6 +219,7 @@ model Operator {
 
   members   OperatorMember[]
   documents OperatorDocument[]
+  aircraft  Aircraft[]
 
   @@index([status, submittedAt])
 }
@@ -278,6 +279,9 @@ model OperatorDocument {
 
 enum FilePurpose {
   OPERATOR_DOCUMENT
+  AIRCRAFT_PHOTO
+  AIRCRAFT_FLOOR_PLAN
+  AIRCRAFT_DOCUMENT
 }
 
 /// Metadata for a file in private storage. A file is usable once `uploadedAt`
@@ -398,9 +402,136 @@ model Location {
   createdAt    DateTime     @default(now()) @db.Timestamptz
   updatedAt    DateTime     @updatedAt @db.Timestamptz
 
+  homeBasedAircraft     Aircraft[] @relation("AircraftHomeBase")
+  currentlyHereAircraft Aircraft[] @relation("AircraftCurrentLocation")
+
   @@index([type, isActive])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_name_trgm_idx")
   @@index([city(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_city_trgm_idx")
+}
+
+// ---------------------------------------------------------------------------
+// M3. Aircraft
+// ---------------------------------------------------------------------------
+
+enum WingType {
+  FIXED_WING
+  HELICOPTER
+}
+
+enum AircraftAvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  MAINTENANCE
+}
+
+/// Values and transitions: docs/architecture/state-machines.md.
+enum AircraftListingStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum AircraftPricingModel {
+  HOURLY
+  SECTOR
+  FIXED_ROUTE
+}
+
+enum AircraftMediaKind {
+  PHOTO
+  FLOOR_PLAN
+}
+
+enum AircraftDocumentType {
+  REGISTRATION
+  AIRWORTHINESS
+  INSURANCE
+  OTHER
+}
+
+/// An aircraft profile belonging to one operator. Searchable only when
+/// listingStatus is APPROVED, the operator is APPROVED, availabilityStatus is
+/// AVAILABLE, and required documents are unexpired (enforced in search, M4).
+model Aircraft {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  operatorId         String                     @db.Uuid
+  /// Tail number / registration mark, unique across the platform.
+  registration       String                     @unique
+  manufacturer       String
+  model              String
+  category           AircraftCategory
+  wingType           WingType
+  passengerCapacity  Int
+  baggageCapacityKg  Int?
+  rangeKm            Int?
+  cruiseSpeedKmh     Int?
+  homeBaseId         String?                    @db.Uuid
+  currentLocationId  String?                    @db.Uuid
+  operatingRegions   String[]                   @default([])
+  /// Operating hours, excluded locations, minimum notice.
+  restrictions       Json?
+  availabilityStatus AircraftAvailabilityStatus @default(AVAILABLE)
+  listingStatus      AircraftListingStatus      @default(DRAFT)
+  pricingModel       AircraftPricingModel       @default(HOURLY)
+  /// Free-form description and cabin notes.
+  specifications     Json?
+  medicalEquipment   Json?
+  submittedAt        DateTime?                  @db.Timestamptz
+  reviewedById       String?                    @db.Uuid
+  reviewedAt         DateTime?                  @db.Timestamptz
+  reviewNote         String?
+  createdAt          DateTime                   @default(now()) @db.Timestamptz
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz
+
+  operator        Operator           @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  homeBase        Location?          @relation("AircraftHomeBase", fields: [homeBaseId], references: [id], onDelete: SetNull)
+  currentLocation Location?          @relation("AircraftCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  media           AircraftMedia[]
+  documents       AircraftDocument[]
+
+  @@index([operatorId, listingStatus])
+  @@index([listingStatus, category, passengerCapacity])
+  @@index([homeBaseId])
+  @@index([currentLocationId])
+}
+
+/// Photos and floor plans. The file lives in StoredFile (D-024); `kind`
+/// must match the file's purpose.
+model AircraftMedia {
+  id         String            @id @default(uuid()) @db.Uuid
+  aircraftId String            @db.Uuid
+  fileId     String            @unique @db.Uuid
+  kind       AircraftMediaKind
+  sortOrder  Int               @default(0)
+  createdAt  DateTime          @default(now()) @db.Timestamptz
+  updatedAt  DateTime          @updatedAt @db.Timestamptz
+
+  aircraft Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+
+  @@index([aircraftId, sortOrder])
+}
+
+model AircraftDocument {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  aircraftId         String                     @db.Uuid
+  type               AircraftDocumentType
+  fileId             String                     @unique @db.Uuid
+  issuedAt           DateTime?                  @db.Date
+  expiresAt          DateTime?                  @db.Date
+  verificationStatus DocumentVerificationStatus @default(PENDING)
+  verifiedById       String?                    @db.Uuid
+  verifiedAt         DateTime?                  @db.Timestamptz
+  verificationNote   String?
+  createdAt          DateTime                   @default(now()) @db.Timestamptz
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz
+
+  aircraft Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+
+  @@index([aircraftId, type])
+  @@index([expiresAt])
 }
 
 model ContentItem {
