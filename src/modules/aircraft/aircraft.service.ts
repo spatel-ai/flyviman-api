@@ -174,15 +174,22 @@ export class AircraftService implements OnModuleInit {
   ): Promise<void> {
     const next = nextAircraftStatus(action, aircraft.listingStatus, role);
     if ('refused' in next) throw this.refusal(next.refused, aircraft, action);
+    // Operator-side moves open a fresh review. Review decisions (step 4) pass
+    // their own reviewer, time and note through `extra` and keep them.
+    const opensReview = action === 'submit' || action === 'returnToReview';
     const { count } = await tx.aircraft.updateMany({
       where: { id: aircraft.id, listingStatus: aircraft.listingStatus },
       data: {
         ...extra,
         listingStatus: next.to,
-        submittedAt: new Date(),
-        reviewedById: null,
-        reviewedAt: null,
-        reviewNote: null,
+        ...(opensReview
+          ? {
+              submittedAt: new Date(),
+              reviewedById: null,
+              reviewedAt: null,
+              reviewNote: null,
+            }
+          : {}),
       },
     });
     if (count !== 1) throw this.refusal('state', aircraft, action);
@@ -192,8 +199,12 @@ export class AircraftService implements OnModuleInit {
     return {
       listingStatus: row.listingStatus,
       registration: row.registration,
-      passengerCapacity: row.passengerCapacity,
+      manufacturer: row.manufacturer,
+      model: row.model,
       category: row.category,
+      wingType: row.wingType,
+      passengerCapacity: row.passengerCapacity,
+      baggageCapacityKg: row.baggageCapacityKg,
       rangeKm: row.rangeKm,
       cruiseSpeedKmh: row.cruiseSpeedKmh,
       homeBaseId: row.homeBaseId,
@@ -202,7 +213,11 @@ export class AircraftService implements OnModuleInit {
     };
   }
 
-  /** Fleet changes are for an approved operator only (D-056). */
+  /**
+   * Adding to the fleet (create, edit, upload, submit) is for an approved
+   * operator only (D-056). Taking an aircraft out of service and removing
+   * files stay open, so a suspended operator can still ground an aircraft.
+   */
   private assertApprovedOperator(status: OperatorStatus): void {
     if (status !== OperatorStatus.APPROVED) {
       throw new AppException(
@@ -283,12 +298,14 @@ export class AircraftService implements OnModuleInit {
       },
       select: { type: true, expiresAt: true },
     });
+    // A renewed document counts even while the expired one is still attached.
     for (const type of REQUIRED_AIRCRAFT_DOCUMENTS) {
-      const current = held.find((document) => document.type === type);
+      const current = held.some(
+        (document) =>
+          document.type === type &&
+          (!document.expiresAt || document.expiresAt >= today),
+      );
       if (!current) gaps.push(`document:${type}`);
-      else if (current.expiresAt && current.expiresAt < today) {
-        gaps.push(`document:${type}`);
-      }
     }
     return gaps;
   }
@@ -580,6 +597,19 @@ export class AircraftService implements OnModuleInit {
       materialTouched.push('medicalEquipment');
     }
 
+    // Drop values that are already stored, so an unchanged PATCH writes and
+    // audits nothing (as for locations, D-054). JSON objects always count.
+    const stored = aircraft as unknown as Record<string, unknown>;
+    for (const key of Object.keys(data) as (keyof typeof data)[]) {
+      const value = data[key];
+      const same = Array.isArray(value)
+        ? JSON.stringify(value) === JSON.stringify(stored[key])
+        : (value === null || typeof value !== 'object') &&
+          value === stored[key];
+      if (same) delete data[key];
+    }
+    if (Object.keys(data).length === 0) return this.withDetail(aircraft);
+
     // materialTouched records real value changes; medicalEquipment counts when
     // sent (JSON equality is not compared). Unchanged material fields do not
     // re-queue review.
@@ -648,9 +678,9 @@ export class AircraftService implements OnModuleInit {
     status: AircraftAvailabilityStatus,
   ): Promise<AircraftDetail> {
     const operator = await this.forOperatorMember(userId);
-    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
-    // Availability may change while a listing is under review.
+    // Availability may change while a listing is under review, and for an
+    // operator who is not approved (search also requires an approved one).
     // It does not change a suspended listing's status.
     const updated = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.aircraft.updateMany({
@@ -693,7 +723,11 @@ export class AircraftService implements OnModuleInit {
       // Lock the row by taking the status first. The document check then
       // sees a stable set, and a failure rolls the status change back.
       await this.moveListing(tx, aircraft, 'submit', user.role);
-      const gaps = await this.missing(aircraft, tx);
+      // Check the row as it is now locked, not as it was read before.
+      const current = await tx.aircraft.findUniqueOrThrow({
+        where: { id: aircraft.id },
+      });
+      const gaps = await this.missing(current, tx);
       if (gaps.length > 0) {
         throw new AppException(
           'AIRCRAFT_PROFILE_INCOMPLETE',
@@ -794,7 +828,6 @@ export class AircraftService implements OnModuleInit {
     mediaId: string,
   ): Promise<void> {
     const operator = await this.forOperatorMember(userId);
-    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
     const media = await this.prisma.aircraftMedia.findFirst({
@@ -904,7 +937,6 @@ export class AircraftService implements OnModuleInit {
     documentId: string,
   ): Promise<void> {
     const operator = await this.forOperatorMember(userId);
-    this.assertApprovedOperator(operator.status);
     const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
     const document = await this.prisma.aircraftDocument.findFirst({

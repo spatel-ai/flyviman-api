@@ -542,4 +542,181 @@ test.describe('operator aircraft', () => {
     expect(reversed.status()).toBe(400);
     expect((await reversed.json()).error.details[0].field).toBe('issuedAt');
   });
+
+  test('submit refuses an expired required document, and a renewed one counts', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const id = (await created.json()).data.id as string;
+    for (const type of ['REGISTRATION', 'AIRWORTHINESS', 'INSURANCE']) {
+      await addAircraftDocument(request, id, type);
+    }
+    // The insurance lapses after it was uploaded.
+    await withPrisma(async (prisma) => {
+      await prisma.aircraftDocument.updateMany({
+        where: { aircraftId: id, type: 'INSURANCE' },
+        data: { expiresAt: new Date('2020-01-01') },
+      });
+    });
+
+    const refused = await request.post(`operator/aircraft/${id}/submit`, {
+      headers,
+    });
+    expect(refused.status()).toBe(422);
+    expect((await refused.json()).error.details).toEqual([
+      { field: 'document:INSURANCE', issue: 'is required' },
+    ]);
+
+    // The renewal is attached while the lapsed one is still on file.
+    await addAircraftDocument(request, id, 'INSURANCE');
+    const submitted = await request.post(`operator/aircraft/${id}/submit`, {
+      headers,
+    });
+    expect(submitted.status()).toBe(200);
+    expect((await submitted.json()).data.listingStatus).toBe('PENDING_REVIEW');
+  });
+
+  test('a PDF cannot be attached as a photo', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const id = (await created.json()).data.id as string;
+    const media = await request.post(`operator/aircraft/${id}/media`, {
+      headers,
+      data: {
+        fileId: await uploadPdf(
+          request,
+          headers,
+          'photo.pdf',
+          'AIRCRAFT_PHOTO',
+        ),
+        kind: 'PHOTO',
+      },
+    });
+    expect(media.status()).toBe(400);
+    expect((await media.json()).error.details[0].field).toBe('fileId');
+  });
+
+  test('an unchanged edit writes nothing and is not audited', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const body = aircraftBody(homeBaseId);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: body,
+    });
+    const id = (await created.json()).data.id as string;
+    const audits = () =>
+      withPrisma((prisma) =>
+        prisma.auditLog.count({
+          where: { entityId: id, action: 'aircraft.update' },
+        }),
+      );
+
+    for (const data of [
+      {},
+      { passengerCapacity: body.passengerCapacity, rangeKm: body.rangeKm },
+    ]) {
+      const same = await request.patch(`operator/aircraft/${id}`, {
+        headers,
+        data,
+      });
+      expect(same.status()).toBe(200);
+      expect((await same.json()).data.listingStatus).toBe('DRAFT');
+    }
+    expect(await audits()).toBe(0);
+
+    const changed = await request.patch(`operator/aircraft/${id}`, {
+      headers,
+      data: { model: 'Citation CJ4' },
+    });
+    expect(changed.status()).toBe(200);
+    expect(await audits()).toBe(1);
+    const record = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: { entityId: id, action: 'aircraft.update' },
+      }),
+    );
+    expect(record.before).toMatchObject({ model: 'Citation CJ3+' });
+    expect(record.after).toMatchObject({
+      model: 'Citation CJ4',
+      fields: ['model'],
+    });
+  });
+
+  test('operator staff have no aircraft routes yet', async ({ request }) => {
+    const { email } = await registerOperator(request);
+    // Staff invitations arrive in step 7; the role is checked on every request.
+    await withPrisma(async (prisma) => {
+      await prisma.user.update({
+        where: { email },
+        data: { role: 'OPERATOR_STAFF' },
+      });
+    });
+    expect((await request.get('operator/aircraft')).status()).toBe(403);
+    expect(
+      (
+        await request.patch(`operator/aircraft/${randomUUID()}`, {
+          headers: await csrfHeaders(request),
+          data: { passengerCapacity: 4 },
+        })
+      ).status(),
+    ).toBe(403);
+  });
+
+  test('a suspended operator can still ground an aircraft but not add one', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const id = (await created.json()).data.id as string;
+    await withPrisma(async (prisma) => {
+      const { operatorId } = await prisma.aircraft.findUniqueOrThrow({
+        where: { id },
+        select: { operatorId: true },
+      });
+      await prisma.operator.update({
+        where: { id: operatorId },
+        data: { status: 'SUSPENDED' },
+      });
+    });
+
+    const grounded = await request.patch(
+      `operator/aircraft/${id}/availability-status`,
+      { headers, data: { status: 'MAINTENANCE' } },
+    );
+    expect(grounded.status()).toBe(200);
+    expect((await grounded.json()).data.availabilityStatus).toBe('MAINTENANCE');
+
+    const another = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    expect(another.status()).toBe(409);
+    expect((await another.json()).error.code).toBe('OPERATOR_NOT_APPROVED');
+  });
 });
