@@ -1,0 +1,3105 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "description": "Always answers 200 while the process is running. `checks` reports each dependency.",
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Liveness and dependency status",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "With email and password, or with a mobile number. A six-digit code is sent to verify the address. The answer is the same whether or not the address is already registered.",
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationSentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Register a customer",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/request": {
+      "post": {
+        "description": "With `phone`: starts a sign-in for a customer registered with that number and answers with a `verificationId`. With `verificationId`: sends a fresh code for an attempt that is still open (400 `AUTH_OTP_EXPIRED` if it is not). The answer never reveals whether the number is registered.",
+        "operationId": "AuthController_requestOtp",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestOtpDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationSentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Send a one-time code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      "post": {
+        "description": "With the `verificationId` from registration or `POST /auth/otp/request`. Sets the session cookies. A code works once.",
+        "operationId": "AuthController_verifyOtp",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyOtpDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verify a one-time code and sign in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/email/verify": {
+      "post": {
+        "description": "The same as `POST /auth/otp/verify`, kept for registrations verified by email.",
+        "operationId": "AuthController_verifyEmail",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyOtpDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verify an email address and sign in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password/forgot": {
+      "post": {
+        "description": "Always answers 202, whether or not the account exists.",
+        "operationId": "AuthController_forgotPassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "summary": "Email a password reset link",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password/reset": {
+      "post": {
+        "description": "Also used to accept a staff invitation. The link works once, and every existing session is ended.",
+        "operationId": "AuthController_resetPassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Choose a new password with an emailed link",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Sets the session cookies. The answer is the same for an unknown email and a wrong password.",
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Sign in with email and password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Reads the refresh cookie and replaces all three session cookies. Each refresh token works once.",
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Rotate the session tokens",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Ends this sign-in and clears the session cookies. Works with an expired access token, as long as the refresh cookie is sent. Always answers 204.",
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Sign out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "AdminUsersController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Role"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/UserStatus"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Part of an email address or phone number.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminUserResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List users",
+        "tags": [
+          "admin: users"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "get": {
+        "operationId": "AdminUsersController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One user",
+        "tags": [
+          "admin: users"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/status": {
+      "patch": {
+        "description": "Needs a reason and is audited. A suspended user is refused on their next request.",
+        "operationId": "AdminUsersController_setStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Suspend or reinstate a user",
+        "tags": [
+          "admin: users"
+        ]
+      }
+    },
+    "/api/v1/admin/staff": {
+      "post": {
+        "description": "The person receives an email link to choose a password; the account is active once they do. Repeat the call for an account that is still waiting to send a new link.",
+        "operationId": "AdminUsersController_createStaff",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create an internal account",
+        "tags": [
+          "admin: users"
+        ]
+      }
+    },
+    "/api/v1/content/policies/{slug}": {
+      "get": {
+        "description": "For example `terms` or `privacy`.",
+        "operationId": "ContentController_policy",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A published policy",
+        "tags": [
+          "content"
+        ]
+      }
+    },
+    "/api/v1/me/notifications": {
+      "get": {
+        "operationId": "MeNotificationsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "In-app notifications, newest first",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/notifications/{id}/read": {
+      "patch": {
+        "operationId": "MeNotificationsController_read",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Mark a notification as read",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "description": "The signed-in user, their role and, for customers, profile.",
+        "operationId": "MeController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Current user",
+        "tags": [
+          "me"
+        ]
+      },
+      "patch": {
+        "description": "Customers only. Send only the fields to change.",
+        "operationId": "MeController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update the customer profile",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/consents": {
+      "post": {
+        "operationId": "MeController_consent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Record a consent",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/passengers": {
+      "get": {
+        "operationId": "PassengersController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PassengerResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Saved passengers",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "operationId": "PassengersController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePassengerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassengerResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Save a passenger",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/passengers/{id}": {
+      "patch": {
+        "operationId": "PassengersController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePassengerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassengerResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update a saved passenger",
+        "tags": [
+          "me"
+        ]
+      },
+      "delete": {
+        "operationId": "PassengersController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove a saved passenger",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/operator/register": {
+      "post": {
+        "description": "Creates the organisation as a draft with its first administrator, and sends a code to verify the email. The answer is the same whether or not the email is already registered.",
+        "operationId": "OperatorController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterOperatorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationSentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Register an operator organisation",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
+    "/api/v1/operator/profile": {
+      "get": {
+        "operationId": "OperatorController_profile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorProfileResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The operator organisation and its review status",
+        "tags": [
+          "operator"
+        ]
+      },
+      "patch": {
+        "description": "Not while the application is under review. Legal name, registration number and tax number are locked after approval.",
+        "operationId": "OperatorController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOperatorProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorProfileResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update the operator organisation",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
+    "/api/v1/operator/profile/submit": {
+      "post": {
+        "description": "Needs company details, at least one service category, and the required compliance documents.",
+        "operationId": "OperatorController_submit",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorProfileResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Submit the application for review",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
+    "/api/v1/operator/documents": {
+      "get": {
+        "operationId": "OperatorController_documents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorDocumentResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Compliance documents",
+        "tags": [
+          "operator"
+        ]
+      },
+      "post": {
+        "description": "Upload the file first with `POST /uploads/presign`.",
+        "operationId": "OperatorController_addDocument",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddOperatorDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add a compliance document",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
+    "/api/v1/operator/documents/{id}": {
+      "delete": {
+        "operationId": "OperatorController_removeDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove a compliance document",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
+    "/api/v1/admin/operators": {
+      "get": {
+        "description": "Longest-waiting applications first.",
+        "operationId": "AdminOperatorsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/OperatorStatus"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Part of the legal or trading name.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminOperatorSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List operators",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}": {
+      "get": {
+        "operationId": "AdminOperatorsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One operator with its compliance documents",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}/approve": {
+      "post": {
+        "description": "The required documents must be verified first. Audited.",
+        "operationId": "AdminOperatorsController_approve",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Approve an operator",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}/reject": {
+      "post": {
+        "description": "Needs a reason, which the operator sees. Audited.",
+        "operationId": "AdminOperatorsController_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reject an application",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}/suspend": {
+      "post": {
+        "description": "Needs a reason, which the operator sees. Audited.",
+        "operationId": "AdminOperatorsController_suspend",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Suspend an approved operator",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}/reinstate": {
+      "post": {
+        "operationId": "AdminOperatorsController_reinstate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reinstate a suspended operator",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/admin/documents/{id}/verify": {
+      "post": {
+        "description": "A rejection needs a reason. Audited.",
+        "operationId": "AdminOperatorsController_verifyDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Verify or reject a compliance document",
+        "tags": [
+          "admin: operators"
+        ]
+      }
+    },
+    "/api/v1/uploads/presign": {
+      "post": {
+        "description": "Send the file to `upload.url` with `upload.method` and `upload.headers`, then attach `fileId` to a record. PDF, JPEG or PNG, 10 MB at most.",
+        "operationId": "DocumentsController_presign",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignUploadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignUploadResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a signed URL to upload a file to",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{id}/download": {
+      "get": {
+        "description": "Answers 404 for a file the caller may not read.",
+        "operationId": "DocumentsController_download",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadLinkResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Get a short-lived link to download a file",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "description": "Newest first. Filter by entity, actor, action and time range.",
+        "operationId": "AdminAuditController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "entityType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "Operator",
+              "type": "string"
+            }
+          },
+          {
+            "name": "entityId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "auth.login",
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "Earliest time, UTC.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Latest time, UTC.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditLogResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List audit records",
+        "tags": [
+          "admin: audit"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Flyviman API",
+    "description": "Aviation booking platform API. Conventions: docs/api/api-design.md.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "cookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "access_token"
+      }
+    },
+    "schemas": {
+      "HealthChecksDto": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          }
+        },
+        "required": [
+          "database"
+        ]
+      },
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "uptimeSeconds": {
+            "type": "number",
+            "example": 42
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HealthChecksDto"
+          }
+        },
+        "required": [
+          "status",
+          "uptimeSeconds",
+          "checks"
+        ]
+      },
+      "RegisterDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "Register with email and password. Send this or `phone`.",
+            "example": "asha@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12,
+            "description": "Required with `email`."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Register with a mobile number and one-time code. E.164.",
+            "example": "+919876543210"
+          },
+          "acceptTerms": {
+            "type": "boolean",
+            "description": "Must be true: the terms and the privacy policy are accepted."
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "acceptTerms"
+        ]
+      },
+      "VerificationSentResponseDto": {
+        "type": "object",
+        "properties": {
+          "verificationId": {
+            "type": "string",
+            "description": "Identifies this attempt. Send it back with the code to verify."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "EMAIL",
+              "SMS"
+            ]
+          },
+          "destination": {
+            "type": "string",
+            "description": "Where the code was sent, partly hidden.",
+            "example": "a***@example.com"
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "description": "Seconds until the code expires."
+          }
+        },
+        "required": [
+          "verificationId",
+          "channel",
+          "destination",
+          "expiresInSeconds"
+        ]
+      },
+      "RequestOtpDto": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Sign in a customer registered with this number.",
+            "example": "+919876543210"
+          },
+          "verificationId": {
+            "type": "string",
+            "description": "Send a fresh code for this open attempt instead."
+          }
+        }
+      },
+      "VerifyOtpDto": {
+        "type": "object",
+        "properties": {
+          "verificationId": {
+            "type": "string",
+            "description": "From registration or `POST /auth/otp/request`."
+          },
+          "code": {
+            "type": "string",
+            "example": "123456"
+          }
+        },
+        "required": [
+          "verificationId",
+          "code"
+        ]
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "CUSTOMER",
+          "OPERATOR_ADMIN",
+          "OPERATOR_STAFF",
+          "OPS",
+          "FINANCE_ADMIN",
+          "SUPER_ADMIN"
+        ]
+      },
+      "UserStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING_VERIFICATION",
+          "ACTIVE",
+          "SUSPENDED"
+        ]
+      },
+      "UserResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "example": "asha@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+919876543210"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "phone",
+          "role",
+          "status"
+        ]
+      },
+      "ForgotPasswordDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "asha@example.com"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "ResetPasswordDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "From the emailed link."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "asha@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "AdminUserResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "example": "asha@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+919876543210"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserStatus"
+              }
+            ]
+          },
+          "emailVerifiedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "phoneVerifiedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "phone",
+          "role",
+          "status",
+          "emailVerifiedAt",
+          "phoneVerifiedAt",
+          "lastLoginAt",
+          "createdAt"
+        ]
+      },
+      "SetUserStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the status is being changed. Audited."
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ]
+      },
+      "CreateStaffDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "ops.lead@flyviman.com"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "OPS",
+              "FINANCE_ADMIN",
+              "SUPER_ADMIN"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ]
+      },
+      "PolicyResponseDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "example": "terms"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain text with blank lines between paragraphs."
+          },
+          "version": {
+            "type": "string",
+            "example": "2026-11-01"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "body",
+          "version",
+          "publishedAt"
+        ]
+      },
+      "NotificationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "templateKey": {
+            "type": "string",
+            "example": "operator.approved"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "templateKey",
+          "title",
+          "body",
+          "readAt",
+          "createdAt"
+        ]
+      },
+      "ProfileResponseDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "nationality": {
+            "type": "string",
+            "nullable": true,
+            "example": "IN"
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "nationality"
+        ]
+      },
+      "MeResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "example": "asha@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+919876543210"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserStatus"
+              }
+            ]
+          },
+          "profile": {
+            "nullable": true,
+            "description": "Present for customers; null for operator and internal users.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProfileResponseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "phone",
+          "role",
+          "status",
+          "profile"
+        ]
+      },
+      "UpdateMeDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "nationality": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 3166-1 alpha-2.",
+            "example": "IN"
+          }
+        }
+      },
+      "ConsentType": {
+        "type": "string",
+        "enum": [
+          "TERMS",
+          "PRIVACY",
+          "BOOKING_CONDITIONS",
+          "MARKETING"
+        ]
+      },
+      "RecordConsentDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConsentType"
+              }
+            ]
+          },
+          "version": {
+            "type": "string",
+            "description": "Required for BOOKING_CONDITIONS and MARKETING. Ignored for TERMS and PRIVACY, which always record the published version."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ConsentResponseDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConsentType"
+              }
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "type",
+          "version",
+          "acceptedAt"
+        ]
+      },
+      "Gender": {
+        "type": "string",
+        "enum": [
+          "FEMALE",
+          "MALE",
+          "OTHER",
+          "UNSPECIFIED"
+        ]
+      },
+      "IdentityDocumentType": {
+        "type": "string",
+        "enum": [
+          "PASSPORT",
+          "AADHAAR",
+          "DRIVING_LICENCE",
+          "VOTER_ID",
+          "OTHER"
+        ]
+      },
+      "PassengerResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "gender": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Gender"
+              }
+            ]
+          },
+          "nationality": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentType": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdentityDocumentType"
+              }
+            ]
+          },
+          "documentNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentExpiry": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "specialAssistance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "gender",
+          "nationality",
+          "documentType",
+          "documentNumber",
+          "documentExpiry",
+          "specialAssistance"
+        ]
+      },
+      "CreatePassengerDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "gender": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Gender"
+              }
+            ]
+          },
+          "nationality": {
+            "type": "string",
+            "nullable": true,
+            "example": "IN"
+          },
+          "documentType": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdentityDocumentType"
+              }
+            ]
+          },
+          "documentNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stored encrypted."
+          },
+          "documentExpiry": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "specialAssistance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName"
+        ]
+      },
+      "UpdatePassengerDto": {
+        "type": "object",
+        "properties": {
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "nationality": {
+            "type": "string",
+            "nullable": true,
+            "example": "IN"
+          },
+          "documentType": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdentityDocumentType"
+              }
+            ]
+          },
+          "documentNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stored encrypted."
+          },
+          "documentExpiry": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "specialAssistance": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "gender": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Gender"
+              }
+            ]
+          }
+        }
+      },
+      "RegisterOperatorDto": {
+        "type": "object",
+        "properties": {
+          "legalName": {
+            "type": "string",
+            "example": "Skyline Aviation Private Limited"
+          },
+          "contactName": {
+            "type": "string",
+            "example": "Meera Nair"
+          },
+          "email": {
+            "type": "string",
+            "description": "Becomes the administrator sign-in."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12
+          },
+          "phone": {
+            "type": "string",
+            "example": "+919876543210"
+          },
+          "acceptTerms": {
+            "type": "boolean",
+            "description": "Must be true."
+          }
+        },
+        "required": [
+          "legalName",
+          "contactName",
+          "email",
+          "password",
+          "acceptTerms"
+        ]
+      },
+      "OperatorStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "PENDING_REVIEW",
+          "APPROVED",
+          "REJECTED",
+          "SUSPENDED"
+        ]
+      },
+      "AddressDto": {
+        "type": "object",
+        "properties": {
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "postalCode": {
+            "type": "string",
+            "example": "400001"
+          },
+          "country": {
+            "type": "string",
+            "example": "IN",
+            "description": "ISO 3166-1 alpha-2."
+          }
+        },
+        "required": [
+          "line1",
+          "city",
+          "state",
+          "postalCode",
+          "country"
+        ]
+      },
+      "ServiceCategory": {
+        "type": "string",
+        "enum": [
+          "SCHEDULED_AIRLINE",
+          "PRIVATE_CHARTER",
+          "HELICOPTER",
+          "EMPTY_LEG",
+          "AIR_AMBULANCE"
+        ]
+      },
+      "OperatorProfileResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "businessAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "billingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The reason given when the application was rejected or suspended."
+          },
+          "missing": {
+            "description": "What is still needed before the application can be submitted. Empty when it is complete.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "legalName",
+          "tradingName",
+          "registrationNumber",
+          "taxNumber",
+          "businessAddress",
+          "billingAddress",
+          "contactName",
+          "contactEmail",
+          "contactPhone",
+          "serviceCategories",
+          "operatingRegions",
+          "submittedAt",
+          "reviewedAt",
+          "reviewNote",
+          "missing"
+        ]
+      },
+      "UpdateOperatorProfileDto": {
+        "type": "object",
+        "properties": {
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "GSTIN."
+          },
+          "businessAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "billingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRIVATE_CHARTER",
+                "HELICOPTER",
+                "EMPTY_LEG",
+                "AIR_AMBULANCE"
+              ]
+            }
+          },
+          "operatingRegions": {
+            "example": [
+              "Maharashtra",
+              "Goa"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OperatorDocumentType": {
+        "type": "string",
+        "enum": [
+          "AOC",
+          "INSURANCE",
+          "REGISTRATION",
+          "OTHER"
+        ]
+      },
+      "DocumentVerificationStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "VERIFIED",
+          "REJECTED"
+        ]
+      },
+      "OperatorDocumentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorDocumentType"
+              }
+            ]
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Use with `GET /documents/:id/download`."
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "verificationStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentVerificationStatus"
+              }
+            ]
+          },
+          "verificationNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "fileId",
+          "fileName",
+          "issuedAt",
+          "expiresAt",
+          "verificationStatus",
+          "verificationNote",
+          "createdAt"
+        ]
+      },
+      "AddOperatorDocumentDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorDocumentType"
+              }
+            ]
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "From `POST /uploads/presign`, after the file was uploaded."
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        },
+        "required": [
+          "type",
+          "fileId"
+        ]
+      },
+      "AdminOperatorSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "legalName",
+          "tradingName",
+          "contactName",
+          "contactEmail",
+          "serviceCategories",
+          "submittedAt",
+          "createdAt"
+        ]
+      },
+      "AdminOperatorDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "businessAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "billingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The reason given when the application was rejected or suspended."
+          },
+          "missing": {
+            "description": "What is still needed before the application can be submitted. Empty when it is complete.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reviewedById": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperatorDocumentResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "legalName",
+          "tradingName",
+          "registrationNumber",
+          "taxNumber",
+          "businessAddress",
+          "billingAddress",
+          "contactName",
+          "contactEmail",
+          "contactPhone",
+          "serviceCategories",
+          "operatingRegions",
+          "submittedAt",
+          "reviewedAt",
+          "reviewNote",
+          "missing",
+          "reviewedById",
+          "createdAt",
+          "documents"
+        ]
+      },
+      "ReasonDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Shown to the operator and audited."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "VerifyDocumentDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "REJECTED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when rejecting."
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "FilePurpose": {
+        "type": "string",
+        "enum": [
+          "OPERATOR_DOCUMENT"
+        ]
+      },
+      "PresignUploadDto": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FilePurpose"
+              }
+            ]
+          },
+          "fileName": {
+            "type": "string",
+            "example": "air-operator-certificate.pdf"
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ]
+          },
+          "sizeBytes": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10485760
+          }
+        },
+        "required": [
+          "purpose",
+          "fileName",
+          "contentType",
+          "sizeBytes"
+        ]
+      },
+      "UploadTargetDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUT"
+            ]
+          },
+          "headers": {
+            "type": "object",
+            "description": "Headers to send with the upload.",
+            "example": {
+              "Content-Type": "application/pdf"
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "method",
+          "headers",
+          "expiresAt"
+        ]
+      },
+      "PresignUploadResponseDto": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Pass this when attaching the file to a record."
+          },
+          "upload": {
+            "$ref": "#/components/schemas/UploadTargetDto"
+          }
+        },
+        "required": [
+          "fileId",
+          "upload"
+        ]
+      },
+      "DownloadLinkResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "expiresAt"
+        ]
+      },
+      "AuditLogResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "actorRole": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "action": {
+            "type": "string",
+            "example": "auth.login"
+          },
+          "entityType": {
+            "type": "string",
+            "example": "User"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "before": {
+            "type": "object",
+            "nullable": true
+          },
+          "after": {
+            "type": "object",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "ipAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "actorRole",
+          "action",
+          "entityType",
+          "entityId",
+          "before",
+          "after",
+          "reason",
+          "ipAddress",
+          "requestId",
+          "createdAt"
+        ]
+      }
+    }
+  }
+}

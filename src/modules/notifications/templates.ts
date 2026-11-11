@@ -1,0 +1,117 @@
+import type { NotificationChannel } from '../../generated/prisma/enums.js';
+
+export interface TemplateDefinition {
+  key: string;
+  channel: NotificationChannel;
+  subject?: string;
+  body: string;
+}
+
+/**
+ * Built-in wording, used when the NotificationTemplate table has no active
+ * row for a key and channel. `npm run db:seed` copies these into the table,
+ * where administrators will be able to edit them (M8). Placeholders are
+ * `{{name}}`. SMS and WhatsApp wording must be registered with the provider
+ * before launch in India.
+ */
+export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
+  {
+    key: 'auth.verification_code',
+    channel: 'EMAIL',
+    subject: 'Your Flyviman verification code',
+    body: 'Your verification code is {{code}}. It expires in {{minutes}} minutes. If you did not ask for it, you can ignore this email.',
+  },
+  {
+    key: 'auth.verification_code',
+    channel: 'SMS',
+    body: '{{code}} is your Flyviman verification code. It expires in {{minutes}} minutes.',
+  },
+  {
+    key: 'auth.password_reset',
+    channel: 'EMAIL',
+    subject: 'Reset your Flyviman password',
+    body: 'Use this link to choose a new password: {{link}}\nIt works once and expires in {{minutes}} minutes. If you did not ask for it, you can ignore this email.',
+  },
+  {
+    key: 'staff.invitation',
+    channel: 'EMAIL',
+    subject: 'Your Flyviman staff account',
+    body: 'A Flyviman staff account has been created for you. Choose your password here: {{link}}\nThe link works once and expires in {{hours}} hours.',
+  },
+  {
+    key: 'customer.welcome',
+    channel: 'EMAIL',
+    subject: 'Welcome to Flyviman',
+    body: 'Hello {{firstName}}, your Flyviman account is ready.',
+  },
+  {
+    key: 'customer.welcome',
+    channel: 'IN_APP',
+    subject: 'Welcome to Flyviman',
+    body: 'Your account is ready. Add the people you travel with under Saved passengers.',
+  },
+  {
+    key: 'operator.submitted',
+    channel: 'IN_APP',
+    subject: 'Application received',
+    body: 'We have received the application for {{operatorName}}. Our operations team will review it.',
+  },
+  {
+    key: 'operator.approved',
+    channel: 'EMAIL',
+    subject: 'Your Flyviman operator account is approved',
+    body: '{{operatorName}} has been approved on Flyviman.',
+  },
+  {
+    key: 'operator.approved',
+    channel: 'IN_APP',
+    subject: 'Application approved',
+    body: '{{operatorName}} has been approved on Flyviman.',
+  },
+  {
+    key: 'operator.rejected',
+    channel: 'EMAIL',
+    subject: 'Your Flyviman operator application needs changes',
+    body: 'The application for {{operatorName}} was not approved. Reason: {{reason}}\nYou can update the application and submit it again.',
+  },
+  {
+    key: 'operator.rejected',
+    channel: 'IN_APP',
+    subject: 'Application not approved',
+    body: 'Reason: {{reason}} You can update the application and submit it again.',
+  },
+  {
+    key: 'operator.suspended',
+    channel: 'EMAIL',
+    subject: 'Your Flyviman operator account is suspended',
+    body: '{{operatorName}} has been suspended on Flyviman. Reason: {{reason}}',
+  },
+  {
+    key: 'operator.suspended',
+    channel: 'IN_APP',
+    subject: 'Account suspended',
+    body: 'Reason: {{reason}}',
+  },
+  {
+    key: 'operator.reinstated',
+    channel: 'EMAIL',
+    subject: 'Your Flyviman operator account is active again',
+    body: '{{operatorName}} has been reinstated on Flyviman.',
+  },
+  {
+    key: 'operator.reinstated',
+    channel: 'IN_APP',
+    subject: 'Account reinstated',
+    body: '{{operatorName}} is active again.',
+  },
+];
+
+/** Fills `{{name}}` placeholders. An unknown placeholder becomes empty. */
+export function render(
+  text: string,
+  variables: Record<string, string | number>,
+): string {
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, name: string) =>
+    name in variables ? String(variables[name]) : '',
+  );
+}

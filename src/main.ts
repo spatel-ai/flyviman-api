@@ -5,7 +5,7 @@ import { AppModule } from './app.module.js';
 import { API_PREFIX, configureApp, DOCS_PATH } from './app.setup.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
   configureApp(app);
 
   const port = app.get(ConfigService).getOrThrow<number>('PORT');

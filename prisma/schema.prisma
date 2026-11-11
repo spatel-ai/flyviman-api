@@ -40,16 +40,23 @@ model User {
   createdAt       DateTime   @default(now()) @db.Timestamptz
   updatedAt       DateTime   @updatedAt @db.Timestamptz
 
-  sessions  Session[]
-  auditLogs AuditLog[]
+  sessions        Session[]
+  consents        Consent[]
+  customerProfile CustomerProfile?
+  operatorMember  OperatorMember?
+  notifications   Notification[]
+  storedFiles     StoredFile[]
 
   @@index([role, status])
 }
 
-/// One row per signed-in device. Refresh tokens are stored hashed and rotate.
+/// One row per issued refresh token. Refresh tokens are stored hashed and rotate.
+/// Every rotation of one sign-in shares a familyId; reuse of a rotated token
+/// revokes the whole family.
 model Session {
   id               String    @id @default(uuid()) @db.Uuid
   userId           String    @db.Uuid
+  familyId         String    @db.Uuid
   refreshTokenHash String    @unique
   userAgent        String?
   ipAddress        String?
@@ -60,9 +67,12 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([familyId])
 }
 
-/// Append-only record of administrative and financial actions.
+/// Append-only record of administrative and financial actions. `actorId` is
+/// deliberately not a foreign key: a record must outlive the user it names
+/// and can never be updated, not even to clear the reference.
 model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
   actorId    String?  @db.Uuid
@@ -77,8 +87,283 @@ model AuditLog {
   requestId  String?
   createdAt  DateTime @default(now()) @db.Timestamptz
 
-  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
-
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// M1. Identity
+// ---------------------------------------------------------------------------
+
+enum ConsentType {
+  TERMS
+  PRIVACY
+  BOOKING_CONDITIONS
+  MARKETING
+}
+
+/// One row per acceptance. `version` is the ContentItem.version accepted.
+model Consent {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String      @db.Uuid
+  type       ConsentType
+  version    String
+  acceptedAt DateTime    @default(now()) @db.Timestamptz
+  ipAddress  String?
+  createdAt  DateTime    @default(now()) @db.Timestamptz
+  updatedAt  DateTime    @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+}
+
+model CustomerProfile {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @db.Uuid
+  firstName   String
+  lastName    String
+  dateOfBirth DateTime? @db.Date
+  /// ISO 3166-1 alpha-2.
+  nationality String?   @db.Char(2)
+  preferences Json?
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @db.Timestamptz
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passengers Passenger[]
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
+  UNSPECIFIED
+}
+
+enum IdentityDocumentType {
+  PASSPORT
+  AADHAAR
+  DRIVING_LICENCE
+  VOTER_ID
+  OTHER
+}
+
+/// A traveller saved by a customer. `documentNumber` is encrypted by the
+/// application (docs/architecture/security-rbac.md). Removal is a soft delete
+/// because bookings will refer to passengers.
+model Passenger {
+  id                String                @id @default(uuid()) @db.Uuid
+  customerId        String                @db.Uuid
+  firstName         String
+  lastName          String
+  dateOfBirth       DateTime?             @db.Date
+  gender            Gender                @default(UNSPECIFIED)
+  nationality       String?               @db.Char(2)
+  documentType      IdentityDocumentType?
+  documentNumber    String?
+  documentExpiry    DateTime?             @db.Date
+  specialAssistance String?
+  deletedAt         DateTime?             @db.Timestamptz
+  createdAt         DateTime              @default(now()) @db.Timestamptz
+  updatedAt         DateTime              @updatedAt @db.Timestamptz
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// M1. Operators
+// ---------------------------------------------------------------------------
+
+enum ServiceCategory {
+  SCHEDULED_AIRLINE
+  PRIVATE_CHARTER
+  HELICOPTER
+  EMPTY_LEG
+  AIR_AMBULANCE
+}
+
+/// Values and transitions: docs/architecture/state-machines.md.
+enum OperatorStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+model Operator {
+  id                 String            @id @default(uuid()) @db.Uuid
+  legalName          String
+  tradingName        String?
+  registrationNumber String?
+  taxNumber          String?
+  businessAddress    Json?
+  billingAddress     Json?
+  contactName        String
+  contactEmail       String
+  contactPhone       String?
+  serviceCategories  ServiceCategory[]
+  operatingRegions   String[]
+  status             OperatorStatus    @default(DRAFT)
+  submittedAt        DateTime?         @db.Timestamptz
+  reviewedById       String?           @db.Uuid
+  reviewedAt         DateTime?         @db.Timestamptz
+  reviewNote         String?
+  bookingMode        Json?
+  paymentModel       Json?
+  createdAt          DateTime          @default(now()) @db.Timestamptz
+  updatedAt          DateTime          @updatedAt @db.Timestamptz
+
+  members   OperatorMember[]
+  documents OperatorDocument[]
+
+  @@index([status, submittedAt])
+}
+
+/// Links an operator user to their organisation.
+model OperatorMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  operatorId  String   @db.Uuid
+  userId      String   @unique @db.Uuid
+  permissions Json?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  operator Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([operatorId])
+}
+
+enum OperatorDocumentType {
+  AOC
+  INSURANCE
+  REGISTRATION
+  OTHER
+}
+
+enum DocumentVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model OperatorDocument {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  operatorId         String                     @db.Uuid
+  type               OperatorDocumentType
+  /// The uploaded file (documents module). Holds the storage key and name.
+  fileId             String                     @unique @db.Uuid
+  issuedAt           DateTime?                  @db.Date
+  expiresAt          DateTime?                  @db.Date
+  verificationStatus DocumentVerificationStatus @default(PENDING)
+  verifiedById       String?                    @db.Uuid
+  verifiedAt         DateTime?                  @db.Timestamptz
+  verificationNote   String?
+  createdAt          DateTime                   @default(now()) @db.Timestamptz
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz
+
+  operator Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@index([operatorId, type])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// M1. Platform: files, notifications, content
+// ---------------------------------------------------------------------------
+
+enum FilePurpose {
+  OPERATOR_DOCUMENT
+}
+
+/// Metadata for a file in private storage. A file is usable once `uploadedAt`
+/// is set, which happens when its owner attaches it to a record.
+model StoredFile {
+  id          String      @id @default(uuid()) @db.Uuid
+  ownerId     String      @db.Uuid
+  purpose     FilePurpose
+  storageKey  String      @unique
+  fileName    String
+  contentType String
+  sizeBytes   Int
+  uploadedAt  DateTime?   @db.Timestamptz
+  createdAt   DateTime    @default(now()) @db.Timestamptz
+  updatedAt   DateTime    @updatedAt @db.Timestamptz
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  @@index([ownerId])
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  IN_APP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// Delivery log and in-app inbox. `payload` never holds a one-time password,
+/// a reset link or medical data.
+model Notification {
+  id                String              @id @default(uuid()) @db.Uuid
+  userId            String              @db.Uuid
+  channel           NotificationChannel
+  templateKey       String
+  payload           Json
+  status            NotificationStatus  @default(QUEUED)
+  readAt            DateTime?           @db.Timestamptz
+  providerMessageId String?
+  createdAt         DateTime            @default(now()) @db.Timestamptz
+  updatedAt         DateTime            @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, channel, createdAt])
+}
+
+model NotificationTemplate {
+  id        String              @id @default(uuid()) @db.Uuid
+  key       String
+  channel   NotificationChannel
+  subject   String?
+  body      String
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now()) @db.Timestamptz
+  updatedAt DateTime            @updatedAt @db.Timestamptz
+
+  @@unique([key, channel])
+}
+
+enum ContentKind {
+  BANNER
+  FAQ
+  POLICY
+}
+
+model ContentItem {
+  id          String      @id @default(uuid()) @db.Uuid
+  kind        ContentKind
+  slug        String
+  title       String
+  body        String
+  /// For policies: the version a Consent row records.
+  version     String?
+  region      String?
+  sortOrder   Int         @default(0)
+  publishedAt DateTime?   @db.Timestamptz
+  createdAt   DateTime    @default(now()) @db.Timestamptz
+  updatedAt   DateTime    @updatedAt @db.Timestamptz
+
+  @@unique([kind, slug])
+  @@index([kind, publishedAt, sortOrder])
 }

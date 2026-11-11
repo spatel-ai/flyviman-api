@@ -5,7 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AppException } from '../errors/app.exception.js';
-import { AllExceptionsFilter, ErrorBody } from './all-exceptions.filter.js';
+import {
+  AllExceptionsFilter,
+  describeError,
+  ErrorBody,
+} from './all-exceptions.filter.js';
 
 function run(exception: unknown) {
   const json = vi.fn<(body: ErrorBody) => void>();
@@ -73,5 +77,24 @@ describe('AllExceptionsFilter', () => {
     expect(status).toBe(500);
     expect(body.error.code).toBe('INTERNAL_ERROR');
     expect(body.error.message).not.toContain('leaked');
+  });
+});
+
+describe('describeError', () => {
+  it('names the error and where it was thrown, without its message', () => {
+    class PrismaClientValidationError extends Error {}
+    const error = new PrismaClientValidationError(
+      'Invalid `prisma.passenger.update()` invocation: firstName: "Kavya", documentNumber: "P1234567"',
+    );
+    const described = describeError(error);
+    expect(described).toContain('PrismaClientValidationError');
+    expect(described).not.toContain('Kavya');
+    expect(described).not.toContain('P1234567');
+  });
+
+  it('includes an error code when there is one', () => {
+    const error = Object.assign(new Error('secret detail'), { code: 'P2002' });
+    expect(describeError(error)).toContain('code=P2002');
+    expect(describeError('a string')).toBe('non-error thrown');
   });
 });

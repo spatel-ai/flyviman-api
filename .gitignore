@@ -21,3 +21,6 @@ test-results
 # misc
 .DS_Store
 *.log
+
+# local-disk storage mock
+.storage

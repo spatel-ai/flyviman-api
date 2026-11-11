@@ -5,10 +5,12 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ErrorDetail } from './common/errors/app.exception.js';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
-import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware.js';
 
 export const API_PREFIX = 'api/v1';
@@ -25,6 +27,17 @@ function toDetails(errors: ValidationError[], parent = ''): ErrorDetail[] {
   });
 }
 
+export function buildOpenApiConfig() {
+  return new DocumentBuilder()
+    .setTitle('Flyviman API')
+    .setDescription(
+      'Aviation booking platform API. Conventions: docs/api/api-design.md.',
+    )
+    .setVersion('1.0')
+    .addCookieAuth('access_token')
+    .build();
+}
+
 /**
  * Applies the cross-cutting behaviour every request goes through. Kept apart
  * from `main.ts` so tests can build an identically configured application.
@@ -32,8 +45,16 @@ function toDetails(errors: ValidationError[], parent = ''): ErrorDetail[] {
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
 
+  app.useLogger(app.get(Logger));
   app.setGlobalPrefix(API_PREFIX);
+  // Behind the load balancer in deployed environments, so `request.ip` is the
+  // caller's address (rate limiting and audit records depend on it).
+  if (config.get('NODE_ENV') === 'production') {
+    (app as NestExpressApplication).set('trust proxy', 1);
+  }
   app.use(requestIdMiddleware);
+  app.use(helmet());
+  app.use(cookieParser());
   app.enableCors({
     origin: config.getOrThrow<string>('WEB_ORIGIN'),
     credentials: true,
@@ -51,18 +72,9 @@ export function configureApp(app: INestApplication): void {
         }),
     }),
   );
-  app.useGlobalInterceptors(new ResponseEnvelopeInterceptor());
-  app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
 
-  const document = new DocumentBuilder()
-    .setTitle('Flyviman API')
-    .setDescription(
-      'Aviation booking platform API. Conventions: docs/api/api-design.md.',
-    )
-    .setVersion('1.0')
-    .addCookieAuth('access_token')
-    .build();
+  const document = buildOpenApiConfig();
   SwaggerModule.setup(DOCS_PATH, app, () =>
     SwaggerModule.createDocument(app, document),
   );

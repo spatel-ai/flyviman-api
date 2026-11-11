@@ -1,5 +1,18 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from 'nestjs-pino';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
+import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor.js';
+import {
+  IdempotencyStore,
+  RedisIdempotencyStore,
+} from './common/idempotency/idempotency.store.js';
+import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
+import { loggerOptions } from './common/logging/logger.options.js';
+import { RateLimitConfig } from './common/rate-limit/rate-limit.js';
+import { RedisModule } from './redis/redis.module.js';
 import { validateEnv } from './config/env.validation.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -27,7 +40,13 @@ import { AuditModule } from './modules/audit/audit.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: loggerOptions,
+    }),
+    ThrottlerModule.forRootAsync({ useClass: RateLimitConfig }),
     PrismaModule,
+    RedisModule,
     HealthModule,
     AuthModule,
     UsersModule,
@@ -49,6 +68,13 @@ import { AuditModule } from './modules/audit/audit.module.js';
     ContentModule,
     ReportsModule,
     AuditModule,
+  ],
+  providers: [
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    // Interceptors wrap in this order: the envelope is outermost.
+    { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: IdempotencyStore, useClass: RedisIdempotencyStore },
   ],
 })
 export class AppModule {}

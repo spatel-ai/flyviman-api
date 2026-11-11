@@ -29,6 +29,25 @@ export interface ErrorBody {
   };
 }
 
+/** Enough to find the fault, with nothing a user typed: class, code, frames. */
+export function describeError(exception: unknown): string {
+  if (!(exception instanceof Error)) return 'non-error thrown';
+  const code = (exception as { code?: unknown }).code;
+  const frames = (exception.stack ?? '')
+    .split('\n')
+    .filter((line) => line.trimStart().startsWith('at '))
+    .slice(0, 5)
+    .map((line) => line.trim())
+    .join(' ');
+  return [
+    exception.constructor.name,
+    typeof code === 'string' ? `code=${code}` : '',
+    frames,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 /** Converts every thrown error into the error envelope from api-design.md. */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -43,10 +62,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, code, message, details } = this.describe(exception);
 
     if (status >= 500) {
-      // The error itself is logged; request bodies and headers never are.
+      // Request bodies and headers are never logged. Nor is the message of
+      // an unexpected error: a database error's message repeats the values
+      // of the query that failed, which can be personal data.
       this.logger.error(
-        `${request.method} ${request.path} failed (requestId=${requestId})`,
-        exception instanceof Error ? exception.stack : String(exception),
+        `${request.method} ${request.path} failed (requestId=${requestId}): ${describeError(exception)}`,
       );
     }
 
