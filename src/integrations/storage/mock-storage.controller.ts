@@ -95,6 +95,10 @@ export class MockStorageController {
     response.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'private, no-store');
+    // Helmet's default (same-origin) would stop the web app, a different
+    // port on the same site, showing a photo. A real bucket sets no such
+    // header; this mock runs only with development tools on.
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
     createReadStream(this.storage.pathFor(ticket.key)).pipe(response);
   }
 

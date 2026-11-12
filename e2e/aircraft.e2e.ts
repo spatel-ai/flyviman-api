@@ -1293,6 +1293,15 @@ test.describe('aircraft availability', () => {
           expiresAt: inDays(1),
         },
       ],
+      [
+        blocks,
+        {
+          startsAt: inDays(2),
+          endsAt: inDays(3),
+          reason: 'SOFT_HOLD',
+          expiresAt: inDays(4),
+        },
+      ],
     ];
     for (const [path, data] of cases) {
       const response = await request.post(path, { headers, data });

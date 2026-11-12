@@ -364,6 +364,13 @@ export class AvailabilityService {
         );
       }
       const lapses = input.expiresAt.getTime();
+      if (lapses > input.endsAt.getTime()) {
+        throw invalid(
+          'expiresAt',
+          'must not be after endsAt',
+          'A soft hold must lapse before the time it holds is over.',
+        );
+      }
       if (lapses <= now || lapses > now + MAX_SOFT_HOLD_DAYS * DAY_MS) {
         throw invalid(
           'expiresAt',

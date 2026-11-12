@@ -22,8 +22,12 @@ import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AvailabilityService } from './availability.service.js';
-import { toHomeBaseDto } from '../aircraft/aircraft.mappers.js';
-import { toBlock, toConflict, toSlot } from './availability.mappers.js';
+import {
+  toBlock,
+  toConflict,
+  toFleetAircraft,
+  toSlot,
+} from './availability.mappers.js';
 import {
   BlockResponseDto,
   CalendarResponseDto,
@@ -74,13 +78,7 @@ export class AvailabilityController {
       new Date(query.to),
     );
     return {
-      aircraft: result.aircraft.map((row) => ({
-        id: row.id,
-        registration: row.registration,
-        listingStatus: row.listingStatus,
-        availabilityStatus: row.availabilityStatus,
-        homeBase: toHomeBaseDto(row.homeBase),
-      })),
+      aircraft: result.aircraft.map(toFleetAircraft),
       slots: result.slots.map(toSlot),
       blocks: result.blocks.map(toBlock),
       truncated: result.truncated,

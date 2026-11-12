@@ -3,7 +3,12 @@ import type {
   AvailabilitySlot,
 } from '../../generated/prisma/client.js';
 import {
+  toHomeBaseDto,
+  type AircraftWithHomeBase,
+} from '../aircraft/aircraft.mappers.js';
+import {
   BlockResponseDto,
+  FleetAircraftDto,
   SlotResponseDto,
   SoftHoldConflictDto,
 } from './dto/availability.dto.js';
@@ -40,5 +45,15 @@ export function toConflict(pair: {
     aircraftId: pair.hold.aircraftId,
     hold: toBlock(pair.hold),
     overlaps: toBlock(pair.overlaps),
+  };
+}
+
+export function toFleetAircraft(row: AircraftWithHomeBase): FleetAircraftDto {
+  return {
+    id: row.id,
+    registration: row.registration,
+    listingStatus: row.listingStatus,
+    availabilityStatus: row.availabilityStatus,
+    homeBase: toHomeBaseDto(row.homeBase),
   };
 }
