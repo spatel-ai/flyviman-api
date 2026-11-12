@@ -95,7 +95,7 @@ The module map, with what each module owns and may depend on, is in `../docs/arc
 - **External providers** are called only through `src/integrations/`. Tests always use the mock.
 - **No personal, medical or payment data in logs.** Requests are logged as method, path and status only. Do not log error messages from the database or a provider: they can repeat the data.
 - **Answers that could reveal whether an account exists do not.** Registration, code and recovery routes behave the same either way.
-- **Development helpers** (messaging outbox, storage mock, local seed accounts) need `ENABLE_DEV_TOOLS=true`, which is refused in production. See `src/integrations/README.md`.
+- **Development helpers** (messaging outbox, storage mock, local seed accounts) need `ENABLE_DEV_TOOLS=true`, which is refused in production and on any non-localhost web origin. The proof-of-concept host instead runs `MESSAGING_PROVIDER=sink` and `STORAGE_PROVIDER=local` with development tools off (D-064); neither is fit for production. See `src/integrations/README.md` and `../docs/deployment.md`.
 - **Prefer Nest's first-party packages** listed in `AGENTS.md`, after reading the package's documentation page. Several (for example `@nestjs/idempotency`, `@nestjs/webhooks`) were at 0.0.x when this project was set up; check maturity before depending on one.
 
 ## Testing

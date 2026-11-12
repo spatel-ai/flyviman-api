@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Paginated } from '../../common/dto/paginated.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import { uniqueOrNull } from '../../common/errors/unique.js';
+import { jsonEqual } from '../../common/json-equal.js';
 import { Prisma, type Aircraft } from '../../generated/prisma/client.js';
 import {
   AircraftAvailabilityStatus,
@@ -19,6 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
+import { LocationsService } from '../locations/locations.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import {
@@ -45,6 +47,13 @@ const MAX_AIRCRAFT_DOCUMENTS = 20;
 const MAX_AIRCRAFT_MEDIA = 30;
 const MAX_AIRCRAFT = 50;
 const MAX_OPERATOR_FILES = 200;
+
+/** Aircraft columns stored as JSON, compared by value on update. */
+const JSON_COLUMNS = new Set<string>([
+  'restrictions',
+  'specifications',
+  'medicalEquipment',
+]);
 
 const ROTARY: AircraftCategory[] = [
   AircraftCategory.HELICOPTER,
@@ -75,6 +84,7 @@ export class AircraftService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly operators: OperatorsService,
     private readonly documents: DocumentsService,
+    private readonly locations: LocationsService,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
   ) {}
@@ -296,11 +306,7 @@ export class AircraftService implements OnModuleInit {
     field: string,
   ): Promise<void> {
     if (!locationId) return;
-    const location = await this.prisma.location.findFirst({
-      where: { id: locationId, isActive: true },
-      select: { id: true },
-    });
-    if (!location) {
+    if (!(await this.locations.isActive(locationId))) {
       throw new AppException(
         'VALIDATION_ERROR',
         'Location not found or inactive.',
@@ -358,12 +364,7 @@ export class AircraftService implements OnModuleInit {
     ];
     const [files, homeBase] = await Promise.all([
       this.documents.describe(fileIds),
-      aircraft.homeBaseId
-        ? this.prisma.location.findUnique({
-            where: { id: aircraft.homeBaseId },
-            select: HOME_BASE_SELECT,
-          })
-        : null,
+      aircraft.homeBaseId ? this.locations.summary(aircraft.homeBaseId) : null,
     ]);
     const media: AircraftMediaRecord[] = mediaRows.map((row) => ({
       ...row,
@@ -633,25 +634,29 @@ export class AircraftService implements OnModuleInit {
       data.medicalEquipment =
         (changes.medicalEquipment as Prisma.InputJsonValue | null) ??
         Prisma.JsonNull;
-      materialTouched.push('medicalEquipment');
+      if (!jsonEqual(changes.medicalEquipment, aircraft.medicalEquipment)) {
+        materialTouched.push('medicalEquipment');
+      }
     }
 
     // Drop values that are already stored, so an unchanged PATCH writes and
-    // audits nothing (as for locations, D-054). JSON objects always count.
+    // audits nothing (as for locations, D-054). JSON columns compare by value,
+    // ignoring key order (D-066).
     const stored = aircraft as unknown as Record<string, unknown>;
     for (const key of Object.keys(data) as (keyof typeof data)[]) {
       const value = data[key];
-      const same = Array.isArray(value)
-        ? JSON.stringify(value) === JSON.stringify(stored[key])
-        : (value === null || typeof value !== 'object') &&
-          value === stored[key];
+      const same = JSON_COLUMNS.has(key)
+        ? jsonEqual(value === Prisma.JsonNull ? null : value, stored[key])
+        : Array.isArray(value)
+          ? JSON.stringify(value) === JSON.stringify(stored[key])
+          : (value === null || typeof value !== 'object') &&
+            value === stored[key];
       if (same) delete data[key];
     }
     if (Object.keys(data).length === 0) return this.withDetail(aircraft);
 
-    // materialTouched records real value changes; medicalEquipment counts when
-    // sent (JSON equality is not compared). Unchanged material fields do not
-    // re-queue review.
+    // materialTouched records real value changes only, so an unchanged
+    // material field never re-queues review.
     const revertToReview =
       materialTouched.length > 0 && this.needsReReview(aircraft.listingStatus);
 

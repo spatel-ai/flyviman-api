@@ -2238,6 +2238,300 @@
         ]
       }
     },
+    "/api/v1/locations": {
+      "get": {
+        "description": "Active locations only. Without `q`, lists them by name, airports first.",
+        "operationId": "LocationsController_search",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Part of a name or city, or an IATA or ICAO code. Exact codes rank first.",
+            "schema": {
+              "example": "mumbai",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LocationType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocationResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search airports and heliports",
+        "tags": [
+          "locations"
+        ]
+      }
+    },
+    "/api/v1/locations/{id}": {
+      "get": {
+        "operationId": "LocationsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One location",
+        "tags": [
+          "locations"
+        ]
+      }
+    },
+    "/api/v1/admin/locations": {
+      "get": {
+        "description": "Active and inactive, with charges, by name.",
+        "operationId": "AdminLocationsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Part of a name or city, or a code.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LocationType"
+            }
+          },
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminLocationResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List locations",
+        "tags": [
+          "admin: locations"
+        ]
+      },
+      "post": {
+        "description": "Audited. IATA and ICAO codes are stored in capitals and must be unique (409 `LOCATION_CODE_IN_USE`).",
+        "operationId": "AdminLocationsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLocationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add a location",
+        "tags": [
+          "admin: locations"
+        ]
+      }
+    },
+    "/api/v1/admin/locations/{id}": {
+      "get": {
+        "operationId": "AdminLocationsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLocationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One location, with charges",
+        "tags": [
+          "admin: locations"
+        ]
+      },
+      "patch": {
+        "description": "Send only the fields to change. Audited with the values before and after. `isActive: false` hides the location from search and from new trips.",
+        "operationId": "AdminLocationsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLocationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change a location, its capabilities or charges",
+        "tags": [
+          "admin: locations"
+        ]
+      }
+    },
     "/api/v1/operator/availability/conflicts": {
       "get": {
         "operationId": "AvailabilityController_conflicts",
@@ -2584,300 +2878,6 @@
         "summary": "Remove a block that is not a booking hold",
         "tags": [
           "availability"
-        ]
-      }
-    },
-    "/api/v1/locations": {
-      "get": {
-        "description": "Active locations only. Without `q`, lists them by name, airports first.",
-        "operationId": "LocationsController_search",
-        "parameters": [
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 10000,
-              "default": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "type": "number"
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "description": "Part of a name or city, or an IATA or ICAO code. Exact codes rank first.",
-            "schema": {
-              "example": "mumbai",
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/LocationType"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/LocationResponseDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "summary": "Search airports and heliports",
-        "tags": [
-          "locations"
-        ]
-      }
-    },
-    "/api/v1/locations/{id}": {
-      "get": {
-        "operationId": "LocationsController_detail",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocationResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "One location",
-        "tags": [
-          "locations"
-        ]
-      }
-    },
-    "/api/v1/admin/locations": {
-      "get": {
-        "description": "Active and inactive, with charges, by name.",
-        "operationId": "AdminLocationsController_list",
-        "parameters": [
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 10000,
-              "default": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "type": "number"
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "description": "Part of a name or city, or a code.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/LocationType"
-            }
-          },
-          {
-            "name": "isActive",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AdminLocationResponseDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "List locations",
-        "tags": [
-          "admin: locations"
-        ]
-      },
-      "post": {
-        "description": "Audited. IATA and ICAO codes are stored in capitals and must be unique (409 `LOCATION_CODE_IN_USE`).",
-        "operationId": "AdminLocationsController_create",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateLocationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminLocationResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "Add a location",
-        "tags": [
-          "admin: locations"
-        ]
-      }
-    },
-    "/api/v1/admin/locations/{id}": {
-      "get": {
-        "operationId": "AdminLocationsController_detail",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminLocationResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "One location, with charges",
-        "tags": [
-          "admin: locations"
-        ]
-      },
-      "patch": {
-        "description": "Send only the fields to change. Audited with the values before and after. `isActive: false` hides the location from search and from new trips.",
-        "operationId": "AdminLocationsController_update",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateLocationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminLocationResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "Change a location, its capabilities or charges",
-        "tags": [
-          "admin: locations"
         ]
       }
     },
@@ -5367,306 +5367,6 @@
           "decision"
         ]
       },
-      "AvailabilityBlockReason": {
-        "type": "string",
-        "enum": [
-          "MAINTENANCE",
-          "BLACKOUT",
-          "SOFT_HOLD",
-          "BOOKING",
-          "OTHER"
-        ]
-      },
-      "BlockResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "aircraftId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "startsAt": {
-            "type": "string"
-          },
-          "endsAt": {
-            "type": "string"
-          },
-          "reason": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AvailabilityBlockReason"
-              }
-            ]
-          },
-          "bookingId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "expiresAt": {
-            "type": "string",
-            "nullable": true
-          },
-          "note": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "aircraftId",
-          "startsAt",
-          "endsAt",
-          "reason"
-        ]
-      },
-      "SoftHoldConflictDto": {
-        "type": "object",
-        "properties": {
-          "aircraftId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "hold": {
-            "$ref": "#/components/schemas/BlockResponseDto"
-          },
-          "overlaps": {
-            "$ref": "#/components/schemas/BlockResponseDto"
-          }
-        },
-        "required": [
-          "aircraftId",
-          "hold",
-          "overlaps"
-        ]
-      },
-      "FleetAircraftDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "registration": {
-            "type": "string"
-          },
-          "listingStatus": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AircraftListingStatus"
-              }
-            ]
-          },
-          "availabilityStatus": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
-              }
-            ]
-          },
-          "homeBase": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/HomeBaseSummaryDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "registration",
-          "listingStatus",
-          "availabilityStatus",
-          "homeBase"
-        ]
-      },
-      "AvailabilitySlotKind": {
-        "type": "string",
-        "enum": [
-          "OPEN",
-          "DEPARTURE_SLOT"
-        ]
-      },
-      "SlotResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "aircraftId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "startsAt": {
-            "type": "string"
-          },
-          "endsAt": {
-            "type": "string"
-          },
-          "kind": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AvailabilitySlotKind"
-              }
-            ]
-          },
-          "originId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "aircraftId",
-          "startsAt",
-          "endsAt",
-          "kind"
-        ]
-      },
-      "FleetCalendarResponseDto": {
-        "type": "object",
-        "properties": {
-          "aircraft": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FleetAircraftDto"
-            }
-          },
-          "slots": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SlotResponseDto"
-            }
-          },
-          "blocks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BlockResponseDto"
-            }
-          },
-          "truncated": {
-            "type": "boolean",
-            "description": "True when the range held more than 2000 slots or blocks and the list was cut short"
-          }
-        },
-        "required": [
-          "aircraft",
-          "slots",
-          "blocks",
-          "truncated"
-        ]
-      },
-      "CalendarResponseDto": {
-        "type": "object",
-        "properties": {
-          "slots": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SlotResponseDto"
-            }
-          },
-          "blocks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BlockResponseDto"
-            }
-          }
-        },
-        "required": [
-          "slots",
-          "blocks"
-        ]
-      },
-      "CreateSlotDto": {
-        "type": "object",
-        "properties": {
-          "startsAt": {
-            "type": "string"
-          },
-          "endsAt": {
-            "type": "string"
-          },
-          "kind": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AvailabilitySlotKind"
-              }
-            ]
-          },
-          "originId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          }
-        },
-        "required": [
-          "startsAt",
-          "endsAt",
-          "kind"
-        ]
-      },
-      "UpdateSlotDto": {
-        "type": "object",
-        "properties": {
-          "startsAt": {
-            "type": "string"
-          },
-          "endsAt": {
-            "type": "string"
-          },
-          "kind": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AvailabilitySlotKind"
-              }
-            ]
-          },
-          "originId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          }
-        }
-      },
-      "CreateBlockDto": {
-        "type": "object",
-        "properties": {
-          "startsAt": {
-            "type": "string"
-          },
-          "endsAt": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "MAINTENANCE",
-              "BLACKOUT",
-              "SOFT_HOLD",
-              "OTHER"
-            ]
-          },
-          "expiresAt": {
-            "type": "string",
-            "description": "Required for a soft hold. When the hold lapses."
-          },
-          "note": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "startsAt",
-          "endsAt",
-          "reason"
-        ]
-      },
       "LocationType": {
         "type": "string",
         "enum": [
@@ -6127,6 +5827,306 @@
             "type": "boolean"
           }
         }
+      },
+      "AvailabilityBlockReason": {
+        "type": "string",
+        "enum": [
+          "MAINTENANCE",
+          "BLACKOUT",
+          "SOFT_HOLD",
+          "BOOKING",
+          "OTHER"
+        ]
+      },
+      "BlockResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilityBlockReason"
+              }
+            ]
+          },
+          "bookingId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "aircraftId",
+          "startsAt",
+          "endsAt",
+          "reason"
+        ]
+      },
+      "SoftHoldConflictDto": {
+        "type": "object",
+        "properties": {
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/BlockResponseDto"
+          },
+          "overlaps": {
+            "$ref": "#/components/schemas/BlockResponseDto"
+          }
+        },
+        "required": [
+          "aircraftId",
+          "hold",
+          "overlaps"
+        ]
+      },
+      "FleetAircraftDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "listingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftListingStatus"
+              }
+            ]
+          },
+          "availabilityStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          },
+          "homeBase": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBaseSummaryDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "registration",
+          "listingStatus",
+          "availabilityStatus",
+          "homeBase"
+        ]
+      },
+      "AvailabilitySlotKind": {
+        "type": "string",
+        "enum": [
+          "OPEN",
+          "DEPARTURE_SLOT"
+        ]
+      },
+      "SlotResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilitySlotKind"
+              }
+            ]
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "aircraftId",
+          "startsAt",
+          "endsAt",
+          "kind"
+        ]
+      },
+      "FleetCalendarResponseDto": {
+        "type": "object",
+        "properties": {
+          "aircraft": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetAircraftDto"
+            }
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlotResponseDto"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockResponseDto"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the range held more than 2000 slots or blocks and the list was cut short"
+          }
+        },
+        "required": [
+          "aircraft",
+          "slots",
+          "blocks",
+          "truncated"
+        ]
+      },
+      "CalendarResponseDto": {
+        "type": "object",
+        "properties": {
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlotResponseDto"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockResponseDto"
+            }
+          }
+        },
+        "required": [
+          "slots",
+          "blocks"
+        ]
+      },
+      "CreateSlotDto": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilitySlotKind"
+              }
+            ]
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "startsAt",
+          "endsAt",
+          "kind"
+        ]
+      },
+      "UpdateSlotDto": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AvailabilitySlotKind"
+              }
+            ]
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "CreateBlockDto": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MAINTENANCE",
+              "BLACKOUT",
+              "SOFT_HOLD",
+              "OTHER"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Required for a soft hold. When the hold lapses."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "endsAt",
+          "reason"
+        ]
       },
       "AuditLogResponseDto": {
         "type": "object",

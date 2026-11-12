@@ -13,6 +13,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { LocationsService } from '../locations/locations.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -105,6 +106,7 @@ export class AvailabilityService {
     private readonly prisma: PrismaService,
     private readonly operators: OperatorsService,
     private readonly aircraft: AircraftService,
+    private readonly locations: LocationsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -132,11 +134,7 @@ export class AvailabilityService {
 
   private async assertOrigin(originId: string | null | undefined) {
     if (!originId) return;
-    const location = await this.prisma.location.findFirst({
-      where: { id: originId, isActive: true },
-      select: { id: true },
-    });
-    if (!location) {
+    if (!(await this.locations.isActive(originId))) {
       throw invalid(
         'originId',
         'must be an active location',

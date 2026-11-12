@@ -396,6 +396,90 @@ test.describe('operator aircraft', () => {
     expect((await material.json()).data.listingStatus).toBe('PENDING_REVIEW');
   });
 
+  test('JSON fields compare by value: the same medical equipment keeps an approved aircraft approved', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+
+    /** A new aircraft forced to APPROVED (review is not under test here). */
+    const approvedAircraft = async (medicalEquipment: object | null) => {
+      const created = await request.post('operator/aircraft', {
+        headers,
+        data: {
+          ...aircraftBody(homeBaseId),
+          ...(medicalEquipment ? { medicalEquipment } : {}),
+          specifications: { cabin: 'Club four', seats: { leather: true } },
+        },
+      });
+      expect(created.status()).toBe(201);
+      const id = (await created.json()).data.id as string;
+      await withPrisma((prisma) =>
+        prisma.aircraft.update({
+          where: { id },
+          data: { listingStatus: 'APPROVED' },
+        }),
+      );
+      return id;
+    };
+    const state = (id: string) =>
+      withPrisma(async (prisma) => ({
+        row: await prisma.aircraft.findUniqueOrThrow({ where: { id } }),
+        // Every audit row except the creation: an update, a material edit,
+        // a return to review.
+        audits: await prisma.auditLog.count({
+          where: { entityId: id, action: { not: 'aircraft.create' } },
+        }),
+      }));
+    const patch = async (id: string, data: object) => {
+      const response = await request.patch(`operator/aircraft/${id}`, {
+        headers,
+        data,
+      });
+      expect(response.status()).toBe(200);
+      return (await response.json()).data.listingStatus as string;
+    };
+
+    // Same values, keys in another order: nothing is written (D-066).
+    const id = await approvedAircraft({
+      stretcher: true,
+      oxygen: { litres: 10 },
+    });
+    const before = await state(id);
+    expect(
+      await patch(id, {
+        medicalEquipment: { oxygen: { litres: 10 }, stretcher: true },
+        specifications: { seats: { leather: true }, cabin: 'Club four' },
+      }),
+    ).toBe('APPROVED');
+    const after = await state(id);
+    expect(after.audits).toBe(0);
+    expect(after.row.updatedAt).toEqual(before.row.updatedAt);
+
+    // A real change is material.
+    expect(
+      await patch(id, {
+        medicalEquipment: { stretcher: true, oxygen: { litres: 20 } },
+      }),
+    ).toBe('PENDING_REVIEW');
+
+    // Clearing it is a change too, and is written.
+    const cleared = await approvedAircraft({ stretcher: true });
+    expect(await patch(cleared, { medicalEquipment: null })).toBe(
+      'PENDING_REVIEW',
+    );
+    expect((await state(cleared)).row.medicalEquipment).toBeNull();
+
+    // Stored none, sent null: unchanged. Sent {}: a change (an empty list of
+    // equipment is not the same as none recorded).
+    const none = await approvedAircraft(null);
+    expect(await patch(none, { medicalEquipment: null })).toBe('APPROVED');
+    expect((await state(none)).audits).toBe(0);
+    expect(await patch(none, { medicalEquipment: {} })).toBe('PENDING_REVIEW');
+  });
+
   test('a suspended aircraft cannot be edited back into review', async ({
     request,
     playwright,

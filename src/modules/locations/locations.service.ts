@@ -77,7 +77,17 @@ function toPublic(row: PublicRow): PublicLocation {
   };
 }
 
+/** What another module shows of a location, for example an aircraft's home base. */
+export interface LocationSummary {
+  id: string;
+  name: string;
+  iata: string | null;
+  icao: string | null;
+  timeZone: string;
+}
+
 /** `Location.charges`; shape in docs/architecture/database-design.md. */
+
 export interface LocationCharges {
   currency: string;
   categories: {
@@ -232,6 +242,25 @@ export class LocationsService {
     });
     if (!row) throw notFound();
     return toPublic(row);
+  }
+
+  // --- For other modules --------------------------------------------------
+
+  /** Whether an active location has this id. */
+  async isActive(id: string): Promise<boolean> {
+    const row = await this.prisma.location.findFirst({
+      where: { id, isActive: true },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
+  /** Name, codes and time zone of a location, active or not. */
+  async summary(id: string): Promise<LocationSummary | null> {
+    return this.prisma.location.findUnique({
+      where: { id },
+      select: { id: true, name: true, iata: true, icao: true, timeZone: true },
+    });
   }
 
   // --- Administration -----------------------------------------------------

@@ -1,5 +1,6 @@
 # Render Blueprint for the proof-of-concept host (D-064, D-065).
-# New > Blueprint > this repository, branch `poc`. Render creates the API,
+# New > Blueprint > this repository, branch `main` (`poc` is kept equal to
+# `main` so an older Blueprint linked to it deploys the same code). Render creates the API,
 # its PostgreSQL database and its Redis-compatible Key Value store in one
 # region and wires the connection strings itself, so none is typed by hand.
 #
@@ -30,7 +31,7 @@ services:
     runtime: node
     plan: free
     region: singapore
-    branch: poc
+    branch: main
     # Dev dependencies are needed to compile (NODE_ENV=production skips them).
     buildCommand: npm ci --include=dev && npm run build
     # Migrate, seed (safe to repeat), then start. The API refuses to start
@@ -48,8 +49,10 @@ services:
         value: sink
       - key: STORAGE_PROVIDER
         value: local
-      # The web app's address. The browser reaches this API through that
-      # site's /api/v1 proxy, so this is the only origin allowed.
+      # The web app's address on Vercel, exactly as the browser shows it (no
+      # trailing slash). The browser reaches this API through that site's
+      # /api/v1 proxy, so this is the only origin allowed. Change it here if
+      # the Vercel project has another name or a custom domain.
       - key: WEB_ORIGIN
         value: https://flyviman-web.vercel.app
       # Every browser request arrives from the web host's addresses, so the
