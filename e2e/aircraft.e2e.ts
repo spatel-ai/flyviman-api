@@ -98,7 +98,7 @@ async function approvedOperator(
 function aircraftBody(homeBaseId: string, registration?: string) {
   return {
     registration:
-      registration ?? `VT-${randomUUID().slice(0, 5).toUpperCase()}`,
+      registration ?? `VT-${randomUUID().slice(0, 13).toUpperCase()}`,
     manufacturer: 'Cessna',
     model: 'Citation CJ3+',
     category: 'LIGHT_JET',

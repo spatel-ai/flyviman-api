@@ -90,6 +90,14 @@ describe('validateEnv', () => {
         API_PUBLIC_URL: 'http://flyviman-api.example.com',
       }),
     ).toThrow(/https/);
+    // On Render the public address comes from the platform.
+    expect(
+      validateEnv({
+        ...poc,
+        API_PUBLIC_URL: undefined,
+        RENDER_EXTERNAL_URL: 'https://flyviman-api.onrender.com',
+      }).API_PUBLIC_URL,
+    ).toBe('https://flyviman-api.onrender.com');
     // Only the known providers.
     expect(() => validateEnv({ ...poc, MESSAGING_PROVIDER: 'smtp' })).toThrow(
       /MESSAGING_PROVIDER/,

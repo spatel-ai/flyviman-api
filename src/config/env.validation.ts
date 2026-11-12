@@ -174,7 +174,14 @@ function isLocalOrigin(origin: string | undefined): boolean {
 export function validateEnv(
   config: Record<string, unknown>,
 ): EnvironmentVariables {
-  const validated = plainToInstance(EnvironmentVariables, config);
+  // Render tells a web service its own public address; use it when
+  // API_PUBLIC_URL is not set, so signed storage links cannot point at the
+  // wrong host (D-065).
+  const source =
+    !config.API_PUBLIC_URL && config.RENDER_EXTERNAL_URL
+      ? { ...config, API_PUBLIC_URL: config.RENDER_EXTERNAL_URL }
+      : config;
+  const validated = plainToInstance(EnvironmentVariables, source);
   const errors = validateSync(validated, { skipMissingProperties: false });
 
   if (validated.ENABLE_DEV_TOOLS && validated.NODE_ENV === NodeEnv.Production) {

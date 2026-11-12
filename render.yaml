@@ -1,0 +1,84 @@
+# Render Blueprint for the proof-of-concept host (D-064, D-065).
+# New > Blueprint > this repository, branch `poc`. Render creates the API,
+# its PostgreSQL database and its Redis-compatible Key Value store in one
+# region and wires the connection strings itself, so none is typed by hand.
+#
+# NOT production: messages are discarded (sign-up and reset codes never
+# arrive), uploads sit unencrypted on the instance's disk and are lost on
+# every deploy, and the free database expires. Use demo data only.
+
+databases:
+  - name: flyviman-db
+    plan: free
+    region: singapore
+    databaseName: flyviman
+    user: flyviman
+
+services:
+  - type: keyvalue
+    name: flyviman-redis
+    plan: free
+    region: singapore
+    # One-time codes, sessions' reset tokens and idempotency keys must not be
+    # evicted to make room.
+    maxmemoryPolicy: noeviction
+    # No public access: only services in this account, over the private network.
+    ipAllowList: []
+
+  - type: web
+    name: flyviman-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: poc
+    # Dev dependencies are needed to compile (NODE_ENV=production skips them).
+    buildCommand: npm ci --include=dev && npm run build
+    # Migrate, seed (safe to repeat), then start. The API refuses to start
+    # if PostgreSQL or Redis cannot be reached.
+    startCommand: npx prisma migrate deploy && node dist/seed.js && node dist/main
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.21.0
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_DEV_TOOLS
+        value: "false"
+      - key: MESSAGING_PROVIDER
+        value: sink
+      - key: STORAGE_PROVIDER
+        value: local
+      # The web app's address. The browser reaches this API through that
+      # site's /api/v1 proxy, so this is the only origin allowed.
+      - key: WEB_ORIGIN
+        value: https://flyviman-web.vercel.app
+      # Every browser request arrives from the web host's addresses, so the
+      # per-address limits are raised for the proof of concept.
+      - key: RATE_LIMIT_AUTH_PER_MINUTE
+        value: "60"
+      - key: RATE_LIMIT_DEFAULT_PER_MINUTE
+        value: "600"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: flyviman-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: flyviman-redis
+          property: connectionString
+      - key: SEED_ADMIN_EMAIL
+        value: admin@flyviman.test
+      - key: SEED_DEMO_ACCOUNTS
+        value: "true"
+      # Entered once in the dashboard when the Blueprint is created; never
+      # committed. API_PUBLIC_URL is not needed: Render's own
+      # RENDER_EXTERNAL_URL is used.
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: DATA_ENCRYPTION_KEY
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_LOCAL_PASSWORD
+        sync: false
