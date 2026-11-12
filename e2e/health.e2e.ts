@@ -12,6 +12,17 @@ test.describe('GET /health', () => {
     expect(body.meta.requestId).toBeTruthy();
   });
 
+  test('carries the Helmet security headers', async ({ request }) => {
+    // Guards the Helmet import in app.setup.ts: a wrong unwrap would either
+    // fail to start or start without these headers.
+    const headers = (await request.get('health')).headers();
+    expect(headers['x-content-type-options']).toBe('nosniff');
+    expect(headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(headers['strict-transport-security']).toContain('max-age=');
+    expect(headers['content-security-policy']).toContain("default-src 'self'");
+    expect(headers['x-powered-by']).toBeUndefined();
+  });
+
   test('echoes a caller-supplied request ID', async ({ request }) => {
     const response = await request.get('health', {
       headers: { 'X-Request-Id': 'e2e-request-123' },

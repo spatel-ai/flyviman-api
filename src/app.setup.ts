@@ -7,11 +7,19 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
-import helmet from 'helmet';
+import helmetImport from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ErrorDetail } from './common/errors/app.exception.js';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware.js';
+
+// Helmet's package exports can surface as either the middleware factory or a
+// `{ default }` namespace under some TypeScript / bundler resolutions (e.g.
+// Vercel). Unwrap so `app.use(helmet())` is always typed as callable.
+const helmet =
+  typeof helmetImport === 'function'
+    ? helmetImport
+    : (helmetImport as unknown as { default: typeof helmetImport }).default;
 
 export const API_PREFIX = 'api/v1';
 export const DOCS_PATH = 'api/docs';
