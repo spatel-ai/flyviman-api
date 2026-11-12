@@ -1383,3 +1383,142 @@ test.describe('aircraft availability', () => {
     expect((await offered.json()).error.code).toBe('OPERATOR_NOT_APPROVED');
   });
 });
+
+test.describe('fleet availability', () => {
+  test('M3 done: an approved aircraft has availability on a calendar and overlapping confirmed holds are refused', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { id, registration, reviewer, reviewHeaders, headers } =
+      await submittedAircraft(contexts);
+    await approve(reviewer, reviewHeaders, id);
+
+    const slot = await request.post(
+      `operator/aircraft/${id}/availability/slots`,
+      {
+        headers,
+        data: { startsAt: inDays(3, 4), endsAt: inDays(3, 12), kind: 'OPEN' },
+      },
+    );
+    expect(slot.status()).toBe(201);
+    const slotId = (await slot.json()).data.id as string;
+
+    // The slot is on the aircraft's calendar and on the fleet timeline.
+    const own = await request.get(`operator/aircraft/${id}/availability`, {
+      params: { from: inDays(0), to: inDays(7) },
+    });
+    expect(
+      (await own.json()).data.slots.map((s: { id: string }) => s.id),
+    ).toContain(slotId);
+    const fleet = await request.get('operator/availability', {
+      params: { from: inDays(0), to: inDays(7) },
+    });
+    expect(fleet.status()).toBe(200);
+    const body = (await fleet.json()).data;
+    expect(body.truncated).toBe(false);
+    expect(body.aircraft).toEqual([
+      expect.objectContaining({
+        id,
+        registration,
+        listingStatus: 'APPROVED',
+        availabilityStatus: 'AVAILABLE',
+        homeBase: expect.objectContaining({
+          timeZone: expect.any(String),
+          name: expect.any(String),
+        }),
+      }),
+    ]);
+    expect(body.slots.map((s: { id: string }) => s.id)).toContain(slotId);
+
+    // A booking holds the slot; a second, overlapping booking is refused.
+    await withPrisma(async (prisma) => {
+      await prisma.availabilityBlock.create({
+        data: {
+          aircraftId: id,
+          startsAt: new Date(inDays(3, 6)),
+          endsAt: new Date(inDays(3, 10)),
+          reason: 'BOOKING',
+        },
+      });
+      await expect(
+        prisma.availabilityBlock.create({
+          data: {
+            aircraftId: id,
+            startsAt: new Date(inDays(3, 8)),
+            endsAt: new Date(inDays(3, 11)),
+            reason: 'BOOKING',
+          },
+        }),
+      ).rejects.toThrow(/AvailabilityBlock_booking_no_overlap|23P01/);
+    });
+    const after = await request.get('operator/availability', {
+      params: { from: inDays(0), to: inDays(7) },
+    });
+    expect(
+      (await after.json()).data.blocks.filter(
+        (b: { reason: string }) => b.reason === 'BOOKING',
+      ),
+    ).toHaveLength(1);
+  });
+
+  test('the fleet read is bounded, scoped to the operator, and closed to staff', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: aircraftBody(homeBaseId),
+    });
+    const mine = (await created.json()).data as {
+      id: string;
+      homeBase: { id: string; timeZone: string } | null;
+    };
+    // Aircraft responses name the home base and its zone.
+    expect(mine.homeBase).toMatchObject({ id: homeBaseId });
+
+    const wide = await request.get('operator/availability', {
+      params: { from: inDays(0), to: inDays(43) },
+    });
+    expect(wide.status()).toBe(400);
+    const naive = await request.get('operator/availability', {
+      params: {
+        from: inDays(0).replace('Z', ''),
+        to: inDays(7).replace('Z', ''),
+      },
+    });
+    expect(naive.status()).toBe(400);
+
+    const rival = await playwright.request.newContext({ baseURL });
+    await approvedOperator(rival, playwright, baseURL);
+    const theirs = await rival.get('operator/availability', {
+      params: { from: inDays(0), to: inDays(7) },
+    });
+    expect(theirs.status()).toBe(200);
+    expect(
+      (await theirs.json()).data.aircraft.map((a: { id: string }) => a.id),
+    ).not.toContain(mine.id);
+    await rival.dispose();
+
+    const staff = await playwright.request.newContext({ baseURL });
+    const { email } = await registerOperator(staff);
+    await withPrisma((prisma) =>
+      prisma.user.update({
+        where: { email },
+        data: { role: 'OPERATOR_STAFF' },
+      }),
+    );
+    expect(
+      (
+        await staff.get('operator/availability', {
+          params: { from: inDays(0), to: inDays(7) },
+        })
+      ).status(),
+    ).toBe(403);
+    await staff.dispose();
+  });
+});

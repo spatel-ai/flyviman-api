@@ -1,6 +1,7 @@
 import type { Aircraft } from '../../generated/prisma/client.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
+  HomeBaseSummaryDto,
   AircraftDocumentResponseDto,
   AircraftMediaResponseDto,
   AircraftResponseDto,
@@ -16,7 +17,29 @@ export type AircraftMediaRecord = Prisma.AircraftMediaGetPayload<object> & {
   fileName: string;
 };
 
-export type AircraftDetail = Aircraft & {
+/** The home base fields a response carries. */
+export type HomeBaseRecord = {
+  id: string;
+  name: string;
+  iata: string | null;
+  icao: string | null;
+  timeZone: string;
+};
+
+/** Selects exactly the fields of a HomeBaseRecord. */
+export const HOME_BASE_SELECT = {
+  id: true,
+  name: true,
+  iata: true,
+  icao: true,
+  timeZone: true,
+} as const;
+
+export type AircraftWithHomeBase = Aircraft & {
+  homeBase: HomeBaseRecord | null;
+};
+
+export type AircraftDetail = AircraftWithHomeBase & {
   media: AircraftMediaRecord[];
   documents: AircraftDocumentRecord[];
   missing: string[];
@@ -33,6 +56,18 @@ function asObject(
 
 function dateOnly(value: Date | null): string | null {
   return value ? value.toISOString().slice(0, 10) : null;
+}
+
+export function toHomeBaseDto(
+  row: HomeBaseRecord | null,
+): HomeBaseSummaryDto | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    code: row.iata ?? row.icao,
+    timeZone: row.timeZone,
+  };
 }
 
 export function toMediaDto(row: AircraftMediaRecord): AircraftMediaResponseDto {
@@ -73,6 +108,7 @@ export function toAircraftDto(row: AircraftDetail): AircraftResponseDto {
     rangeKm: row.rangeKm,
     cruiseSpeedKmh: row.cruiseSpeedKmh,
     homeBaseId: row.homeBaseId,
+    homeBase: toHomeBaseDto(row.homeBase),
     currentLocationId: row.currentLocationId,
     operatingRegions: row.operatingRegions,
     restrictions: asObject(row.restrictions),
@@ -91,7 +127,9 @@ export function toAircraftDto(row: AircraftDetail): AircraftResponseDto {
   };
 }
 
-export function toSummaryDto(row: Aircraft): AircraftSummaryResponseDto {
+export function toSummaryDto(
+  row: AircraftWithHomeBase,
+): AircraftSummaryResponseDto {
   return {
     id: row.id,
     registration: row.registration,
@@ -102,5 +140,6 @@ export function toSummaryDto(row: Aircraft): AircraftSummaryResponseDto {
     availabilityStatus: row.availabilityStatus,
     listingStatus: row.listingStatus,
     homeBaseId: row.homeBaseId,
+    homeBase: toHomeBaseDto(row.homeBase),
   };
 }

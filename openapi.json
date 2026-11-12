@@ -2268,6 +2268,53 @@
         ]
       }
     },
+    "/api/v1/operator/availability": {
+      "get": {
+        "description": "For the fleet timeline. The range covers at most 42 days; at most 2,000 slots and 2,000 blocks are returned, with `truncated` set when cut.",
+        "operationId": "AvailabilityController_fleet",
+        "parameters": [
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-12-31T00:00:00.000Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetCalendarResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Every aircraft with its slots and blocks in a range",
+        "tags": [
+          "availability"
+        ]
+      }
+    },
     "/api/v1/operator/aircraft/{id}/availability": {
       "get": {
         "operationId": "AvailabilityController_calendar",
@@ -4447,6 +4494,33 @@
           "MAINTENANCE"
         ]
       },
+      "HomeBaseSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true,
+            "description": "IATA code, else ICAO code"
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code",
+          "timeZone"
+        ]
+      },
       "AircraftSummaryResponseDto": {
         "type": "object",
         "properties": {
@@ -4491,6 +4565,15 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "homeBase": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBaseSummaryDto"
+              }
+            ]
           }
         },
         "required": [
@@ -4501,7 +4584,8 @@
           "category",
           "passengerCapacity",
           "availabilityStatus",
-          "listingStatus"
+          "listingStatus",
+          "homeBase"
         ]
       },
       "WingType": {
@@ -4757,6 +4841,15 @@
             "format": "uuid",
             "nullable": true
           },
+          "homeBase": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBaseSummaryDto"
+              }
+            ]
+          },
           "currentLocationId": {
             "type": "string",
             "format": "uuid",
@@ -4844,6 +4937,7 @@
           "category",
           "wingType",
           "passengerCapacity",
+          "homeBase",
           "operatingRegions",
           "availabilityStatus",
           "listingStatus",
@@ -5047,6 +5141,15 @@
             "format": "uuid",
             "nullable": true
           },
+          "homeBase": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBaseSummaryDto"
+              }
+            ]
+          },
           "operatorName": {
             "type": "string"
           },
@@ -5064,6 +5167,7 @@
           "passengerCapacity",
           "availabilityStatus",
           "listingStatus",
+          "homeBase",
           "operatorName",
           "operatorId"
         ]
@@ -5121,6 +5225,15 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "homeBase": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBaseSummaryDto"
+              }
+            ]
           },
           "currentLocationId": {
             "type": "string",
@@ -5212,6 +5325,7 @@
           "category",
           "wingType",
           "passengerCapacity",
+          "homeBase",
           "operatingRegions",
           "availabilityStatus",
           "listingStatus",
@@ -5329,6 +5443,48 @@
           "overlaps"
         ]
       },
+      "FleetAircraftDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          },
+          "listingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftListingStatus"
+              }
+            ]
+          },
+          "availabilityStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftAvailabilityStatus"
+              }
+            ]
+          },
+          "homeBase": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBaseSummaryDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "registration",
+          "listingStatus",
+          "availabilityStatus",
+          "homeBase"
+        ]
+      },
       "AvailabilitySlotKind": {
         "type": "string",
         "enum": [
@@ -5374,6 +5530,39 @@
           "kind"
         ]
       },
+      "FleetCalendarResponseDto": {
+        "type": "object",
+        "properties": {
+          "aircraft": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetAircraftDto"
+            }
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlotResponseDto"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockResponseDto"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the range held more than 2000 slots or blocks and the list was cut short"
+          }
+        },
+        "required": [
+          "aircraft",
+          "slots",
+          "blocks",
+          "truncated"
+        ]
+      },
       "CalendarResponseDto": {
         "type": "object",
         "properties": {
@@ -5412,7 +5601,7 @@
             ]
           },
           "originId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           }
@@ -5440,7 +5629,7 @@
             ]
           },
           "originId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           }

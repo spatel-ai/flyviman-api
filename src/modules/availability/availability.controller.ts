@@ -22,12 +22,14 @@ import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { AvailabilityService } from './availability.service.js';
+import { toHomeBaseDto } from '../aircraft/aircraft.mappers.js';
 import { toBlock, toConflict, toSlot } from './availability.mappers.js';
 import {
   BlockResponseDto,
   CalendarResponseDto,
   CreateBlockDto,
   CreateSlotDto,
+  FleetCalendarResponseDto,
   RangeQueryDto,
   SlotResponseDto,
   SoftHoldConflictDto,
@@ -52,6 +54,37 @@ export class AvailabilityController {
   ): Promise<SoftHoldConflictDto[]> {
     const pairs = await this.availability.conflicts(user.id);
     return pairs.map(toConflict);
+  }
+
+  @Get('availability')
+  @Roles(Role.OPERATOR_ADMIN)
+  @ApiOperation({
+    summary: 'Every aircraft with its slots and blocks in a range',
+    description:
+      'For the fleet timeline. The range covers at most 42 days; at most 2,000 slots and 2,000 blocks are returned, with `truncated` set when cut.',
+  })
+  @ApiOkResponse({ type: FleetCalendarResponseDto })
+  async fleet(
+    @CurrentUser() user: AuthUser,
+    @Query() query: RangeQueryDto,
+  ): Promise<FleetCalendarResponseDto> {
+    const result = await this.availability.fleetCalendar(
+      user.id,
+      new Date(query.from),
+      new Date(query.to),
+    );
+    return {
+      aircraft: result.aircraft.map((row) => ({
+        id: row.id,
+        registration: row.registration,
+        listingStatus: row.listingStatus,
+        availabilityStatus: row.availabilityStatus,
+        homeBase: toHomeBaseDto(row.homeBase),
+      })),
+      slots: result.slots.map(toSlot),
+      blocks: result.blocks.map(toBlock),
+      truncated: result.truncated,
+    };
   }
 
   @Get('aircraft/:id/availability')

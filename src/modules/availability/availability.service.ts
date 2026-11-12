@@ -18,6 +18,10 @@ import { OperatorsService } from '../operators/operators.service.js';
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Longest calendar read. Keeps one request from scanning years of rows. */
 export const MAX_CALENDAR_DAYS = 93;
+/** Longest fleet timeline read: six weeks, what a month view shows. */
+export const MAX_FLEET_DAYS = 42;
+/** Most slots, and most blocks, one fleet read returns. */
+export const MAX_FLEET_ROWS = 2000;
 /** Longest single slot or block. */
 export const MAX_ENTRY_DAYS = 180;
 /** A soft hold must lapse within this many days of being placed. */
@@ -181,6 +185,45 @@ export class AvailabilityService {
       }),
     ]);
     return { slots, blocks };
+  }
+
+  /**
+   * Every aircraft of the caller's operator with the slots and blocks that
+   * overlap the range, for the fleet timeline. Open to an operator who is not
+   * approved, like the per-aircraft read. Capped, with `truncated` set.
+   */
+  async fleetCalendar(userId: string, from: Date, to: Date) {
+    range(from, to, MAX_FLEET_DAYS, ['from', 'to']);
+    const operator = await this.operators.forMember(userId);
+    const aircraft = await this.aircraft.fleetOf(operator.id);
+    if (aircraft.length === 0) {
+      return { aircraft, slots: [], blocks: [], truncated: false };
+    }
+    const where = {
+      aircraftId: { in: aircraft.map((row) => row.id) },
+      startsAt: { lt: to },
+      endsAt: { gt: from },
+    };
+    const [slots, blocks] = await this.prisma.$transaction([
+      this.prisma.availabilitySlot.findMany({
+        where,
+        orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+        take: MAX_FLEET_ROWS + 1,
+      }),
+      this.prisma.availabilityBlock.findMany({
+        where,
+        orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+        take: MAX_FLEET_ROWS + 1,
+      }),
+    ]);
+    const truncated =
+      slots.length > MAX_FLEET_ROWS || blocks.length > MAX_FLEET_ROWS;
+    return {
+      aircraft,
+      slots: slots.slice(0, MAX_FLEET_ROWS),
+      blocks: blocks.slice(0, MAX_FLEET_ROWS),
+      truncated,
+    };
   }
 
   async addSlot(

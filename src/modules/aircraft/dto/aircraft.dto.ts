@@ -351,6 +351,25 @@ export class AircraftDocumentResponseDto {
   verificationStatus: DocumentVerificationStatus;
 }
 
+/** Where an aircraft is based, with the zone its local times are shown in. */
+export class HomeBaseSummaryDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'IATA code, else ICAO code',
+  })
+  code: string | null;
+
+  @ApiProperty({ example: 'Asia/Kolkata' })
+  timeZone: string;
+}
+
 export class AircraftResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -387,6 +406,9 @@ export class AircraftResponseDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   homeBaseId: string | null;
+
+  @ApiProperty({ type: HomeBaseSummaryDto, nullable: true })
+  homeBase: HomeBaseSummaryDto | null;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   currentLocationId: string | null;
@@ -476,6 +498,9 @@ export class AircraftSummaryResponseDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   homeBaseId: string | null;
+
+  @ApiProperty({ type: HomeBaseSummaryDto, nullable: true })
+  homeBase: HomeBaseSummaryDto | null;
 }
 
 export class AdminAircraftQueryDto extends PageQueryDto {

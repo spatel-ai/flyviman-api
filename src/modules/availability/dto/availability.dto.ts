@@ -24,9 +24,12 @@ function IsTimestamp(): PropertyDecorator {
   );
 }
 import {
+  AircraftAvailabilityStatus,
+  AircraftListingStatus,
   AvailabilityBlockReason,
   AvailabilitySlotKind,
 } from '../../../generated/prisma/enums.js';
+import { HomeBaseSummaryDto } from '../../aircraft/dto/aircraft.dto.js';
 
 /** Reasons an operator may set. Confirmed bookings are created by bookings (M7). */
 export const OPERATOR_BLOCK_REASONS = [
@@ -59,7 +62,7 @@ export class CreateSlotDto {
   @IsEnum(AvailabilitySlotKind)
   kind: AvailabilitySlotKind;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @IsOptional()
   @IsUUID()
   originId?: string | null;
@@ -84,7 +87,7 @@ export class UpdateSlotDto {
   @IsEnum(AvailabilitySlotKind)
   kind?: AvailabilitySlotKind;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @IsOptional()
   @IsUUID()
   originId?: string | null;
@@ -164,6 +167,45 @@ export class BlockResponseDto {
 
   @ApiPropertyOptional({ type: String, nullable: true })
   note: string | null;
+}
+
+export class FleetAircraftDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty()
+  registration: string;
+
+  @ApiProperty({
+    enum: AircraftListingStatus,
+    enumName: 'AircraftListingStatus',
+  })
+  listingStatus: AircraftListingStatus;
+
+  @ApiProperty({
+    enum: AircraftAvailabilityStatus,
+    enumName: 'AircraftAvailabilityStatus',
+  })
+  availabilityStatus: AircraftAvailabilityStatus;
+
+  @ApiProperty({ type: HomeBaseSummaryDto, nullable: true })
+  homeBase: HomeBaseSummaryDto | null;
+}
+
+export class FleetCalendarResponseDto {
+  @ApiProperty({ type: [FleetAircraftDto] })
+  aircraft: FleetAircraftDto[];
+
+  @ApiProperty({ type: [SlotResponseDto] })
+  slots: SlotResponseDto[];
+
+  @ApiProperty({ type: [BlockResponseDto] })
+  blocks: BlockResponseDto[];
+
+  @ApiProperty({
+    description: `True when the range held more than ${2000} slots or blocks and the list was cut short`,
+  })
+  truncated: boolean;
 }
 
 export class CalendarResponseDto {

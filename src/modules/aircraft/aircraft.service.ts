@@ -26,10 +26,12 @@ import {
   type AircraftAction,
   type MaterialField,
 } from './aircraft-transitions.js';
-import type {
-  AircraftDetail,
-  AircraftDocumentRecord,
-  AircraftMediaRecord,
+import {
+  HOME_BASE_SELECT,
+  type AircraftDetail,
+  type AircraftDocumentRecord,
+  type AircraftMediaRecord,
+  type AircraftWithHomeBase,
 } from './aircraft.mappers.js';
 
 /** Documents required before an aircraft can be submitted (D-047). */
@@ -137,6 +139,15 @@ export class AircraftService implements OnModuleInit {
   /** The operator's own aircraft, for modules that hang data off it (availability). */
   async ownedBy(operatorId: string, aircraftId: string): Promise<Aircraft> {
     return this.loadOwned(operatorId, aircraftId);
+  }
+
+  /** Every aircraft the operator owns, with its home base, by registration. */
+  async fleetOf(operatorId: string): Promise<AircraftWithHomeBase[]> {
+    return this.prisma.aircraft.findMany({
+      where: { operatorId },
+      include: { homeBase: { select: HOME_BASE_SELECT } },
+      orderBy: [{ registration: 'asc' }, { id: 'asc' }],
+    });
   }
 
   /** IDs of every aircraft the operator owns. */
@@ -345,7 +356,15 @@ export class AircraftService implements OnModuleInit {
       ...mediaRows.map((row) => row.fileId),
       ...documentRows.map((row) => row.fileId),
     ];
-    const files = await this.documents.describe(fileIds);
+    const [files, homeBase] = await Promise.all([
+      this.documents.describe(fileIds),
+      aircraft.homeBaseId
+        ? this.prisma.location.findUnique({
+            where: { id: aircraft.homeBaseId },
+            select: HOME_BASE_SELECT,
+          })
+        : null,
+    ]);
     const media: AircraftMediaRecord[] = mediaRows.map((row) => ({
       ...row,
       fileName: files.get(row.fileId)?.fileName ?? 'file',
@@ -354,7 +373,7 @@ export class AircraftService implements OnModuleInit {
       ...row,
       fileName: files.get(row.fileId)?.fileName ?? 'document',
     }));
-    return { ...aircraft, media, documents, missing };
+    return { ...aircraft, homeBase, media, documents, missing };
   }
 
   // --- CRUD ---------------------------------------------------------------
@@ -366,7 +385,7 @@ export class AircraftService implements OnModuleInit {
       pageSize: number;
       listingStatus?: AircraftListingStatus;
     },
-  ): Promise<Paginated<Aircraft>> {
+  ): Promise<Paginated<AircraftWithHomeBase>> {
     const operator = await this.forOperatorMember(userId);
     const where: Prisma.AircraftWhereInput = {
       operatorId: operator.id,
@@ -375,6 +394,7 @@ export class AircraftService implements OnModuleInit {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.aircraft.findMany({
         where,
+        include: { homeBase: { select: HOME_BASE_SELECT } },
         orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -1059,7 +1079,7 @@ export class AircraftService implements OnModuleInit {
     pageSize: number;
     listingStatus?: AircraftListingStatus;
     operatorId?: string;
-  }): Promise<Paginated<Aircraft & { operatorName: string }>> {
+  }): Promise<Paginated<AircraftWithHomeBase & { operatorName: string }>> {
     const where: Prisma.AircraftWhereInput = {
       ...(query.listingStatus ? { listingStatus: query.listingStatus } : {}),
       ...(query.operatorId ? { operatorId: query.operatorId } : {}),
@@ -1067,7 +1087,10 @@ export class AircraftService implements OnModuleInit {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.aircraft.findMany({
         where,
-        include: { operator: { select: { legalName: true } } },
+        include: {
+          operator: { select: { legalName: true } },
+          homeBase: { select: HOME_BASE_SELECT },
+        },
         orderBy: [
           { submittedAt: { sort: 'asc', nulls: 'last' } },
           { updatedAt: 'desc' },
