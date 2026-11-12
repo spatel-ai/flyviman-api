@@ -11,7 +11,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import { DevToolsGuard } from '../dev-tools.guard.js';
+import { LocalStorageGuard } from './local-storage.guard.js';
 import type { Request, Response } from 'express';
 import { AppException } from '../../common/errors/app.exception.js';
 import { Public, SkipCsrf } from '../../modules/auth/auth.decorators.js';
@@ -21,17 +21,25 @@ import {
   MockStorageTicket,
 } from './mock-storage.provider.js';
 
+/** A neutral download name: the real one is not carried in the ticket. */
+const EXTENSIONS: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+};
+
 function refuse(status: HttpStatus, code: string, message: string): never {
   throw new AppException(code, message, status);
 }
 
 /**
- * Development and test only: the endpoints the mock's signed URLs point at.
+ * The endpoints the local-disk store's signed URLs point at: development and
+ * tests, or a proof of concept with STORAGE_PROVIDER=local (D-064).
  * Authorisation is the signed ticket in the URL, exactly as with a bucket,
  * so these routes take no session and are exempt from the CSRF check.
  */
 @ApiExcludeController()
-@UseGuards(DevToolsGuard)
+@UseGuards(LocalStorageGuard)
 @Public()
 @SkipCsrf()
 @Controller('dev/storage')
@@ -90,15 +98,15 @@ export class MockStorageController {
     if (!(await this.storage.stat(ticket.key))) {
       refuse(HttpStatus.NOT_FOUND, 'NOT_FOUND', 'File not found.');
     }
-    const name = (ticket.fileName ?? 'file').replace(/[^\w.\- ]/g, '_');
+    const name = `file.${EXTENSIONS[ticket.contentType] ?? 'bin'}`;
     response.setHeader('Content-Type', ticket.contentType);
     response.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'private, no-store');
-    // Helmet's default (same-origin) would stop the web app, a different
-    // port on the same site, showing a photo. A real bucket sets no such
-    // header; this mock runs only with development tools on.
-    response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    // Helmet's default (same-origin) would stop the web app, on another
+    // origin, showing a photo. A bucket sets no such header; the signed,
+    // expiring ticket is the authorisation, as it is there.
+    response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     createReadStream(this.storage.pathFor(ticket.key)).pipe(response);
   }
 

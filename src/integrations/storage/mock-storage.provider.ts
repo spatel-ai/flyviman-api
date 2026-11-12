@@ -65,7 +65,14 @@ export class MockStorageProvider extends StorageProvider {
     contentType: string;
   }): Promise<SignedDownload> {
     const exp = Date.now() + DOWNLOAD_SECONDS * 1000;
-    const token = this.sign({ op: 'get', exp, ...input });
+    // The ticket is readable in the URL (and so in any access log), so the
+    // person's original file name stays out of it (D-064).
+    const token = this.sign({
+      op: 'get',
+      exp,
+      key: input.key,
+      contentType: input.contentType,
+    });
     return { url: `${this.baseUrl}/${token}`, expiresAt: new Date(exp) };
   }
 

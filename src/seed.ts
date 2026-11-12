@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -11,6 +10,17 @@ import {
 } from './generated/prisma/enums.js';
 import { DEFAULT_TEMPLATES } from './modules/notifications/templates.js';
 import { hashPassword, PASSWORD_MIN_LENGTH } from './common/crypto/password.js';
+
+// A local .env when there is one (Node's own loader); hosts set variables
+// directly.
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file.
+}
+
+/** A demo password on a shared host must resist guessing (D-064). */
+const DEMO_PASSWORD_MIN_LENGTH = 24;
 
 /**
  * Creates the accounts the platform cannot be used without. Safe to run more
@@ -198,10 +208,10 @@ try {
 
   // Local accounts for development and tests, one per role, each with the
   // records a registration would have created.
-  if (
+  const developerMachine =
     process.env.ENABLE_DEV_TOOLS === 'true' &&
-    (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')
-  ) {
+    (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test');
+  if (developerMachine) {
     const local = password('SEED_LOCAL_PASSWORD');
     await ensureUser('customer@flyviman.test', Role.CUSTOMER, local);
     await ensureUser('operator@flyviman.test', Role.OPERATOR_ADMIN, local);
@@ -215,6 +225,27 @@ try {
       local,
       UserStatus.SUSPENDED,
     );
+  } else if (process.env.SEED_DEMO_ACCOUNTS === 'true') {
+    // A proof-of-concept host, where sign-up codes never arrive (D-064):
+    // only a customer and an operator administrator, with a long password,
+    // and never on a server that can deliver messages for real. Staff roles
+    // are not created here; the super administrator approves operators.
+    if (process.env.MESSAGING_PROVIDER !== 'sink') {
+      throw new Error(
+        'SEED_DEMO_ACCOUNTS is only for a proof-of-concept host with MESSAGING_PROVIDER=sink.',
+      );
+    }
+    const demo = required('SEED_LOCAL_PASSWORD');
+    if (demo.length < DEMO_PASSWORD_MIN_LENGTH) {
+      throw new Error(
+        `SEED_LOCAL_PASSWORD must be at least ${DEMO_PASSWORD_MIN_LENGTH} characters on a shared host.`,
+      );
+    }
+    // An existing account keeps its password; delete it to change one.
+    await ensureUser('customer@flyviman.test', Role.CUSTOMER, demo);
+    await ensureUser('operator@flyviman.test', Role.OPERATOR_ADMIN, demo);
+    await ensureCustomerProfile('customer@flyviman.test');
+    await ensureOperator('operator@flyviman.test');
   }
 } finally {
   await prisma.$disconnect();

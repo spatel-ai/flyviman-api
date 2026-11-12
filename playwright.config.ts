@@ -3,6 +3,8 @@ import { defineConfig } from '@playwright/test';
 const PORT = Number(process.env.PORT ?? 4000);
 const ORIGIN = `http://localhost:${PORT}`;
 const STRICT_ORIGIN = `http://localhost:${PORT + 1}`;
+/** A proof-of-concept server: production, no dev tools, sink and local disk. */
+export const POC_ORIGIN = `http://localhost:${PORT + 2}`;
 
 /**
  * API integration tests. They call the running API over HTTP through
@@ -52,6 +54,23 @@ export default defineConfig({
         NODE_ENV: 'test',
         ENABLE_DEV_TOOLS: 'true',
         PORT: String(PORT + 1),
+      },
+    },
+    {
+      // Third server as a proof-of-concept host runs it (D-064): production,
+      // development tools off, messages discarded, files on local disk.
+      command: `until [ -f dist/main.js ] && curl -sf ${ORIGIN}/api/v1/health >/dev/null; do sleep 1; done; npm run start:prod`,
+      url: `${POC_ORIGIN}/api/v1/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        NODE_ENV: 'production',
+        ENABLE_DEV_TOOLS: 'false',
+        MESSAGING_PROVIDER: 'sink',
+        STORAGE_PROVIDER: 'local',
+        API_PUBLIC_URL: POC_ORIGIN,
+        WEB_ORIGIN: 'https://flyviman-web.example.com',
+        PORT: String(PORT + 2),
       },
     },
   ],

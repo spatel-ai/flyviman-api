@@ -9,13 +9,13 @@ Each integration is a folder containing:
 - `<vendor>-<name>.provider.ts`: the real implementation, selected by configuration.
 - `<name>.module.ts`: binds the token to the configured implementation.
 
-| Interface | Purpose | Real implementation | Milestone |
-|---|---|---|---|
-| `MessagingProvider` | Email, SMS, WhatsApp | Not chosen. Interface and in-memory mock built | M1 |
-| `StorageProvider` | Signed upload and download URLs for private documents | S3-compatible (assumed). Interface and local-disk mock built | M1 |
-| `RoutingProvider` | Distance between two locations | Built-in great-circle with routing factor | M4 |
-| `AirlineInventoryProvider` | Scheduled search, fare rules, revalidation, booking | Not chosen | M5 |
-| `PaymentGatewayProvider` | Orders, signature verification, webhooks, refunds | Razorpay | M8 |
+| Interface                  | Purpose                                               | Real implementation                                                             | Milestone |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------- | --------- |
+| `MessagingProvider`        | Email, SMS, WhatsApp                                  | Not chosen. Mock (development) and sink (proof of concept) built                | M1        |
+| `StorageProvider`          | Signed upload and download URLs for private documents | S3-compatible (assumed). Local-disk store built (development, proof of concept) | M1        |
+| `RoutingProvider`          | Distance between two locations                        | Built-in great-circle with routing factor                                       | M4        |
+| `AirlineInventoryProvider` | Scheduled search, fare rules, revalidation, booking   | Not chosen                                                                      | M5        |
+| `PaymentGatewayProvider`   | Orders, signature verification, webhooks, refunds     | Razorpay                                                                        | M8        |
 
 Every call to a real provider has a timeout, bounded retries for safe operations, and a defined fallback. Provider errors are mapped to our error codes and never passed through to clients.
 
@@ -29,5 +29,16 @@ The messaging and storage mocks come with development-only routes:
 These routes answer 404 unless `ENABLE_DEV_TOOLS=true` (`DevToolsGuard`). The same flag lets the mocks be used at all: without it, and with no real provider, the API refuses to start. The configuration refuses the flag when `NODE_ENV=production`, so production needs real providers.
 
 **Development tools are for a developer's own machine and for automated tests only.** Do not turn them on for any server other people can reach, staging and demo servers included: the outbox route is public and returns password-reset and invitation links for any address. Such a server needs a real provider, or a sink provider that delivers only to an allow-listed mailbox, before it exists.
+
+## Proof-of-concept host (D-064)
+
+A shared server with no real providers yet can start without development tools:
+
+| Setting                   | Effect                                                                                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MESSAGING_PROVIDER=sink` | `SinkMessagingProvider` accepts and discards every message and logs only its channel. No code or link is kept or exposed, so sign-up and password-reset codes never arrive; people sign in with seeded accounts (`SEED_DEMO_ACCOUNTS=true`). |
+| `STORAGE_PROVIDER=local`  | The local-disk store and its signed routes run without development tools (`LocalStorageGuard`). Needs `API_PUBLIC_URL`. Files live on the server's disk and are lost when a host wipes it on redeploy.                                       |
+
+`ENABLE_DEV_TOOLS` stays off there, so the outbox answers 404. This is for a proof of concept, not production: production needs a real messaging provider and object storage.
 
 When adding a real provider: bind it in the integration's module by configuration, keep the mock for development and tests, and move any check the mock does at upload time (content type by leading bytes, size) to where a real bucket can enforce it.

@@ -141,6 +141,24 @@ export class EnvironmentVariables {
 
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
   LOG_LEVEL: string = 'info';
+
+  /**
+   * Who delivers email and SMS. `mock` is the development outbox and needs
+   * ENABLE_DEV_TOOLS. `sink` accepts and discards every message, so a
+   * shared server can run without a provider; codes and links never
+   * arrive and are never exposed (D-064).
+   */
+  @IsIn(['mock', 'sink'])
+  MESSAGING_PROVIDER: string = 'mock';
+
+  /**
+   * Where uploads go. `mock` is the development store and needs
+   * ENABLE_DEV_TOOLS. `local` uses the same signed, expiring links on this
+   * server's disk without development tools, for a proof of concept: files
+   * are lost when the host's disk is wiped (D-064).
+   */
+  @IsIn(['mock', 'local'])
+  STORAGE_PROVIDER: string = 'mock';
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -170,6 +188,31 @@ export function validateEnv(
   if (validated.ENABLE_DEV_TOOLS && !isLocalOrigin(validated.WEB_ORIGIN)) {
     throw new Error(
       'Invalid environment configuration: ENABLE_DEV_TOOLS is allowed only when WEB_ORIGIN is on localhost. Shared servers need a real messaging and storage provider.',
+    );
+  }
+
+  // Signed storage links must point at this API's public address, not at
+  // localhost, once the server is not a developer's machine.
+  if (
+    validated.STORAGE_PROVIDER === 'local' &&
+    !validated.ENABLE_DEV_TOOLS &&
+    !validated.API_PUBLIC_URL
+  ) {
+    throw new Error(
+      'Invalid environment configuration: STORAGE_PROVIDER=local needs API_PUBLIC_URL, the public address of this API.',
+    );
+  }
+
+  // Signed links are bearer credentials: never over plain HTTP in production,
+  // except on this machine (the automated proof-of-concept test).
+  if (
+    validated.NODE_ENV === NodeEnv.Production &&
+    validated.API_PUBLIC_URL &&
+    !validated.API_PUBLIC_URL.startsWith('https://') &&
+    !isLocalOrigin(validated.API_PUBLIC_URL)
+  ) {
+    throw new Error(
+      'Invalid environment configuration: API_PUBLIC_URL must use https in production.',
     );
   }
 

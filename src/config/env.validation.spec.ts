@@ -62,6 +62,40 @@ describe('validateEnv', () => {
     }
   });
 
+  it('runs a proof-of-concept server with the sink and local storage, never the dev tools', () => {
+    const poc = {
+      ...valid,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'sink',
+      STORAGE_PROVIDER: 'local',
+      API_PUBLIC_URL: 'https://flyviman-api.example.com',
+    };
+    const env = validateEnv(poc);
+    expect(env.MESSAGING_PROVIDER).toBe('sink');
+    expect(env.STORAGE_PROVIDER).toBe('local');
+    expect(env.ENABLE_DEV_TOOLS).toBe(false);
+    // Local storage on a shared server needs its public address.
+    expect(() => validateEnv({ ...poc, API_PUBLIC_URL: undefined })).toThrow(
+      /API_PUBLIC_URL/,
+    );
+    // The development outbox stays refused.
+    expect(() => validateEnv({ ...poc, ENABLE_DEV_TOOLS: 'true' })).toThrow(
+      /ENABLE_DEV_TOOLS/,
+    );
+    // Signed links never travel over plain HTTP in production.
+    expect(() =>
+      validateEnv({
+        ...poc,
+        API_PUBLIC_URL: 'http://flyviman-api.example.com',
+      }),
+    ).toThrow(/https/);
+    // Only the known providers.
+    expect(() => validateEnv({ ...poc, MESSAGING_PROVIDER: 'smtp' })).toThrow(
+      /MESSAGING_PROVIDER/,
+    );
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     expect(() => validateEnv({})).toThrow(/Invalid environment configuration/);
   });

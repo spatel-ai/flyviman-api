@@ -5,12 +5,13 @@ import { MockStorageProvider } from './mock-storage.provider.js';
 import { StorageProvider } from './storage.provider.js';
 
 /**
- * Binds StorageProvider to an implementation. Only the local-disk mock
- * exists; an S3-compatible provider must be added before production, and the API
- * refuses to start without one unless ENABLE_DEV_TOOLS is on.
+ * Binds StorageProvider to an implementation, chosen by STORAGE_PROVIDER:
+ * `mock` (development, needs ENABLE_DEV_TOOLS) or `local` (the same signed
+ * local-disk store for a proof of concept). An S3-compatible provider is
+ * still needed before files must survive a redeploy.
  */
 @Module({
-  // Registered always; DevToolsGuard answers 404 unless ENABLE_DEV_TOOLS is on.
+  // Registered always; LocalStorageGuard answers 404 unless local storage is in use.
   controllers: [MockStorageController],
   providers: [
     MockStorageProvider,
@@ -18,9 +19,12 @@ import { StorageProvider } from './storage.provider.js';
       provide: StorageProvider,
       inject: [MockStorageProvider, ConfigService],
       useFactory: (mock: MockStorageProvider, config: ConfigService) => {
-        if (!config.get<boolean>('ENABLE_DEV_TOOLS')) {
+        if (
+          config.get<string>('STORAGE_PROVIDER') !== 'local' &&
+          !config.get<boolean>('ENABLE_DEV_TOOLS')
+        ) {
           throw new Error(
-            'No storage provider is configured for this environment. Set ENABLE_DEV_TOOLS=true to use the mock outside production. See src/integrations/README.md.',
+            'No storage provider is configured for this environment. Set STORAGE_PROVIDER=local (with API_PUBLIC_URL) for a proof of concept, or ENABLE_DEV_TOOLS=true on a developer machine. See src/integrations/README.md.',
           );
         }
         return mock;
