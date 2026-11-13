@@ -27,6 +27,8 @@ export const TOPIC_LABELS: Record<EnquiryTopic, string> = {
   FLOWER_DROP_CHARTER: 'Flower drop charter',
   AIRCRAFT_SALES: 'Aircraft sales',
   CONSULTANCY: 'Consultancy',
+  PILOT_JOBS: 'Pilot job assistance',
+  PILOT_TRAINING: 'Pilot courses and training',
 };
 
 /** Attempts at a fresh reference before giving up (31^6 codes). */

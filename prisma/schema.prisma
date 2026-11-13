@@ -666,6 +666,8 @@ enum EnquiryTopic {
   FLOWER_DROP_CHARTER
   AIRCRAFT_SALES
   CONSULTANCY
+  PILOT_JOBS
+  PILOT_TRAINING
 }
 
 /// A sales enquiry sent from the public contact page. Contact details and
