@@ -29,6 +29,7 @@ import {
   AddOperatorDocumentDto,
   OperatorDocumentResponseDto,
   OperatorProfileResponseDto,
+  OperatorProfileWithAccessDto,
   RegisterOperatorDto,
   UpdateOperatorProfileDto,
 } from './dto/operator.dto.js';
@@ -59,13 +60,25 @@ export class OperatorController {
 
   @Get('profile')
   @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
-  @ApiOperation({ summary: 'The operator organisation and its review status' })
-  @ApiOkResponse({ type: OperatorProfileResponseDto })
+  @ApiOperation({
+    summary: 'The operator organisation and its review status',
+    description:
+      'Also says what the caller may do in it (`access`), so the portal shows staff only what they can use.',
+  })
+  @ApiOkResponse({ type: OperatorProfileWithAccessDto })
   async profile(
     @CurrentUser() user: AuthUser,
-  ): Promise<OperatorProfileResponseDto> {
-    const operator = await this.operators.forMember(user.id);
-    return toProfileDto(operator, await this.operators.missing(operator));
+  ): Promise<OperatorProfileWithAccessDto> {
+    const { operator, access } = await this.operators.accessFor(user);
+    return {
+      ...toProfileDto(operator, await this.operators.missing(operator)),
+      access: {
+        role: access.role,
+        capabilities: access.capabilities,
+        allAircraft: access.aircraft === 'ALL',
+        aircraftIds: access.aircraft === 'ALL' ? [] : access.aircraft,
+      },
+    };
   }
 
   @Patch('profile')

@@ -344,6 +344,61 @@ export class UsersService {
     return user;
   }
 
+  // --- For operator staff (operators module) --------------------------------
+
+  /**
+   * Returns an account to the invited state: no password, waiting for its
+   * invitation link. Used when an operator invites someone whose earlier
+   * staff membership was removed.
+   */
+  async resetToInvited(
+    id: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<UserAccount> {
+    return db.user.update({
+      where: { id },
+      data: { status: UserStatus.PENDING_VERIFICATION, passwordHash: null },
+      select: ACCOUNT,
+    });
+  }
+
+  /** Sets an account's status; the caller audits the action it belongs to. */
+  async changeStatus(
+    id: string,
+    status: UserStatus,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await db.user.update({ where: { id }, data: { status } });
+  }
+
+  /** What a team list shows of each account. */
+  async summaries(ids: string[]): Promise<
+    Map<
+      string,
+      {
+        email: string | null;
+        role: Role;
+        status: UserStatus;
+        lastLoginAt: Date | null;
+        createdAt: Date;
+      }
+    >
+  > {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
+    return new Map(rows.map(({ id, ...rest }) => [id, rest]));
+  }
+
   /** The web page where a reset or invitation token is exchanged. */
   passwordLink(token: string): string {
     const origin = this.config.getOrThrow<string>('WEB_ORIGIN');

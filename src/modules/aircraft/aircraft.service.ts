@@ -22,7 +22,19 @@ import type { AuthUser } from '../auth/auth-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
-import { OperatorsService } from '../operators/operators.service.js';
+import {
+  aircraftWhere,
+  assertAdmin,
+  assertCan,
+  can,
+  inScope,
+  type Capability,
+  type OperatorAccess,
+} from '../operators/operator-access.js';
+import {
+  OperatorsService,
+  type OperatorRecord,
+} from '../operators/operators.service.js';
 import {
   nextAircraftStatus,
   type AircraftAction,
@@ -102,6 +114,16 @@ export class AircraftService implements OnModuleInit {
       FilePurpose.AIRCRAFT_DOCUMENT,
       (file, user) => this.mayReadAircraftFile(file.id, user),
     );
+    // Staff assignments name aircraft; operators asks here whether they are
+    // the operator's own.
+    this.operators.registerAircraftCheck(async (operatorId, ids) => {
+      const rows = await this.prisma.aircraft.findMany({
+        where: { operatorId, id: { in: ids } },
+        select: { id: true },
+      });
+      const known = new Set(rows.map((row) => row.id));
+      return ids.filter((id) => !known.has(id));
+    });
   }
 
   private async mayReadAircraftFile(
@@ -109,21 +131,24 @@ export class AircraftService implements OnModuleInit {
     user: AuthUser,
   ): Promise<boolean> {
     if (INTERNAL_READERS.includes(user.role)) return true;
-    // Staff have no aircraft access until step 7 (D-056).
-    if (user.role !== Role.OPERATOR_ADMIN) return false;
+    if (
+      user.role !== Role.OPERATOR_ADMIN &&
+      user.role !== Role.OPERATOR_STAFF
+    ) {
+      return false;
+    }
+    // The operator's administrators, and staff on an aircraft in their reach
+    // with either capability (D-049).
+    const { access } = await this.operators.accessFor(user);
+    if (!can(access, 'MANAGE_AIRCRAFT', 'MANAGE_AVAILABILITY')) return false;
+    const aircraft = aircraftWhere(access);
     const media = await this.prisma.aircraftMedia.findFirst({
-      where: {
-        fileId,
-        aircraft: { operator: { members: { some: { userId: user.id } } } },
-      },
+      where: { fileId, aircraft },
       select: { id: true },
     });
     if (media) return true;
     const document = await this.prisma.aircraftDocument.findFirst({
-      where: {
-        fileId,
-        aircraft: { operator: { members: { some: { userId: user.id } } } },
-      },
+      where: { fileId, aircraft },
       select: { id: true },
     });
     return document !== null;
@@ -131,39 +156,50 @@ export class AircraftService implements OnModuleInit {
 
   // --- Operator scope -----------------------------------------------------
 
-  private async forOperatorMember(userId: string) {
-    return this.operators.forMember(userId);
+  /**
+   * The caller's operator and an aircraft in their reach that they may act
+   * on with one of the capabilities. An aircraft out of reach answers 404,
+   * like another operator's, so its existence is not revealed; a missing
+   * capability on one in reach answers 403.
+   */
+  private async scoped(
+    user: AuthUser,
+    aircraftId: string,
+    ...capabilities: Capability[]
+  ): Promise<{
+    operator: OperatorRecord;
+    access: OperatorAccess;
+    aircraft: Aircraft;
+  }> {
+    const { operator, access } = await this.operators.accessFor(user);
+    const aircraft = await this.inReach(access, aircraftId);
+    assertCan(access, ...capabilities);
+    return { operator, access, aircraft };
   }
 
-  private async loadOwned(
-    operatorId: string,
-    aircraftId: string,
-  ): Promise<Aircraft> {
+  /** An aircraft of the caller's operator within their reach, or 404. */
+  async inReach(access: OperatorAccess, aircraftId: string): Promise<Aircraft> {
+    if (!inScope(access, aircraftId)) throw notFound();
     const aircraft = await this.prisma.aircraft.findFirst({
-      where: { id: aircraftId, operatorId },
+      where: { id: aircraftId, operatorId: access.operatorId },
     });
     if (!aircraft) throw notFound();
     return aircraft;
   }
 
-  /** The operator's own aircraft, for modules that hang data off it (availability). */
-  async ownedBy(operatorId: string, aircraftId: string): Promise<Aircraft> {
-    return this.loadOwned(operatorId, aircraftId);
-  }
-
-  /** Every aircraft the operator owns, with its home base, by registration. */
-  async fleetOf(operatorId: string): Promise<AircraftWithHomeBase[]> {
+  /** Every aircraft within the caller's reach, with its home base, by registration. */
+  async fleetFor(access: OperatorAccess): Promise<AircraftWithHomeBase[]> {
     return this.prisma.aircraft.findMany({
-      where: { operatorId },
+      where: aircraftWhere(access),
       include: { homeBase: { select: HOME_BASE_SELECT } },
       orderBy: [{ registration: 'asc' }, { id: 'asc' }],
     });
   }
 
-  /** IDs of every aircraft the operator owns. */
-  async idsOf(operatorId: string): Promise<string[]> {
+  /** IDs of every aircraft within the caller's reach. */
+  async idsFor(access: OperatorAccess): Promise<string[]> {
     const rows = await this.prisma.aircraft.findMany({
-      where: { operatorId },
+      where: aircraftWhere(access),
       select: { id: true },
     });
     return rows.map((row) => row.id);
@@ -380,16 +416,17 @@ export class AircraftService implements OnModuleInit {
   // --- CRUD ---------------------------------------------------------------
 
   async list(
-    userId: string,
+    user: AuthUser,
     query: {
       page: number;
       pageSize: number;
       listingStatus?: AircraftListingStatus;
     },
   ): Promise<Paginated<AircraftWithHomeBase>> {
-    const operator = await this.forOperatorMember(userId);
+    const { access } = await this.operators.accessFor(user);
+    assertCan(access, 'MANAGE_AIRCRAFT', 'MANAGE_AVAILABILITY');
     const where: Prisma.AircraftWhereInput = {
-      operatorId: operator.id,
+      ...aircraftWhere(access),
       ...(query.listingStatus ? { listingStatus: query.listingStatus } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
@@ -405,14 +442,18 @@ export class AircraftService implements OnModuleInit {
     return new Paginated(items, query.page, query.pageSize, total);
   }
 
-  async get(userId: string, aircraftId: string): Promise<AircraftDetail> {
-    const operator = await this.forOperatorMember(userId);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
+  async get(user: AuthUser, aircraftId: string): Promise<AircraftDetail> {
+    const { aircraft } = await this.scoped(
+      user,
+      aircraftId,
+      'MANAGE_AIRCRAFT',
+      'MANAGE_AVAILABILITY',
+    );
     return this.withDetail(aircraft);
   }
 
   async create(
-    userId: string,
+    user: AuthUser,
     input: {
       registration: string;
       manufacturer: string;
@@ -432,7 +473,9 @@ export class AircraftService implements OnModuleInit {
       medicalEquipment?: Record<string, unknown> | null;
     },
   ): Promise<AircraftDetail> {
-    const operator = await this.forOperatorMember(userId);
+    const { operator, access } = await this.operators.accessFor(user);
+    // Only administrators add aircraft; staff are assigned existing ones.
+    assertAdmin(access);
     this.assertApprovedOperator(operator.status);
     const held = await this.prisma.aircraft.count({
       where: { operatorId: operator.id },
@@ -509,7 +552,7 @@ export class AircraftService implements OnModuleInit {
   }
 
   async update(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     changes: Partial<{
       registration: string;
@@ -530,9 +573,12 @@ export class AircraftService implements OnModuleInit {
       medicalEquipment: Record<string, unknown> | null;
     }>,
   ): Promise<AircraftDetail> {
-    const operator = await this.forOperatorMember(userId);
+    const { operator, aircraft } = await this.scoped(
+      user,
+      aircraftId,
+      'MANAGE_AIRCRAFT',
+    );
     this.assertApprovedOperator(operator.status);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
 
     const nextCategory = changes.category ?? aircraft.category;
@@ -667,7 +713,7 @@ export class AircraftService implements OnModuleInit {
             tx,
             aircraft,
             'returnToReview',
-            Role.OPERATOR_ADMIN,
+            user.role,
             data,
           );
         } else {
@@ -717,12 +763,17 @@ export class AircraftService implements OnModuleInit {
   }
 
   async setAvailabilityStatus(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     status: AircraftAvailabilityStatus,
   ): Promise<AircraftDetail> {
-    const operator = await this.forOperatorMember(userId);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
+    // Grounding is a safety action: either capability may do it.
+    const { aircraft } = await this.scoped(
+      user,
+      aircraftId,
+      'MANAGE_AIRCRAFT',
+      'MANAGE_AVAILABILITY',
+    );
     // Availability may change while a listing is under review, and for an
     // operator who is not approved (search also requires an approved one).
     // It does not change a suspended listing's status.
@@ -751,9 +802,12 @@ export class AircraftService implements OnModuleInit {
   }
 
   async submit(user: AuthUser, aircraftId: string): Promise<AircraftDetail> {
-    const operator = await this.forOperatorMember(user.id);
+    const { operator, aircraft } = await this.scoped(
+      user,
+      aircraftId,
+      'MANAGE_AIRCRAFT',
+    );
     this.assertApprovedOperator(operator.status);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
     const next = nextAircraftStatus(
       'submit',
       aircraft.listingStatus,
@@ -801,7 +855,7 @@ export class AircraftService implements OnModuleInit {
   // --- Media --------------------------------------------------------------
 
   async addMedia(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     input: {
       fileId: string;
@@ -809,9 +863,12 @@ export class AircraftService implements OnModuleInit {
       sortOrder?: number;
     },
   ): Promise<AircraftMediaRecord> {
-    const operator = await this.forOperatorMember(userId);
+    const { operator, aircraft } = await this.scoped(
+      user,
+      aircraftId,
+      'MANAGE_AIRCRAFT',
+    );
     this.assertApprovedOperator(operator.status);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
     await this.assertFileRoom(operator.id);
     const held = await this.prisma.aircraftMedia.count({
@@ -833,7 +890,7 @@ export class AircraftService implements OnModuleInit {
       await this.assertStillEditable(tx, aircraft);
       const file = await this.documents.claim(
         input.fileId,
-        userId,
+        user.id,
         purpose,
         tx,
       );
@@ -867,12 +924,11 @@ export class AircraftService implements OnModuleInit {
   }
 
   async removeMedia(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     mediaId: string,
   ): Promise<void> {
-    const operator = await this.forOperatorMember(userId);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
+    const { aircraft } = await this.scoped(user, aircraftId, 'MANAGE_AIRCRAFT');
     this.assertEditable(aircraft);
     const media = await this.prisma.aircraftMedia.findFirst({
       where: { id: mediaId, aircraftId: aircraft.id },
@@ -903,7 +959,7 @@ export class AircraftService implements OnModuleInit {
   // --- Documents ----------------------------------------------------------
 
   async addDocument(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     input: {
       type: AircraftDocumentType;
@@ -912,9 +968,12 @@ export class AircraftService implements OnModuleInit {
       expiresAt?: string | null;
     },
   ): Promise<AircraftDocumentRecord> {
-    const operator = await this.forOperatorMember(userId);
+    const { operator, aircraft } = await this.scoped(
+      user,
+      aircraftId,
+      'MANAGE_AIRCRAFT',
+    );
     this.assertApprovedOperator(operator.status);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
     this.assertEditable(aircraft);
     await this.assertFileRoom(operator.id);
     const held = await this.prisma.aircraftDocument.count({
@@ -933,19 +992,14 @@ export class AircraftService implements OnModuleInit {
 
     return this.prisma.$transaction(async (tx) => {
       if (revertToReview) {
-        await this.moveListing(
-          tx,
-          aircraft,
-          'returnToReview',
-          Role.OPERATOR_ADMIN,
-        );
+        await this.moveListing(tx, aircraft, 'returnToReview', user.role);
       } else {
         await this.assertStillEditable(tx, aircraft);
       }
 
       const file = await this.documents.claim(
         input.fileId,
-        userId,
+        user.id,
         FilePurpose.AIRCRAFT_DOCUMENT,
         tx,
       );
@@ -976,12 +1030,11 @@ export class AircraftService implements OnModuleInit {
   }
 
   async removeDocument(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     documentId: string,
   ): Promise<void> {
-    const operator = await this.forOperatorMember(userId);
-    const aircraft = await this.loadOwned(operator.id, aircraftId);
+    const { aircraft } = await this.scoped(user, aircraftId, 'MANAGE_AIRCRAFT');
     this.assertEditable(aircraft);
     const document = await this.prisma.aircraftDocument.findFirst({
       where: { id: documentId, aircraftId: aircraft.id },
@@ -1003,12 +1056,7 @@ export class AircraftService implements OnModuleInit {
 
     await this.prisma.$transaction(async (tx) => {
       if (revertToReview) {
-        await this.moveListing(
-          tx,
-          aircraft,
-          'returnToReview',
-          Role.OPERATOR_ADMIN,
-        );
+        await this.moveListing(tx, aircraft, 'returnToReview', user.role);
       } else {
         await this.assertStillEditable(tx, aircraft);
       }

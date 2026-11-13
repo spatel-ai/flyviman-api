@@ -50,14 +50,14 @@ export class OperatorAircraftController {
   constructor(private readonly aircraft: AircraftService) {}
 
   @Get()
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({ summary: "List this operator's aircraft" })
   @ApiOkResponse({ type: [AircraftSummaryResponseDto] })
   async list(
     @CurrentUser() user: AuthUser,
     @Query() query: ListAircraftQueryDto,
   ): Promise<Paginated<AircraftSummaryResponseDto>> {
-    const page = await this.aircraft.list(user.id, query);
+    const page = await this.aircraft.list(user, query);
     return new Paginated(
       page.items.map(toSummaryDto),
       page.page,
@@ -74,22 +74,22 @@ export class OperatorAircraftController {
     @CurrentUser() user: AuthUser,
     @Body() body: CreateAircraftDto,
   ): Promise<AircraftResponseDto> {
-    return toAircraftDto(await this.aircraft.create(user.id, body));
+    return toAircraftDto(await this.aircraft.create(user, body));
   }
 
   @Get(':id')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({ summary: 'Aircraft detail' })
   @ApiOkResponse({ type: AircraftResponseDto })
   async get(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AircraftResponseDto> {
-    return toAircraftDto(await this.aircraft.get(user.id, id));
+    return toAircraftDto(await this.aircraft.get(user, id));
   }
 
   @Patch(':id')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({
     summary: 'Update an aircraft profile',
     description:
@@ -103,7 +103,7 @@ export class OperatorAircraftController {
   ): Promise<AircraftResponseDto> {
     return toAircraftDto(
       await this.aircraft.update(
-        user.id,
+        user,
         id,
         instanceToPlain(body) as Parameters<AircraftService['update']>[2],
       ),
@@ -111,7 +111,7 @@ export class OperatorAircraftController {
   }
 
   @Post(':id/submit')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @HttpCode(200)
   @ApiOperation({
     summary: 'Submit an aircraft for approval',
@@ -127,7 +127,7 @@ export class OperatorAircraftController {
   }
 
   @Patch(':id/availability-status')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({ summary: 'Set available, unavailable or maintenance' })
   @ApiOkResponse({ type: AircraftResponseDto })
   async setAvailability(
@@ -136,12 +136,12 @@ export class OperatorAircraftController {
     @Body() body: SetAvailabilityStatusDto,
   ): Promise<AircraftResponseDto> {
     return toAircraftDto(
-      await this.aircraft.setAvailabilityStatus(user.id, id, body.status),
+      await this.aircraft.setAvailabilityStatus(user, id, body.status),
     );
   }
 
   @Post(':id/media')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({
     summary: 'Add a photo or floor plan',
     description:
@@ -153,11 +153,11 @@ export class OperatorAircraftController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: AddAircraftMediaDto,
   ): Promise<AircraftMediaResponseDto> {
-    return toMediaDto(await this.aircraft.addMedia(user.id, id, body));
+    return toMediaDto(await this.aircraft.addMedia(user, id, body));
   }
 
   @Delete(':id/media/:mediaId')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove a photo or floor plan' })
   @ApiNoContentResponse()
@@ -166,11 +166,11 @@ export class OperatorAircraftController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('mediaId', ParseUUIDPipe) mediaId: string,
   ): Promise<void> {
-    await this.aircraft.removeMedia(user.id, id, mediaId);
+    await this.aircraft.removeMedia(user, id, mediaId);
   }
 
   @Post(':id/documents')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({
     summary: 'Add an aircraft document',
     description:
@@ -182,11 +182,11 @@ export class OperatorAircraftController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: AddAircraftDocumentDto,
   ): Promise<AircraftDocumentResponseDto> {
-    return toDocumentDto(await this.aircraft.addDocument(user.id, id, body));
+    return toDocumentDto(await this.aircraft.addDocument(user, id, body));
   }
 
   @Delete(':id/documents/:documentId')
-  @Roles(Role.OPERATOR_ADMIN)
+  @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove an aircraft document' })
   @ApiNoContentResponse()
@@ -195,6 +195,6 @@ export class OperatorAircraftController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('documentId', ParseUUIDPipe) documentId: string,
   ): Promise<void> {
-    await this.aircraft.removeDocument(user.id, id, documentId);
+    await this.aircraft.removeDocument(user, id, documentId);
   }
 }

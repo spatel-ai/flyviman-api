@@ -13,6 +13,8 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import type { AuthUser } from '../auth/auth-user.js';
+import { assertCan } from '../operators/operator-access.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 
@@ -111,16 +113,20 @@ export class AvailabilityService {
   ) {}
 
   /**
-   * The caller's own aircraft. Offering time (slots, soft holds) needs an
+   * An aircraft in the caller's reach, for someone who may manage its
+   * availability (operator administrators, and staff with "manage
+   * availability" on it, D-049). Offering time (slots, soft holds) needs an
    * approved operator; reading, grounding and removing do not, so a
    * suspended operator can still take an aircraft out of service (D-058).
    */
   private async ownedAircraft(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     offersTime = false,
   ) {
-    const operator = await this.operators.forMember(userId);
+    const { operator, access } = await this.operators.accessFor(user);
+    const aircraft = await this.aircraft.inReach(access, aircraftId);
+    assertCan(access, 'MANAGE_AVAILABILITY');
     if (offersTime && operator.status !== OperatorStatus.APPROVED) {
       throw new AppException(
         'OPERATOR_NOT_APPROVED',
@@ -128,7 +134,6 @@ export class AvailabilityService {
         HttpStatus.CONFLICT,
       );
     }
-    const aircraft = await this.aircraft.ownedBy(operator.id, aircraftId);
     return { operator, aircraft };
   }
 
@@ -162,9 +167,9 @@ export class AvailabilityService {
     }
   }
 
-  async calendar(userId: string, aircraftId: string, from: Date, to: Date) {
+  async calendar(user: AuthUser, aircraftId: string, from: Date, to: Date) {
     range(from, to, MAX_CALENDAR_DAYS, ['from', 'to']);
-    await this.ownedAircraft(userId, aircraftId);
+    await this.ownedAircraft(user, aircraftId);
     const where = {
       aircraftId,
       startsAt: { lt: to },
@@ -190,10 +195,12 @@ export class AvailabilityService {
    * overlap the range, for the fleet timeline. Open to an operator who is not
    * approved, like the per-aircraft read. Capped, with `truncated` set.
    */
-  async fleetCalendar(userId: string, from: Date, to: Date) {
+  async fleetCalendar(user: AuthUser, from: Date, to: Date) {
     range(from, to, MAX_FLEET_DAYS, ['from', 'to']);
-    const operator = await this.operators.forMember(userId);
-    const aircraft = await this.aircraft.fleetOf(operator.id);
+    const { access } = await this.operators.accessFor(user);
+    assertCan(access, 'MANAGE_AVAILABILITY');
+    // Staff see only the aircraft assigned to them.
+    const aircraft = await this.aircraft.fleetFor(access);
     if (aircraft.length === 0) {
       return { aircraft, slots: [], blocks: [], truncated: false };
     }
@@ -225,7 +232,7 @@ export class AvailabilityService {
   }
 
   async addSlot(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     input: {
       startsAt: Date;
@@ -236,7 +243,7 @@ export class AvailabilityService {
   ): Promise<AvailabilitySlot> {
     range(input.startsAt, input.endsAt, MAX_ENTRY_DAYS);
     notOver(input.endsAt);
-    const { aircraft } = await this.ownedAircraft(userId, aircraftId, true);
+    const { aircraft } = await this.ownedAircraft(user, aircraftId, true);
     await this.assertOrigin(input.originId);
     await this.assertRoom(aircraft.id);
     return this.prisma.$transaction(async (tx) => {
@@ -263,7 +270,7 @@ export class AvailabilityService {
   }
 
   async updateSlot(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     slotId: string,
     input: {
@@ -273,7 +280,7 @@ export class AvailabilityService {
       originId?: string | null;
     },
   ): Promise<AvailabilitySlot> {
-    const { aircraft } = await this.ownedAircraft(userId, aircraftId, true);
+    const { aircraft } = await this.ownedAircraft(user, aircraftId, true);
     const slot = await this.prisma.availabilitySlot.findFirst({
       where: { id: slotId, aircraftId: aircraft.id },
     });
@@ -308,11 +315,11 @@ export class AvailabilityService {
   }
 
   async removeSlot(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     slotId: string,
   ): Promise<void> {
-    const { aircraft } = await this.ownedAircraft(userId, aircraftId);
+    const { aircraft } = await this.ownedAircraft(user, aircraftId);
     const slot = await this.prisma.availabilitySlot.findFirst({
       where: { id: slotId, aircraftId: aircraft.id },
     });
@@ -332,7 +339,7 @@ export class AvailabilityService {
   }
 
   async addBlock(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     input: {
       startsAt: Date;
@@ -385,7 +392,7 @@ export class AvailabilityService {
     }
     // A soft hold offers time to a customer; a maintenance or blackout block
     // grounds the aircraft and stays open to an operator who is not approved.
-    const { aircraft } = await this.ownedAircraft(userId, aircraftId, softHold);
+    const { aircraft } = await this.ownedAircraft(user, aircraftId, softHold);
     await this.assertRoom(aircraft.id);
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -416,11 +423,11 @@ export class AvailabilityService {
   }
 
   async removeBlock(
-    userId: string,
+    user: AuthUser,
     aircraftId: string,
     blockId: string,
   ): Promise<void> {
-    const { aircraft } = await this.ownedAircraft(userId, aircraftId);
+    const { aircraft } = await this.ownedAircraft(user, aircraftId);
     const block = await this.prisma.availabilityBlock.findFirst({
       where: { id: blockId, aircraftId: aircraft.id },
     });
@@ -458,9 +465,10 @@ export class AvailabilityService {
    * operator. Lapsed holds and holds that have ended are left out. Computed
    * in the database and capped, so a large calendar cannot stall the API.
    */
-  async conflicts(userId: string) {
-    const operator = await this.operators.forMember(userId);
-    const aircraftIds = await this.aircraft.idsOf(operator.id);
+  async conflicts(user: AuthUser) {
+    const { access } = await this.operators.accessFor(user);
+    assertCan(access, 'MANAGE_AVAILABILITY');
+    const aircraftIds = await this.aircraft.idsFor(access);
     if (aircraftIds.length === 0) return [];
     const pairs = await this.prisma.$queryRaw<
       { holdId: string; overlapsId: string }[]

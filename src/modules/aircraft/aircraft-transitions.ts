@@ -12,19 +12,22 @@ interface Transition {
 
 const REVIEWERS = [Role.OPS, Role.SUPER_ADMIN];
 
+/** Operator users who may edit and submit; staff need "manage aircraft" (checked in the service). */
+const OPERATOR_EDITORS = [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF];
+
 /** The aircraft listing state machine from docs/architecture/state-machines.md. */
 export const AIRCRAFT_TRANSITIONS: Record<AircraftAction, Transition> = {
   submit: {
     from: [AircraftListingStatus.DRAFT, AircraftListingStatus.REJECTED],
     to: AircraftListingStatus.PENDING_REVIEW,
-    roles: [Role.OPERATOR_ADMIN],
+    roles: OPERATOR_EDITORS,
     reasonRequired: false,
   },
   /** A material edit, or a document change, on an approved listing. */
   returnToReview: {
     from: [AircraftListingStatus.APPROVED],
     to: AircraftListingStatus.PENDING_REVIEW,
-    roles: [Role.OPERATOR_ADMIN],
+    roles: OPERATOR_EDITORS,
     reasonRequired: false,
   },
   approve: {

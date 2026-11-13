@@ -39,6 +39,12 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     body: 'A Flyviman staff account has been created for you. Choose your password here: {{link}}\nThe link works once and expires in {{hours}} hours.',
   },
   {
+    key: 'operator.staff_invitation',
+    channel: 'EMAIL',
+    subject: '{{operatorName}} invited you to Flyviman',
+    body: '{{operatorName}} has invited you to help manage its aircraft on Flyviman. Choose your password here: {{link}}\nThe link works once and expires in {{hours}} hours. If you were not expecting this, you can ignore this email.',
+  },
+  {
     key: 'customer.welcome',
     channel: 'EMAIL',
     subject: 'Welcome to Flyviman',

@@ -30,6 +30,12 @@ import {
   UserAccount,
   UsersService,
 } from '../users/users.service.js';
+import {
+  adminAccess,
+  OperatorAccess,
+  parsePermissions,
+  staffAccess,
+} from './operator-access.js';
 import { nextOperatorStatus, OperatorAction } from './operator-transitions.js';
 
 export type OperatorRecord = Prisma.OperatorGetPayload<object>;
@@ -227,6 +233,57 @@ export class OperatorsService implements OnModuleInit {
     });
     if (!member) throw notFound();
     return member.operator;
+  }
+
+  /**
+   * Which of these ids are not aircraft of the operator. The aircraft module
+   * answers this (it owns the table and depends on this module), registered
+   * at start-up; until then every id is unknown (fail closed).
+   */
+  private aircraftCheck: (
+    operatorId: string,
+    ids: string[],
+  ) => Promise<string[]> = (_operatorId, ids) => Promise.resolve(ids);
+
+  registerAircraftCheck(
+    check: (operatorId: string, ids: string[]) => Promise<string[]>,
+  ): void {
+    this.aircraftCheck = check;
+  }
+
+  unknownAircraft(operatorId: string, ids: string[]): Promise<string[]> {
+    return this.aircraftCheck(operatorId, ids);
+  }
+
+  /**
+   * The caller's organisation and what they may do in it, read from the
+   * database on every request so a permission change applies at once
+   * (operator-access.ts, D-049).
+   */
+  async accessFor(
+    user: AuthUser,
+  ): Promise<{ operator: OperatorRecord; access: OperatorAccess }> {
+    const member = await this.prisma.operatorMember.findUnique({
+      where: { userId: user.id },
+      include: { operator: true },
+    });
+    if (!member) throw notFound();
+    if (user.role === Role.OPERATOR_ADMIN) {
+      return {
+        operator: member.operator,
+        access: adminAccess(member.operatorId),
+      };
+    }
+    if (user.role === Role.OPERATOR_STAFF) {
+      return {
+        operator: member.operator,
+        access: staffAccess(
+          member.operatorId,
+          parsePermissions(member.permissions),
+        ),
+      };
+    }
+    throw notFound();
   }
 
   /**

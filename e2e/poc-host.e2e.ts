@@ -15,6 +15,15 @@ test.describe('proof-of-concept host', () => {
     expect((await health.json()).data.status).toBe('ok');
   });
 
+  test('does not publish the interactive API reference', async ({
+    request,
+  }) => {
+    expect((await request.get(`${POC_ORIGIN}/api/docs-json`)).status()).toBe(
+      404,
+    );
+    expect((await request.get(`${POC_ORIGIN}/api/docs`)).status()).toBe(404);
+  });
+
   test('never exposes the development outbox', async ({ request }) => {
     const outbox = await request.get('dev/outbox', {
       params: { to: 'anyone@example.com' },
@@ -35,10 +44,13 @@ test.describe('proof-of-concept host', () => {
         acceptTerms: true,
       },
     });
-    // The request is accepted (or refused for CSRF/rate limits), never 500:
-    // the sink provider took the message.
-    expect(register.status()).toBeLessThan(500);
-    expect(JSON.stringify(await register.json())).not.toMatch(/\b\d{6}\b/);
+    // Accepted: the sink provider took the message without delivering it,
+    // and nothing in the answer carries the code.
+    expect(register.status()).toBe(202);
+    // A leaked code would be a value of its own, quoted or not; digits inside
+    // the verification id (a UUID) are not a code.
+    const body = JSON.stringify(await register.json());
+    expect(body).not.toMatch(/"\d{6}"|:\d{6}[,}]/);
   });
 
   test('serves the local store only through valid signed links', async ({

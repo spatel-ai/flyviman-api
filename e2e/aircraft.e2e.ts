@@ -8,133 +8,12 @@ import {
 } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { csrfHeaders, signIn } from './support/session.js';
-
-const COMPANY = {
-  registrationNumber: 'U62200MH2015PTC123456',
-  taxNumber: '27AAACS1234A1Z5',
-  businessAddress: {
-    line1: 'Hangar 4, Juhu Aerodrome',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    postalCode: '400049',
-    country: 'IN',
-  },
-  serviceCategories: ['PRIVATE_CHARTER', 'HELICOPTER'],
-  operatingRegions: ['Maharashtra', 'Goa'],
-};
-
-async function addOperatorDocument(request: APIRequestContext, type: string) {
-  const headers = await csrfHeaders(request);
-  const fileId = await uploadPdf(request, headers, `${type.toLowerCase()}.pdf`);
-  const response = await request.post('operator/documents', {
-    headers,
-    data: { type, fileId, expiresAt: '2030-12-31' },
-  });
-  expect(response.status()).toBe(201);
-}
-
-async function asReviewer(
-  playwright: {
-    request: { newContext(options: object): Promise<APIRequestContext> };
-  },
-  baseURL: string | undefined,
-) {
-  const reviewer = await playwright.request.newContext({ baseURL });
-  await signIn(reviewer, 'ops');
-  return { reviewer, headers: await csrfHeaders(reviewer) };
-}
-
-/** An approved operator on `request`, plus an active home-base location id. */
-async function approvedOperator(
-  request: APIRequestContext,
-  playwright: {
-    request: { newContext(options: object): Promise<APIRequestContext> };
-  },
-  baseURL: string | undefined,
-) {
-  await registerOperator(request);
-  const patch = await request.patch('operator/profile', {
-    headers: await csrfHeaders(request),
-    data: COMPANY,
-  });
-  expect(patch.status()).toBe(200);
-  const operatorId = (await patch.json()).data.id as string;
-  await addOperatorDocument(request, 'AOC');
-  await addOperatorDocument(request, 'INSURANCE');
-  expect(
-    (
-      await request.post('operator/profile/submit', {
-        headers: await csrfHeaders(request),
-      })
-    ).status(),
-  ).toBe(200);
-
-  const { reviewer, headers } = await asReviewer(playwright, baseURL);
-  const detail = (
-    await (await reviewer.get(`admin/operators/${operatorId}`)).json()
-  ).data;
-  for (const document of detail.documents) {
-    expect(
-      (
-        await reviewer.post(`admin/documents/${document.id}/verify`, {
-          headers,
-          data: { decision: 'VERIFIED' },
-        })
-      ).status(),
-    ).toBe(200);
-  }
-  expect(
-    (
-      await reviewer.post(`admin/operators/${operatorId}/approve`, { headers })
-    ).status(),
-  ).toBe(200);
-
-  const locations = await request.get('locations', { params: { pageSize: 1 } });
-  expect(locations.status()).toBe(200);
-  const homeBaseId = (await locations.json()).data[0].id as string;
-  return { homeBaseId };
-}
-
-function aircraftBody(homeBaseId: string, registration?: string) {
-  return {
-    registration:
-      registration ?? `VT-${randomUUID().slice(0, 13).toUpperCase()}`,
-    manufacturer: 'Cessna',
-    model: 'Citation CJ3+',
-    category: 'LIGHT_JET',
-    wingType: 'FIXED_WING',
-    passengerCapacity: 8,
-    baggageCapacityKg: 500,
-    rangeKm: 3200,
-    cruiseSpeedKmh: 770,
-    homeBaseId,
-    pricingModel: 'HOURLY',
-    specifications: { cabin: 'Light jet cabin' },
-  };
-}
-
-async function addAircraftDocument(
-  request: APIRequestContext,
-  aircraftId: string,
-  type: string,
-) {
-  const headers = await csrfHeaders(request);
-  const fileId = await uploadPdf(
-    request,
-    headers,
-    `${type.toLowerCase()}.pdf`,
-    'AIRCRAFT_DOCUMENT',
-  );
-  const response = await request.post(
-    `operator/aircraft/${aircraftId}/documents`,
-    {
-      headers,
-      data: { type, fileId, expiresAt: '2030-12-31' },
-    },
-  );
-  expect(response.status()).toBe(201);
-  return (await response.json()).data as { id: string };
-}
+import {
+  addAircraftDocument,
+  aircraftBody,
+  approvedOperator,
+  asReviewer,
+} from './support/fleet.js';
 
 test.describe('operator aircraft', () => {
   test('create, list, detail, update, media, documents and submit', async ({
@@ -746,9 +625,13 @@ test.describe('operator aircraft', () => {
     });
   });
 
-  test('operator staff have no aircraft routes yet', async ({ request }) => {
+  test('a staff member with no permissions reaches no aircraft', async ({
+    request,
+  }) => {
     const { email } = await registerOperator(request);
-    // Staff invitations arrive in step 7; the role is checked on every request.
+    // A member turned into staff with no permissions stored: nothing is
+    // granted (fail closed, D-068). Invited staff are covered in
+    // operator-staff.e2e.ts.
     await withPrisma(async (prisma) => {
       await prisma.user.update({
         where: { email },
@@ -763,7 +646,7 @@ test.describe('operator aircraft', () => {
           data: { passengerCapacity: 4 },
         })
       ).status(),
-    ).toBe(403);
+    ).toBe(404);
   });
 
   test('a suspended operator can still ground an aircraft but not add one', async ({
@@ -1452,7 +1335,7 @@ test.describe('aircraft availability', () => {
           params: { from: inDays(0), to: inDays(10) },
         })
       ).status(),
-    ).toBe(403);
+    ).toBe(404);
     await staff.dispose();
 
     // A suspended operator can still ground the aircraft, but not offer time.

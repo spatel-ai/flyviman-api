@@ -45,7 +45,8 @@ import { VerificationService } from './verification.service.js';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [VerificationService],
+  // AuthService for revokeAllSessions (operator staff suspension, D-068).
+  exports: [VerificationService, AuthService],
 })
 export class AuthModule implements OnModuleInit {
   constructor(private readonly tokens: TokenService) {}

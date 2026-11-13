@@ -14,6 +14,9 @@ databases:
     region: singapore
     databaseName: flyviman
     user: flyviman
+    # No connections from outside Render: only services in this account,
+    # over the private network (security review, 2026-11-13).
+    ipAllowList: []
 
 services:
   - type: keyvalue

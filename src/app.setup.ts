@@ -97,8 +97,13 @@ export function configureApp(app: INestApplication): void {
   );
   app.enableShutdownHooks();
 
-  const document = buildOpenApiConfig();
-  SwaggerModule.setup(DOCS_PATH, app, () =>
-    SwaggerModule.createDocument(app, document),
-  );
+  // The interactive reference is for development; a production build does
+  // not publish its route catalogue (security review, 2026-11-13). The
+  // document itself is still exported by `npm run openapi:export`.
+  if (config.get('NODE_ENV') !== 'production') {
+    const document = buildOpenApiConfig();
+    SwaggerModule.setup(DOCS_PATH, app, () =>
+      SwaggerModule.createDocument(app, document),
+    );
+  }
 }

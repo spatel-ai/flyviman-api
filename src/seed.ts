@@ -34,12 +34,17 @@ function required(name: string): string {
   return value;
 }
 
+/** On a shared host every seeded password must resist guessing (D-064). */
+const SHARED_HOST_PASSWORD_MIN_LENGTH = 24;
+
 function password(name: string): string {
   const value = required(name);
-  if (value.length < PASSWORD_MIN_LENGTH) {
-    throw new Error(
-      `${name} must be at least ${PASSWORD_MIN_LENGTH} characters.`,
-    );
+  const minimum =
+    process.env.NODE_ENV === 'production'
+      ? SHARED_HOST_PASSWORD_MIN_LENGTH
+      : PASSWORD_MIN_LENGTH;
+  if (value.length < minimum) {
+    throw new Error(`${name} must be at least ${minimum} characters.`);
   }
   return value;
 }

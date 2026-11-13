@@ -873,6 +873,7 @@
     },
     "/api/v1/operator/profile": {
       "get": {
+        "description": "Also says what the caller may do in it (`access`), so the portal shows staff only what they can use.",
         "operationId": "OperatorController_profile",
         "parameters": [],
         "responses": {
@@ -881,7 +882,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperatorProfileResponseDto"
+                  "$ref": "#/components/schemas/OperatorProfileWithAccessDto"
                 }
               }
             }
@@ -1054,6 +1055,157 @@
         "summary": "Remove a compliance document",
         "tags": [
           "operator"
+        ]
+      }
+    },
+    "/api/v1/operator/staff": {
+      "get": {
+        "operationId": "OperatorStaffController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffMemberDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List the operator's staff",
+        "tags": [
+          "operator-staff"
+        ]
+      },
+      "post": {
+        "description": "Emails a single-use link (72 hours) to choose a password. Posting again for an invitation not yet accepted re-sends it and applies the permissions given. Needs an approved operator; at most 20 invitations an hour.",
+        "operationId": "OperatorStaffController_invite",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffMemberDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Invite a staff member",
+        "tags": [
+          "operator-staff"
+        ]
+      }
+    },
+    "/api/v1/operator/staff/{id}": {
+      "patch": {
+        "description": "Permission changes apply on their next request. Suspending needs a reason and signs them out everywhere.",
+        "operationId": "OperatorStaffController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffMemberDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change a staff member's permissions, or suspend or reinstate them",
+        "tags": [
+          "operator-staff"
+        ]
+      },
+      "delete": {
+        "description": "Ends their membership, suspends the account and signs them out. Inviting the address again brings it back.",
+        "operationId": "OperatorStaffController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Remove a staff member",
+        "tags": [
+          "operator-staff"
         ]
       }
     },
@@ -3849,6 +4001,235 @@
           "AIR_AMBULANCE"
         ]
       },
+      "StaffCapability": {
+        "type": "string",
+        "enum": [
+          "MANAGE_AIRCRAFT",
+          "MANAGE_AVAILABILITY"
+        ]
+      },
+      "OperatorAccessDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "OPERATOR_ADMIN",
+              "OPERATOR_STAFF"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffCapability"
+            }
+          },
+          "allAircraft": {
+            "type": "boolean"
+          },
+          "aircraftIds": {
+            "description": "Assigned aircraft; empty when allAircraft is true.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "capabilities",
+          "allAircraft",
+          "aircraftIds"
+        ]
+      },
+      "OperatorProfileWithAccessDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "businessAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "billingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          "operatingRegions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The reason given when the application was rejected or suspended."
+          },
+          "missing": {
+            "description": "What is still needed before the application can be submitted. Empty when it is complete.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "access": {
+            "$ref": "#/components/schemas/OperatorAccessDto"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "legalName",
+          "tradingName",
+          "registrationNumber",
+          "taxNumber",
+          "businessAddress",
+          "billingAddress",
+          "contactName",
+          "contactEmail",
+          "contactPhone",
+          "serviceCategories",
+          "operatingRegions",
+          "submittedAt",
+          "reviewedAt",
+          "reviewNote",
+          "missing",
+          "access"
+        ]
+      },
+      "UpdateOperatorProfileDto": {
+        "type": "object",
+        "properties": {
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "GSTIN."
+          },
+          "businessAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "billingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRIVATE_CHARTER",
+                "HELICOPTER",
+                "EMPTY_LEG",
+                "AIR_AMBULANCE"
+              ]
+            }
+          },
+          "operatingRegions": {
+            "example": [
+              "Maharashtra",
+              "Goa"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "OperatorProfileResponseDto": {
         "type": "object",
         "properties": {
@@ -3961,77 +4342,6 @@
           "missing"
         ]
       },
-      "UpdateOperatorProfileDto": {
-        "type": "object",
-        "properties": {
-          "legalName": {
-            "type": "string"
-          },
-          "tradingName": {
-            "type": "string",
-            "nullable": true
-          },
-          "registrationNumber": {
-            "type": "string",
-            "nullable": true
-          },
-          "taxNumber": {
-            "type": "string",
-            "nullable": true,
-            "description": "GSTIN."
-          },
-          "businessAddress": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AddressDto"
-              }
-            ]
-          },
-          "billingAddress": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AddressDto"
-              }
-            ]
-          },
-          "contactName": {
-            "type": "string"
-          },
-          "contactEmail": {
-            "type": "string"
-          },
-          "contactPhone": {
-            "type": "string",
-            "nullable": true
-          },
-          "serviceCategories": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "PRIVATE_CHARTER",
-                "HELICOPTER",
-                "EMPTY_LEG",
-                "AIR_AMBULANCE"
-              ]
-            }
-          },
-          "operatingRegions": {
-            "example": [
-              "Maharashtra",
-              "Goa"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "OperatorDocumentType": {
         "type": "string",
         "enum": [
@@ -4138,6 +4448,148 @@
         "required": [
           "type",
           "fileId"
+        ]
+      },
+      "StaffStatus": {
+        "type": "string",
+        "enum": [
+          "INVITED",
+          "ACTIVE",
+          "SUSPENDED"
+        ]
+      },
+      "StaffMemberDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The membership id."
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StaffStatus"
+              }
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffCapability"
+            }
+          },
+          "allAircraft": {
+            "type": "boolean"
+          },
+          "aircraftIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "invitedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "status",
+          "capabilities",
+          "allAircraft",
+          "aircraftIds",
+          "invitedAt",
+          "lastLoginAt"
+        ]
+      },
+      "InviteStaffDto": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffCapability"
+            }
+          },
+          "allAircraft": {
+            "type": "boolean",
+            "description": "Every aircraft of the operator, including ones added later. When true, aircraftIds is ignored."
+          },
+          "aircraftIds": {
+            "description": "Assigned aircraft, each one of this operator's. At least one unless allAircraft is true.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "email": {
+            "type": "string",
+            "example": "dispatch@example.com"
+          }
+        },
+        "required": [
+          "capabilities",
+          "allAircraft",
+          "aircraftIds",
+          "email"
+        ]
+      },
+      "UpdateStaffDto": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffCapability"
+            }
+          },
+          "allAircraft": {
+            "type": "boolean"
+          },
+          "aircraftIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED"
+            ],
+            "description": "SUSPENDED signs the person out at once; ACTIVE reinstates."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when suspending. Audited."
+          }
+        }
+      },
+      "RemoveStaffDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Audited."
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "AdminOperatorSummaryDto": {

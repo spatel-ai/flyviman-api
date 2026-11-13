@@ -28,6 +28,7 @@ import {
 } from '../../../generated/prisma/enums.js';
 import { PASSWORD_MIN_LENGTH } from '../../../common/crypto/password.js';
 import { E164, IsDateOnly } from '../../../common/validation/formats.js';
+import { OperatorAccessDto } from './operator-staff.dto.js';
 
 const present = (_object: unknown, value: unknown) =>
   value !== null && value !== undefined;
@@ -309,6 +310,11 @@ export class OperatorProfileResponseDto {
       'What is still needed before the application can be submitted. Empty when it is complete.',
   })
   missing: string[];
+}
+
+export class OperatorProfileWithAccessDto extends OperatorProfileResponseDto {
+  @ApiProperty({ type: OperatorAccessDto })
+  access: OperatorAccessDto;
 }
 
 export class AdminOperatorSummaryDto {

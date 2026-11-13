@@ -47,13 +47,25 @@ describe('aircraft listing state machine', () => {
     );
   });
 
-  it('refuses a reject without a reason and a staff submit', () => {
+  it('refuses a reject without a reason, and a review decision by an operator', () => {
     expect(nextAircraftStatus('reject', S.PENDING_REVIEW, Role.OPS)).toEqual({
       refused: 'reason',
     });
+    expect(
+      nextAircraftStatus('approve', S.PENDING_REVIEW, Role.OPERATOR_STAFF),
+    ).toEqual({ refused: 'role' });
+    expect(
+      nextAircraftStatus('approve', S.PENDING_REVIEW, Role.OPERATOR_ADMIN),
+    ).toEqual({ refused: 'role' });
+  });
+
+  it('lets operator staff submit and return to review (capability checked in the service, D-049)', () => {
     expect(nextAircraftStatus('submit', S.DRAFT, Role.OPERATOR_STAFF)).toEqual({
-      refused: 'role',
+      to: S.PENDING_REVIEW,
     });
+    expect(
+      nextAircraftStatus('returnToReview', S.APPROVED, Role.OPERATOR_STAFF),
+    ).toEqual({ to: S.PENDING_REVIEW });
   });
 });
 

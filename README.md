@@ -33,9 +33,21 @@ npm run test:e2e    # API integration tests (Playwright)
 npm run build
 ```
 
+## What is built
+
+Milestones M0 to M2 and M3 steps 1 to 7 (`../docs/progress.md` has the detail and `../docs/roadmap.md` what comes next):
+
+- **Foundations:** sign-in with rotating refresh tokens, roles checked against the database on every request, CSRF protection, rate limits, an append-only audit log, structured logs with request IDs.
+- **Identity:** customer registration by email or mobile with one-time codes, password reset, profiles and saved passengers; operator registration, compliance documents and review; internal staff accounts.
+- **Fleet:** airports and heliports (OurAirports), aircraft profiles with photos and documents, review and approval by operations, an availability calendar with conflict rules.
+- **Operator staff:** operator administrators invite staff, give them "manage aircraft" and/or "manage availability" on chosen aircraft (or all), and suspend or remove them (`/operator/staff`).
+- **Not yet:** search and pricing (M4), scheduled airlines, empty legs, bookings, payments, air ambulance; real messaging and storage providers.
+
+The route catalogue is `../docs/api/api-routes.md`; request and response shapes are in `openapi.json` (the interactive reference at `/api/docs` runs outside production only).
+
 ## Deployment
 
-The proof-of-concept host runs on Render from `render.yaml` (branch `main`), with the web app on Vercel proxying `/api/v1` to it. Steps, variables and limits: `../docs/deployment.md`. It is not production: messages are discarded and uploads live on the instance's disk.
+The proof-of-concept host runs on Render from `render.yaml` (branch `main`), with the web app on Vercel proxying `/api/v1` to it. Steps, variables and limits: `../docs/deployment.md`. It is not production: messages are discarded, uploads live on the instance's disk, and seeded passwords must be at least 24 characters there.
 
 ## Documentation
 
