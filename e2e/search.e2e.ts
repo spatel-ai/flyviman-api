@@ -132,6 +132,14 @@ test.describe('charter search', () => {
     // Operator costs and Flyviman's revenue are never in a customer answer.
     const text = JSON.stringify(detail);
     expect(text).not.toMatch(/operatorPayable|platformRevenue|calculationId/);
+    // Breakdown lines carry no basis wording (it would reveal the hourly rate).
+    for (const line of detail.breakdown) {
+      expect(Object.keys(line).sort()).toEqual([
+        'amountMinor',
+        'code',
+        'label',
+      ]);
+    }
 
     // The stored search answers the same results.
     const again = (
@@ -206,6 +214,17 @@ test.describe('charter search', () => {
       },
     });
     expect(past.status()).toBe(400);
+
+    // A time without an offset would be read in the server's zone.
+    const local = await request.post('search/charter', {
+      data: {
+        originId: mumbai,
+        destinationId: goa,
+        departureAt: inDays(4).toISOString().slice(0, 19),
+        passengerCount: 2,
+      },
+    });
+    expect(local.status()).toBe(400);
 
     const missing = await request.get(
       'search/00000000-0000-4000-8000-000000000000',

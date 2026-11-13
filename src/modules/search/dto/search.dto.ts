@@ -5,6 +5,7 @@ import {
   IsISO8601,
   IsOptional,
   IsUUID,
+  Matches,
   Max,
   Min,
 } from 'class-validator';
@@ -40,6 +41,10 @@ export class HelicopterSearchDto {
     example: '2026-12-05T10:00:00+05:30',
   })
   @IsISO8601({ strict: true })
+  // A time without an offset would be read in the server's zone (D-099).
+  @Matches(/(Z|[+-]\d{2}:\d{2})$/, {
+    message: 'departureAt must include a time zone offset (Z or +05:30)',
+  })
   departureAt: string;
 
   @ApiProperty({ minimum: 1, maximum: 50, example: 4 })
@@ -141,6 +146,14 @@ export class SearchResponseDto {
 
   @ApiProperty({ enum: ServiceCategory, enumName: 'ServiceCategory' })
   category: ServiceCategory;
+
+  @ApiProperty({
+    enum: CHARTER_CATEGORIES,
+    enumName: 'CharterCategory',
+    nullable: true,
+    description: 'The fixed-wing class asked for; null for any.',
+  })
+  aircraftCategory: (typeof CHARTER_CATEGORIES)[number] | null;
 
   @ApiProperty({ type: [SearchLegDto] })
   legs: SearchLegDto[];

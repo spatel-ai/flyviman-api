@@ -158,10 +158,10 @@ export function calculatePrice(input: EngineInput): EngineResult {
       if (back.distanceKm > free) {
         position.back = back.minutes ?? 0;
         position.backKm = back.distanceKm;
+        assumptions.push(
+          `Aircraft returns to ${aircraft.base.name} after drop-off`,
+        );
       }
-      assumptions.push(
-        `Aircraft returns to ${aircraft.base.name} after drop-off`,
-      );
     }
   }
 

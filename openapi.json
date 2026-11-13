@@ -7170,6 +7170,15 @@
               }
             ]
           },
+          "aircraftCategory": {
+            "nullable": true,
+            "description": "The fixed-wing class asked for; null for any.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CharterCategory"
+              }
+            ]
+          },
           "legs": {
             "type": "array",
             "items": {
@@ -7194,6 +7203,7 @@
         "required": [
           "searchId",
           "category",
+          "aircraftCategory",
           "legs",
           "passengerCount",
           "createdAt",

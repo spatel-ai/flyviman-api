@@ -105,6 +105,15 @@ export class EnvironmentVariables {
   @Min(1)
   RATE_LIMIT_AUTH_PER_MINUTE: number = 5;
 
+  /**
+   * Requests per minute, per caller, on the public search routes that price
+   * aircraft (`POST /search/*`, `GET /search/calendar`). Test servers lift it.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RATE_LIMIT_SEARCH_PER_MINUTE: number = 20;
+
   /** Requests per minute, per address, on every other route. */
   @Type(() => Number)
   @IsInt()

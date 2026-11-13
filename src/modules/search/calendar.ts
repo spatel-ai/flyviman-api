@@ -31,3 +31,12 @@ export function calendarDepartures(
   }
   return result;
 }
+
+/** Whether `month` (YYYY-MM) is this month or within `ahead` months of it, in India. */
+export function monthInRange(month: string, now: Date, ahead: number): boolean {
+  const india = new Date(now.getTime() + INDIA_OFFSET_MINUTES * 60_000);
+  const current = india.getUTCFullYear() * 12 + india.getUTCMonth();
+  const [year, monthNumber] = month.split('-').map(Number);
+  const asked = year * 12 + (monthNumber - 1);
+  return asked >= current && asked <= current + ahead;
+}

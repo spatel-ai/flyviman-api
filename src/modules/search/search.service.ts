@@ -14,7 +14,7 @@ import { LocationsService } from '../locations/locations.service.js';
 import { MatchingService } from '../matching/matching.service.js';
 import { calculatePrice, type PricePoint } from '../pricing/engine.js';
 import { PricingService } from '../pricing/pricing.service.js';
-import { calendarDepartures } from './calendar.js';
+import { calendarDepartures, monthInRange } from './calendar.js';
 import type {
   FareCalendarQueryDto,
   FareCalendarResponseDto,
@@ -139,7 +139,11 @@ export class SearchService {
               aircraftId: aircraft.id,
               operatorId: aircraft.operatorId,
               inputs: {
-                leg: { ...leg },
+                leg: {
+                  originId: leg.originId,
+                  destinationId: leg.destinationId,
+                  departureAt: leg.departureAt,
+                },
                 passengerCount: dto.passengerCount,
                 aircraft: {
                   category: aircraft.category,
@@ -176,7 +180,9 @@ export class SearchService {
               }
             : null,
           validUntil: result.validUntil.toISOString(),
-          warnings: result.priced ? [] : result.warnings,
+          // The engine's reasons (no rate, no cruise speed) are operator
+          // matters; they stay in the logs of pricing, not in front of customers.
+          warnings: result.priced ? [] : [PRICE_ON_REQUEST],
         });
       }
       // Priced first, cheapest first.
@@ -199,6 +205,7 @@ export class SearchService {
     return {
       searchId,
       category,
+      aircraftCategory: dto.category ?? null,
       legs: [leg],
       passengerCount: dto.passengerCount,
       createdAt: now.toISOString(),
@@ -212,6 +219,7 @@ export class SearchService {
     return {
       searchId: search.id,
       category: search.category,
+      aircraftCategory: preferredCategory(search.preferences),
       legs: search.legs as unknown as SearchLegDto[],
       passengerCount: search.passengerCount,
       createdAt: search.createdAt.toISOString(),
@@ -236,8 +244,16 @@ export class SearchService {
       searchId: search.id,
       legs: search.legs as unknown as SearchLegDto[],
       passengerCount: search.passengerCount,
-      breakdown: (calculation?.breakdown ??
-        []) as unknown as SearchResultDetailDto['breakdown'],
+      // An explicit allowlist: nothing added to a stored line later reaches
+      // customers by accident, and the `basis` wording (hours × rate) stays
+      // out, so an operator's hourly rate cannot be worked out (D-099).
+      breakdown: (
+        (calculation?.breakdown ?? []) as {
+          code: string;
+          label: string;
+          amountMinor: number;
+        }[]
+      ).map(({ code, label, amountMinor }) => ({ code, label, amountMinor })),
       assumptions: (calculation?.assumptions ?? []) as string[],
       exclusions: (calculation?.exclusions ?? []) as string[],
       bookingMode: 'REQUEST',
@@ -269,6 +285,12 @@ export class SearchService {
       query.originId,
       query.destinationId,
     );
+    if (!monthInRange(query.month, now, CALENDAR_MONTHS_AHEAD)) {
+      throw invalid(
+        'month',
+        `must be this month or one of the next ${CALENDAR_MONTHS_AHEAD}`,
+      );
+    }
     const departures = calendarDepartures(query.month, now, MIN_NOTICE_MINUTES);
     const days: FareCalendarResponseDto['days'] = [];
     if (departures.length > 0) {
@@ -327,7 +349,11 @@ export class SearchService {
       }
     }
     const value: FareCalendarResponseDto = { month: query.month, days };
-    if (this.calendarCache.size > 500) this.calendarCache.clear();
+    // Full: drop the oldest entry (Maps keep insertion order), never the lot.
+    if (this.calendarCache.size >= CALENDAR_CACHE_SIZE) {
+      const oldest = this.calendarCache.keys().next().value;
+      if (oldest !== undefined) this.calendarCache.delete(oldest);
+    }
     this.calendarCache.set(key, {
       expires: Date.now() + CALENDAR_TTL_MS,
       value,
@@ -361,6 +387,10 @@ export class SearchService {
 }
 
 const CALENDAR_TTL_MS = 5 * 60_000;
+const CALENDAR_CACHE_SIZE = 500;
+const CALENDAR_MONTHS_AHEAD = 12;
+const PRICE_ON_REQUEST =
+  'The operator prices this aircraft on request. Send a request and our team will come back to you.';
 
 function categoriesFor(
   category: 'PRIVATE_CHARTER' | 'HELICOPTER',
@@ -368,6 +398,17 @@ function categoriesFor(
 ): AircraftCategory[] {
   if (category === 'HELICOPTER') return [AircraftCategory.HELICOPTER];
   return fixedWing ? [fixedWing] : [...CHARTER_CATEGORIES];
+}
+
+function preferredCategory(
+  preferences: unknown,
+): (typeof CHARTER_CATEGORIES)[number] | null {
+  const value = (preferences as { category?: string } | null)?.category;
+  return CHARTER_CATEGORIES.includes(
+    value as (typeof CHARTER_CATEGORIES)[number],
+  )
+    ? (value as (typeof CHARTER_CATEGORIES)[number])
+    : null;
 }
 
 function isCustomerCategory(category: ServiceCategory): boolean {
@@ -378,7 +419,10 @@ function isCustomerCategory(category: ServiceCategory): boolean {
 }
 
 /** Drops the internal calculation reference. */
-function publicResult(stored: StoredResult): SearchResultDto {
+/** A result's fields as a plain object (not the DTO class), safe to spread. */
+type ResultFields = { [K in keyof SearchResultDto]: SearchResultDto[K] };
+
+function publicResult(stored: StoredResult): ResultFields {
   const { calculationId: _calculationId, ...result } = stored;
   return result;
 }

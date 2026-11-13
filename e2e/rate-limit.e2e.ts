@@ -18,6 +18,25 @@ test('responses carry the standard rate limit headers', async ({
   await request.dispose();
 });
 
+test('pricing searches have their own, lower limit', async ({ playwright }) => {
+  const request = await playwright.request.newContext({
+    baseURL: STRICT_BASE_URL,
+  });
+  // The limit is counted before validation, so an empty body is enough.
+  const first = await request.post('search/charter', { data: {} });
+  expect(first.headers()['ratelimit-limit']).toBe('20');
+  // Counted per route: the 21st calendar request in a minute is refused.
+  const statuses: number[] = [];
+  for (let attempt = 0; attempt < 21; attempt += 1) {
+    statuses.push((await request.get('search/calendar')).status());
+  }
+  expect(statuses).toContain(429);
+  // Reading a stored search stays on the default tier.
+  const read = await request.get('search/00000000-0000-4000-8000-000000000000');
+  expect(read.headers()['ratelimit-limit']).toBe('100');
+  await request.dispose();
+});
+
 test('keeping a session alive is counted per session, not per address', async ({
   playwright,
 }) => {

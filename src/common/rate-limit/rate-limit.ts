@@ -8,7 +8,7 @@ import {
   ThrottlerOptionsFactory,
 } from '@nestjs/throttler';
 
-export type RateTier = 'auth' | 'default';
+export type RateTier = 'auth' | 'search' | 'default';
 const RATE_TIER = 'rateTier';
 
 /**
@@ -16,6 +16,13 @@ const RATE_TIER = 'rateTier';
  * on the default tier. Limits per tier: docs/architecture/security-rbac.md.
  */
 export const StrictRateLimit = () => SetMetadata(RATE_TIER, 'auth' as RateTier);
+
+/**
+ * Puts a route on the search tier (`RATE_LIMIT_SEARCH_PER_MINUTE`): public
+ * routes that compute prices or write a search record (M5, D-099).
+ */
+export const SearchRateLimit = () =>
+  SetMetadata(RATE_TIER, 'search' as RateTier);
 
 const ENQUIRY_LIMIT = 'enquiryLimit';
 
@@ -37,6 +44,7 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
   createThrottlerOptions(): ThrottlerModuleOptions {
     const limits: Record<RateTier, number> = {
       auth: this.config.getOrThrow<number>('RATE_LIMIT_AUTH_PER_MINUTE'),
+      search: this.config.getOrThrow<number>('RATE_LIMIT_SEARCH_PER_MINUTE'),
       default: this.config.getOrThrow<number>('RATE_LIMIT_DEFAULT_PER_MINUTE'),
     };
     // Its own number, never tied to the sign-in tier: raising the sign-in
