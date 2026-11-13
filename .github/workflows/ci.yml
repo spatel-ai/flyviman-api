@@ -1,10 +1,12 @@
-# Every push and pull request runs the full check (docs/testing-strategy.md,
+# Every pull request and every push to main runs the full check (docs/testing-strategy.md,
 # "A change is done when ..."). A red run means the change is not done.
 name: CI
 
 on:
+  # Every pull request, and main itself after a merge. A branch is checked
+  # once its pull request is open (or by running the workflow by hand).
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
