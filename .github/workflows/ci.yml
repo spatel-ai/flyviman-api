@@ -1,0 +1,107 @@
+# Every push and pull request runs the full check (docs/testing-strategy.md,
+# "A change is done when ..."). A red run means the change is not done.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, unit, build, Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: flyviman
+          POSTGRES_PASSWORD: flyviman
+          POSTGRES_DB: flyviman
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U flyviman -d flyviman"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Test-only values, made fresh on every run. Nothing here is a real
+      # secret: the database and Redis live only inside this job.
+      - name: Write the test environment
+        run: |
+          cat > .env <<EOF
+          NODE_ENV=development
+          PORT=4000
+          DATABASE_URL=postgresql://flyviman:flyviman@localhost:5432/flyviman?schema=public
+          WEB_ORIGIN=http://localhost:3000
+          REDIS_URL=redis://localhost:6379
+          JWT_ACCESS_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+          DATA_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')
+          ENABLE_DEV_TOOLS=true
+          SEED_ADMIN_EMAIL=admin@flyviman.test
+          SEED_ADMIN_PASSWORD=Ci-$(openssl rand -hex 16)-Aa1!
+          SEED_LOCAL_PASSWORD=Ci-$(openssl rand -hex 16)-Aa1!
+          EOF
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Format
+        run: npm run format:check
+      - name: Prisma schema
+        run: npm run prisma:validate
+      - name: Migrations apply to an empty database
+        run: npx prisma migrate deploy
+
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+      # The web app's API types are generated from this file, so it must
+      # match the code (D-093).
+      - name: OpenAPI document is up to date
+        run: |
+          node dist/openapi-export.js
+          git diff --exit-code -- openapi.json || {
+            echo "::error::openapi.json is out of date. Run 'npm run openapi:export' and commit it, then 'npm run api:types' in flyviman-web."
+            exit 1
+          }
+
+      - name: Playwright (API integration)
+        run: npm run test:e2e
+        env:
+          CI: "true"
+
+      - name: Keep the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 14

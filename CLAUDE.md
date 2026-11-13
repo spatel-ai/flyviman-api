@@ -104,7 +104,7 @@ Strategy and conventions: `../docs/testing-strategy.md`.
 
 - Pure logic (pricing rules, transition tables, mappers): Vitest unit tests.
 - Everything that crosses HTTP, the database or a provider adapter: Playwright API tests in `e2e/`, written with the `/playwright-test` skill.
-- A change is not done until `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:e2e` and `npm run build` pass.
+- A change is not done until `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:e2e` and `npm run build` pass. CI (`.github/workflows/ci.yml`) runs all of them on every push and pull request, and also fails when `openapi.json` is out of date (`../docs/testing-strategy.md`).
 
 ## Skills and agents
 
