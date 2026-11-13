@@ -98,12 +98,17 @@ test.describe('document expiry', () => {
         select: { id: true },
       }),
     );
-    // Insurance lapses in five days; the air operator certificate lapsed
-    // yesterday (set directly: the API refuses an expiry in the past).
+    // Insurance lapses in five days, registration in twenty; the air
+    // operator certificate lapsed yesterday (set directly: the API refuses
+    // an expiry in the past).
     await withPrisma(async (prisma) => {
       await prisma.aircraftDocument.update({
         where: { id: documents.INSURANCE },
         data: { expiresAt: new Date(`${indiaDate(5)}T00:00:00Z`) },
+      });
+      await prisma.aircraftDocument.update({
+        where: { id: documents.REGISTRATION },
+        data: { expiresAt: new Date(`${indiaDate(20)}T00:00:00Z`) },
       });
       await prisma.operatorDocument.update({
         where: { id: operatorDocument.id },
@@ -112,12 +117,27 @@ test.describe('document expiry', () => {
     });
 
     await runJob(request);
-    expect(await alertsFor([documents.INSURANCE, operatorDocument.id])).toEqual(
-      [
-        { documentId: operatorDocument.id, threshold: 0 },
-        { documentId: documents.INSURANCE, threshold: 7 },
-      ],
-    );
+    const watched = [
+      documents.INSURANCE,
+      documents.REGISTRATION,
+      operatorDocument.id,
+    ];
+    expect(await alertsFor(watched)).toEqual([
+      { documentId: operatorDocument.id, threshold: 0 },
+      { documentId: documents.INSURANCE, threshold: 7 },
+      { documentId: documents.REGISTRATION, threshold: 30 },
+    ]);
+    const notifications = () =>
+      withPrisma((prisma) =>
+        prisma.notification.count({
+          where: {
+            userId: admin.id,
+            templateKey: { in: ['document.expiring', 'document.expired'] },
+          },
+        }),
+      );
+    // Three alerts, each in the app and by email.
+    expect(await notifications()).toBe(6);
 
     // In the app and by email, to the operator's administrator.
     const inbox = (await (await request.get('me/notifications')).json()).data;
@@ -140,9 +160,20 @@ test.describe('document expiry', () => {
 
     // A second run sends nothing new for these documents.
     await runJob(request);
-    expect(
-      await alertsFor([documents.INSURANCE, operatorDocument.id]),
-    ).toHaveLength(2);
+    expect(await alertsFor(watched)).toHaveLength(3);
+    expect(await notifications()).toBe(6);
+    // Every email went out, and none keeps its address.
+    const emails = await withPrisma((prisma) =>
+      prisma.notification.findMany({
+        where: {
+          userId: admin.id,
+          channel: 'EMAIL',
+          templateKey: { in: ['document.expiring', 'document.expired'] },
+        },
+        select: { status: true, recipient: true },
+      }),
+    );
+    expect(emails).toEqual(Array(3).fill({ status: 'SENT', recipient: null }));
   });
 
   test('a renewed copy ends the alerts, and an expired document takes the aircraft out of search', async ({
@@ -244,5 +275,55 @@ test.describe('document expiry', () => {
       ).toBe(400);
     }
     await ops.dispose();
+  });
+});
+
+test.describe('notification outbox', () => {
+  test('the dispatcher sends a due message once and keeps no address', async ({
+    request,
+  }) => {
+    await signIn(request, 'operatorAdmin');
+    const me = (await (await request.get('me')).json()).data as {
+      id: string;
+      email: string;
+    };
+    const subject = `VT-${Date.now()}`;
+    const queued = await withPrisma((prisma) =>
+      prisma.notification.create({
+        data: {
+          userId: me.id,
+          channel: 'EMAIL',
+          templateKey: 'document.expiring',
+          payload: {
+            document: 'Insurance',
+            subject,
+            date: '1 Dec 2030',
+            when: 'in 9 days',
+          },
+          status: 'QUEUED',
+          recipient: me.email,
+          nextAttemptAt: new Date(Date.now() - 1000),
+        },
+      }),
+    );
+    const run = async () =>
+      request.post('dev/jobs/notification-outbox', {
+        headers: await csrfHeaders(request),
+      });
+    expect((await run()).status()).toBe(200);
+    const row = await withPrisma((prisma) =>
+      prisma.notification.findUniqueOrThrow({ where: { id: queued.id } }),
+    );
+    expect(row).toMatchObject({ status: 'SENT', recipient: null, attempts: 1 });
+    const copies = async () =>
+      (await outbox(request, me.email)).filter((message) =>
+        String(message.subject).includes(subject),
+      );
+    expect((await copies()).map((message) => message.subject)).toEqual([
+      `Insurance for ${subject} expires in 9 days`,
+    ]);
+    // Running again sends nothing more.
+    await run();
+    expect(await copies()).toHaveLength(1);
   });
 });

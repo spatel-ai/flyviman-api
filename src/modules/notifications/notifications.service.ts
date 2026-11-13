@@ -20,6 +20,8 @@ type Variables = Record<string, string | number>;
 const OUTBOX_INTERVAL_MS = 10_000;
 const OUTBOX_BATCH = 20;
 const OUTBOX_MAX_ATTEMPTS = 5;
+/** How long a claimed row is held before another sender may take it. */
+const OUTBOX_LEASE_SECONDS = 300;
 
 export interface SendNotification {
   /**
@@ -73,10 +75,16 @@ export class NotificationsService {
     if (
       !input.secret &&
       userId &&
+      input.to &&
       input.channel !== NotificationChannel.IN_APP
     ) {
-      const id = await this.enqueue({ ...input, userId });
-      await this.deliver(id);
+      // Never thrown to the caller, whose change has already committed.
+      try {
+        const id = await this.enqueue({ ...input, userId });
+        await this.deliver(id);
+      } catch (error) {
+        this.logFailure(input.templateKey, input.channel, error);
+      }
       return;
     }
     const variables = input.variables ?? {};
@@ -153,17 +161,19 @@ export class NotificationsService {
   }
 
   /**
-   * Delivers queued messages that are due, a batch at a time. Rows are
-   * claimed with SKIP LOCKED and pushed back a minute first, so two
-   * instances never send the same message and a crash mid-send only
-   * delays it.
+   * Delivers queued messages that are due, a batch at a time. Each row is
+   * leased first (SKIP LOCKED, `nextAttemptAt` pushed past the lease), so two
+   * instances, or the dispatcher and an immediate send, never send the same
+   * message, and a crash mid-send only delays it.
    */
   @Interval('notification-outbox', OUTBOX_INTERVAL_MS)
   async dispatchDue(): Promise<number> {
     let claimed: { id: string }[];
     try {
       claimed = await this.prisma.$queryRaw<{ id: string }[]>`
-        UPDATE "Notification" SET "nextAttemptAt" = now() + interval '1 minute'
+        UPDATE "Notification"
+        SET "nextAttemptAt" = now() + make_interval(secs => ${OUTBOX_LEASE_SECONDS}),
+            "updatedAt" = now()
         WHERE id IN (
           SELECT id FROM "Notification"
           WHERE status = 'QUEUED' AND "nextAttemptAt" <= now()
@@ -178,12 +188,41 @@ export class NotificationsService {
       );
       return 0;
     }
-    for (const { id } of claimed) await this.deliver(id);
+    for (const { id } of claimed) await this.sendLeased(id);
     return claimed.length;
   }
 
-  /** Sends one queued message; on failure schedules a retry, then gives up. */
+  /**
+   * Sends one queued message now, if no one else holds it: the row is leased
+   * by a conditional update first, so this and the dispatcher cannot both
+   * send it. Never throws.
+   */
   async deliver(id: string): Promise<void> {
+    try {
+      const { count } = await this.prisma.notification.updateMany({
+        where: {
+          id,
+          status: NotificationStatus.QUEUED,
+          nextAttemptAt: { lte: new Date() },
+        },
+        data: {
+          nextAttemptAt: new Date(Date.now() + OUTBOX_LEASE_SECONDS * 1000),
+        },
+      });
+      if (count === 1) await this.sendLeased(id);
+    } catch (error) {
+      this.logger.error(
+        `Outbox delivery failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Sends a row this instance has leased. Success marks it SENT; a failure
+   * schedules a retry (1, 2, 4, 8 minutes), then marks it FAILED. A finished
+   * row keeps no address (the outbox needs it only while QUEUED).
+   */
+  private async sendLeased(id: string): Promise<void> {
     const row = await this.prisma.notification.findUnique({ where: { id } });
     if (
       !row ||
@@ -207,6 +246,7 @@ export class NotificationsService {
           providerMessageId: sent.providerMessageId,
           attempts: { increment: 1 },
           nextAttemptAt: null,
+          recipient: null,
         },
       });
     } catch (error) {
@@ -221,10 +261,10 @@ export class NotificationsService {
                   status: NotificationStatus.FAILED,
                   attempts,
                   nextAttemptAt: null,
+                  recipient: null,
                 }
               : {
                   attempts,
-                  // 1, 2, 4, 8 minutes.
                   nextAttemptAt: new Date(
                     Date.now() + 60_000 * 2 ** (attempts - 1),
                   ),

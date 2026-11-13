@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   Inject,
   Injectable,
@@ -30,6 +31,12 @@ const LAST_RUN_KEY = 'compliance:expiry-alerts:last-run';
 const LOCK_SECONDS = 10 * 60;
 /** The furthest ahead an alert looks (the largest threshold, D-048). */
 const ALERT_WINDOW_DAYS = 30;
+/** Deletes the lock only if it still holds this run's token. */
+const RELEASE_LOCK = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
+
+function alertKey(document: ExpiringDocument, threshold: number): string {
+  return `${document.kind}:${document.documentId}:${threshold}:${document.expiresAt.toISOString().slice(0, 10)}`;
+}
 
 /** 1 Dec 2026, as alerts show a date. */
 function displayDate(date: Date): string {
@@ -105,9 +112,11 @@ export class ComplianceService implements OnApplicationBootstrap {
   async runExpiryAlerts(
     now = new Date(),
   ): Promise<{ alerted: number; skipped: boolean }> {
+    // The lock holds a token of this run, so only this run releases it.
+    const token = randomUUID();
     const locked = await this.redis.set(
       LOCK_KEY,
-      '1',
+      token,
       'EX',
       LOCK_SECONDS,
       'NX',
@@ -115,18 +124,30 @@ export class ComplianceService implements OnApplicationBootstrap {
     if (!locked) return { alerted: 0, skipped: true };
     try {
       const today = indiaToday(now);
-      const due = await this.documents(today, ALERT_WINDOW_DAYS);
-      let alerted = 0;
-      for (const document of due) {
+      const due: { document: ExpiringDocument; threshold: number }[] = [];
+      for (const document of await this.documents(today, ALERT_WINDOW_DAYS)) {
         const threshold = alertThreshold(document.daysLeft);
-        if (threshold === null) continue;
-        if (await this.alert(document, threshold)) alerted += 1;
+        if (threshold !== null) due.push({ document, threshold });
+      }
+      const sent = await this.alreadySent(due);
+      let alerted = 0;
+      for (const { document, threshold } of due) {
+        if (sent.has(alertKey(document, threshold))) continue;
+        // One document's failure never stops the others; it is retried
+        // on the next run.
+        try {
+          if (await this.alert(document, threshold)) alerted += 1;
+        } catch (error) {
+          this.logger.error(
+            `Expiry alert failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+          );
+        }
       }
       await this.redis.set(LAST_RUN_KEY, now.toISOString());
       if (alerted > 0) this.logger.log(`Expiry alerts sent: ${alerted}`);
       return { alerted, skipped: false };
     } finally {
-      await this.redis.del(LOCK_KEY);
+      await this.redis.eval(RELEASE_LOCK, 1, LOCK_KEY, token);
     }
   }
 
@@ -166,6 +187,30 @@ export class ComplianceService implements OnApplicationBootstrap {
     );
   }
 
+  /** Alerts already recorded for these documents, in one query. */
+  private async alreadySent(
+    due: { document: ExpiringDocument; threshold: number }[],
+  ): Promise<Set<string>> {
+    if (due.length === 0) return new Set();
+    const rows = await this.prisma.documentExpiryAlert.findMany({
+      where: {
+        documentId: { in: [...new Set(due.map((d) => d.document.documentId))] },
+      },
+      select: {
+        kind: true,
+        documentId: true,
+        threshold: true,
+        expiresAt: true,
+      },
+    });
+    return new Set(
+      rows.map(
+        (row) =>
+          `${row.kind}:${row.documentId}:${row.threshold}:${row.expiresAt.toISOString().slice(0, 10)}`,
+      ),
+    );
+  }
+
   /** One alert; false if it was already sent for this threshold and date. */
   private async alert(
     document: ExpiringDocument,
@@ -174,13 +219,17 @@ export class ComplianceService implements OnApplicationBootstrap {
     const administrators = await this.operators.administrators(
       document.operatorId,
     );
+    // Nobody to tell: not recorded, so a later run sends it once an
+    // administrator exists.
+    if (administrators.length === 0) return false;
     const templateKey =
       threshold === 0 ? 'document.expired' : 'document.expiring';
     const variables = {
       document: documentLabel(document.kind, document.type),
       subject: document.registration ?? document.operatorName,
       date: displayDate(document.expiresAt),
-      days: document.daysLeft,
+      when:
+        document.daysLeft === 1 ? 'tomorrow' : `in ${document.daysLeft} days`,
     };
     const queued = await uniqueOrNull(() =>
       this.prisma.$transaction(async (tx) => {

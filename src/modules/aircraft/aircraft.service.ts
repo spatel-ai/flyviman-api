@@ -21,6 +21,7 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
+import { indiaTodayAsDate } from '../../common/india-date.js';
 import { searchBlockers } from './aircraft-search.js';
 import type { ExpiryCandidate } from '../compliance/expiry.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -420,8 +421,9 @@ export class AircraftService implements OnModuleInit {
     const gaps: string[] = [];
     if (!aircraft.homeBaseId) gaps.push('homeBaseId');
     if (aircraft.rangeKm == null) gaps.push('rangeKm');
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
+    // Today in India: a document is expired from the day after its date
+    // there, as the expiry job and the web count it (D-072).
+    const today = indiaTodayAsDate();
     const held = await db.aircraftDocument.findMany({
       where: {
         aircraftId: aircraft.id,
@@ -1501,8 +1503,9 @@ export class AircraftService implements OnModuleInit {
     tx: Prisma.TransactionClient,
     aircraftId: string,
   ): Promise<string[]> {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
+    // Today in India: a document is expired from the day after its date
+    // there, as the expiry job and the web count it (D-072).
+    const today = indiaTodayAsDate();
     const held = await tx.aircraftDocument.findMany({
       where: {
         aircraftId,

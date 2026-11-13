@@ -47,13 +47,13 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
   {
     key: 'document.expiring',
     channel: 'EMAIL',
-    subject: '{{document}} for {{subject}} expires in {{days}} days',
+    subject: '{{document}} for {{subject}} expires {{when}}',
     body: '{{document}} for {{subject}} expires on {{date}}. Upload the renewed copy in the Flyviman operator portal before then. An aircraft whose required documents have expired is not offered to customers.',
   },
   {
     key: 'document.expiring',
     channel: 'IN_APP',
-    subject: '{{document}} expires in {{days}} days',
+    subject: '{{document}} expires {{when}}',
     body: '{{document}} for {{subject}} expires on {{date}}. Upload the renewed copy before then.',
   },
   {

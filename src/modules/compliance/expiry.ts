@@ -31,20 +31,7 @@ export interface ExpiringDocument extends ExpiryCandidate {
 
 const DAY_MS = 86_400_000;
 
-/** Today's date in India (one zone at launch, open decision 12). */
-export function indiaToday(now: Date): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-}
-
-/** A calendar date (`YYYY-MM-DD`) plus days, as a UTC-midnight Date. */
-export function dateAfter(today: string, days: number): Date {
-  return new Date(Date.parse(`${today}T00:00:00Z`) + days * DAY_MS);
-}
+export { dateAfter, indiaToday } from '../../common/india-date.js';
 
 export function daysUntil(expiresAt: Date, today: string): number {
   return Math.round(
