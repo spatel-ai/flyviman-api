@@ -12,6 +12,11 @@ function fakeRedis() {
       store.delete(key);
       return Promise.resolve(value);
     },
+    set: (key: string, value: string, ...options: string[]) => {
+      const previous = store.get(key) ?? null;
+      store.set(key, value);
+      return Promise.resolve(options.includes('GET') ? previous : 'OK');
+    },
     del: (...keys: string[]) => {
       keys.forEach((key) => store.delete(key));
       return Promise.resolve(keys.length);

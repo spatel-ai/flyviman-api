@@ -37,6 +37,7 @@ function toStaffDto(member: StaffMember): StaffMemberDto {
     id: member.id,
     email: member.email,
     status: member.status,
+    suspendedBy: member.suspendedBy,
     capabilities: member.permissions.capabilities,
     allAircraft: member.permissions.allAircraft,
     aircraftIds: member.permissions.aircraftIds,

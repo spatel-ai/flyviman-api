@@ -123,10 +123,14 @@ export class AvailabilityService {
     user: AuthUser,
     aircraftId: string,
     offersTime = false,
+    grounds = false,
   ) {
     const { operator, access } = await this.operators.accessFor(user);
     const aircraft = await this.aircraft.inReach(access, aircraftId);
-    assertCan(access, 'MANAGE_AVAILABILITY');
+    // Grounding (a maintenance, blackout or other block) is a safety action
+    // that either capability may take, like the availability status (D-071).
+    if (grounds) assertCan(access, 'MANAGE_AVAILABILITY', 'MANAGE_AIRCRAFT');
+    else assertCan(access, 'MANAGE_AVAILABILITY');
     if (offersTime && operator.status !== OperatorStatus.APPROVED) {
       throw new AppException(
         'OPERATOR_NOT_APPROVED',
@@ -392,7 +396,12 @@ export class AvailabilityService {
     }
     // A soft hold offers time to a customer; a maintenance or blackout block
     // grounds the aircraft and stays open to an operator who is not approved.
-    const { aircraft } = await this.ownedAircraft(user, aircraftId, softHold);
+    const { aircraft } = await this.ownedAircraft(
+      user,
+      aircraftId,
+      softHold,
+      !softHold,
+    );
     await this.assertRoom(aircraft.id);
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -427,11 +436,21 @@ export class AvailabilityService {
     aircraftId: string,
     blockId: string,
   ): Promise<void> {
-    const { aircraft } = await this.ownedAircraft(user, aircraftId);
+    // Grounding blocks may be lifted with either capability; a soft hold
+    // only with "manage availability" (D-071).
+    const { aircraft } = await this.ownedAircraft(
+      user,
+      aircraftId,
+      false,
+      true,
+    );
     const block = await this.prisma.availabilityBlock.findFirst({
       where: { id: blockId, aircraftId: aircraft.id },
     });
     if (!block) throw notFound('Block');
+    if (block.reason === AvailabilityBlockReason.SOFT_HOLD) {
+      await this.ownedAircraft(user, aircraftId);
+    }
     if (block.reason === AvailabilityBlockReason.BOOKING) {
       throw new AppException(
         'AVAILABILITY_CONFLICT',

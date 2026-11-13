@@ -125,6 +125,15 @@ export class StaffMemberDto {
   status: StaffStatus;
 
   @ApiProperty({
+    enum: ['PLATFORM', 'OPERATOR'],
+    enumName: 'SuspensionSource',
+    nullable: true,
+    description:
+      'Who suspended the account, while suspended. Only the operator can lift its own; PLATFORM (Flyviman) cannot be lifted here.',
+  })
+  suspendedBy: 'PLATFORM' | 'OPERATOR' | null;
+
+  @ApiProperty({
     enum: CAPABILITIES,
     enumName: 'StaffCapability',
     isArray: true,

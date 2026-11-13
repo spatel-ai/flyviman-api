@@ -230,47 +230,71 @@ export class UsersService {
         HttpStatus.CONFLICT,
       );
     }
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id } });
       if (!user) throw notFound();
 
-      const allowed =
-        (user.status === UserStatus.ACTIVE &&
-          status === UserStatus.SUSPENDED) ||
-        (user.status === UserStatus.SUSPENDED && status === UserStatus.ACTIVE);
+      // Flyviman may suspend an active account, take over a suspension an
+      // operator made (so the operator can no longer lift it), and lift its
+      // own suspensions. An operator's suspension of its staff stays the
+      // operator's to lift (D-070, D-071).
+      const byOperator = user.suspendedBy === SuspensionSource.OPERATOR;
+      const suspending = status === UserStatus.SUSPENDED;
+      const allowed = suspending
+        ? user.status === UserStatus.ACTIVE ||
+          (user.status === UserStatus.SUSPENDED && byOperator)
+        : user.status === UserStatus.SUSPENDED && !byOperator;
       if (!allowed) {
         throw new AppException(
           'USER_INVALID_TRANSITION',
-          `A user cannot go from ${user.status} to ${status}.`,
+          byOperator && !suspending
+            ? 'The operator suspended this staff member; it can reinstate them, or you can take the suspension over.'
+            : `A user cannot go from ${user.status} to ${status}.`,
           HttpStatus.CONFLICT,
         );
       }
 
-      const updated = await tx.user.update({
-        where: { id },
-        // A Flyviman suspension is marked as such, so an operator cannot
-        // lift it (D-070).
+      // Applied only if nothing changed since the read, so a suspension made
+      // at the same moment by the operator cannot be mislabelled.
+      const { count } = await tx.user.updateMany({
+        where: { id, status: user.status, suspendedBy: user.suspendedBy },
         data: {
           status,
-          suspendedBy:
-            status === UserStatus.SUSPENDED ? SuspensionSource.PLATFORM : null,
+          suspendedBy: suspending ? SuspensionSource.PLATFORM : null,
         },
-        omit: { passwordHash: true },
       });
+      if (count !== 1) {
+        throw new AppException(
+          'USER_INVALID_TRANSITION',
+          'This account changed at the same moment. Reload and try again.',
+          HttpStatus.CONFLICT,
+        );
+      }
       await this.audit.record(
         {
-          action:
-            status === UserStatus.SUSPENDED ? 'user.suspend' : 'user.reinstate',
+          action: suspending ? 'user.suspend' : 'user.reinstate',
           entityType: 'User',
           entityId: id,
-          before: { status: user.status },
-          after: { status },
+          before: { status: user.status, suspendedBy: user.suspendedBy },
+          after: {
+            status,
+            suspendedBy: suspending ? SuspensionSource.PLATFORM : null,
+          },
           reason,
         },
         tx,
       );
-      return updated;
+      return tx.user.findUniqueOrThrow({
+        where: { id },
+        omit: { passwordHash: true },
+      });
     });
+    // A suspended account keeps no usable emailed link.
+    if (status === UserStatus.SUSPENDED) {
+      await this.tokens.revokeFor(id, 'invitation');
+      await this.tokens.revokeFor(id, 'password-reset');
+    }
+    return updated;
   }
 
   /**
@@ -384,16 +408,26 @@ export class UsersService {
   async changeStatus(
     id: string,
     status: UserStatus,
+    expected: { status: UserStatus; suspendedBy: SuspensionSource | null },
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
-    await db.user.update({
-      where: { id },
+    // Applied only if the account is still as the caller read it, so a
+    // Flyviman decision made at the same moment is never overwritten.
+    const { count } = await db.user.updateMany({
+      where: { id, status: expected.status, suspendedBy: expected.suspendedBy },
       data: {
         status,
         suspendedBy:
           status === UserStatus.SUSPENDED ? SuspensionSource.OPERATOR : null,
       },
     });
+    if (count !== 1) {
+      throw new AppException(
+        'USER_INVALID_TRANSITION',
+        'This account changed at the same moment. Reload and try again.',
+        HttpStatus.CONFLICT,
+      );
+    }
   }
 
   /** An account's status and, while suspended, who suspended it. */

@@ -33,14 +33,17 @@ export class AccountTokensService {
     const token = randomBytes(32).toString('base64url');
     const record: AccountToken = { userId, purpose };
     const ttl = ACCOUNT_TOKEN_TTL_SECONDS[purpose];
-    const pointer = this.pointer(userId, purpose);
-    const previous = await this.redis.get(pointer);
-    const transaction = this.redis.multi();
-    if (previous) transaction.del(previous);
-    transaction
-      .set(this.key(token), JSON.stringify(record), 'EX', ttl)
-      .set(pointer, this.key(token), 'EX', ttl);
-    await transaction.exec();
+    await this.redis.set(this.key(token), JSON.stringify(record), 'EX', ttl);
+    // Swap the pointer and learn the previous link in one command, so two
+    // links issued at the same moment cannot both stay usable.
+    const previous = await this.redis.set(
+      this.pointer(userId, purpose),
+      this.key(token),
+      'EX',
+      ttl,
+      'GET',
+    );
+    if (previous) await this.redis.del(previous);
     return token;
   }
 

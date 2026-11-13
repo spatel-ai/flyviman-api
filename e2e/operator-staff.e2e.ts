@@ -819,4 +819,132 @@ test.describe('operator staff: Flyviman decisions and links', () => {
     }
     await invitee.dispose();
   });
+
+  test('Flyviman can take over an operator suspension; the operator then cannot lift it', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { a, headers } = await fleet(request, playwright, baseURL);
+    const { staff, memberId } = await staffMember(
+      request,
+      playwright,
+      baseURL,
+      {
+        capabilities: ['MANAGE_AIRCRAFT'],
+        aircraftIds: [a],
+      },
+    );
+    await staff.dispose();
+    const userId = await withPrisma(async (prisma) => {
+      const member = await prisma.operatorMember.findUniqueOrThrow({
+        where: { id: memberId },
+      });
+      return member.userId;
+    });
+
+    // Whitespace is not a reason, for suspend or remove.
+    for (const call of [
+      () =>
+        request.patch(`operator/staff/${memberId}`, {
+          headers,
+          data: { status: 'SUSPENDED', reason: '   ' },
+        }),
+      () =>
+        request.delete(`operator/staff/${memberId}`, {
+          headers,
+          data: { reason: '   ' },
+        }),
+    ]) {
+      expect((await call()).status()).toBe(400);
+    }
+
+    const suspended = await request.patch(`operator/staff/${memberId}`, {
+      headers,
+      data: { status: 'SUSPENDED', reason: 'Investigating a complaint' },
+    });
+    expect((await suspended.json()).data).toMatchObject({
+      status: 'SUSPENDED',
+      suspendedBy: 'OPERATOR',
+    });
+
+    const admin = await playwright.request.newContext({ baseURL });
+    await signIn(admin, 'superAdmin');
+    const adminHeaders = await csrfHeaders(admin);
+    // Flyviman does not lift the operator's own suspension...
+    expect(
+      (
+        await admin.patch(`admin/users/${userId}/status`, {
+          headers: adminHeaders,
+          data: { status: 'ACTIVE', reason: 'Not ours to lift' },
+        })
+      ).status(),
+    ).toBe(409);
+    // ...but can take it over, after which the operator cannot lift it.
+    expect(
+      (
+        await admin.patch(`admin/users/${userId}/status`, {
+          headers: adminHeaders,
+          data: { status: 'SUSPENDED', reason: 'Platform investigation' },
+        })
+      ).status(),
+    ).toBe(200);
+    const list = (await (await request.get('operator/staff')).json()).data;
+    expect(
+      list.find((row: { id: string }) => row.id === memberId),
+    ).toMatchObject({ status: 'SUSPENDED', suspendedBy: 'PLATFORM' });
+    expect(
+      (
+        await request.patch(`operator/staff/${memberId}`, {
+          headers,
+          data: { status: 'ACTIVE' },
+        })
+      ).status(),
+    ).toBe(409);
+    await admin.dispose();
+  });
+
+  test('either capability can ground an aircraft; a soft hold needs manage availability', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { a } = await fleet(request, playwright, baseURL);
+    const { staff } = await staffMember(request, playwright, baseURL, {
+      capabilities: ['MANAGE_AIRCRAFT'],
+      aircraftIds: [a],
+    });
+    const headers = await csrfHeaders(staff);
+    const grounded = await staff.post(
+      `operator/aircraft/${a}/availability/blocks`,
+      {
+        headers,
+        data: { reason: 'MAINTENANCE', startsAt: inDays(2), endsAt: inDays(3) },
+      },
+    );
+    expect(grounded.status()).toBe(201);
+    const blockId = (await grounded.json()).data.id as string;
+    expect(
+      (
+        await staff.post(`operator/aircraft/${a}/availability/blocks`, {
+          headers,
+          data: {
+            reason: 'SOFT_HOLD',
+            startsAt: inDays(4),
+            endsAt: inDays(5),
+            expiresAt: inDays(3, 12),
+          },
+        })
+      ).status(),
+    ).toBe(403);
+    expect(
+      (
+        await staff.delete(
+          `operator/aircraft/${a}/availability/blocks/${blockId}`,
+          { headers },
+        )
+      ).status(),
+    ).toBe(204);
+    await staff.dispose();
+  });
 });

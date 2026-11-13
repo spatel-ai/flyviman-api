@@ -36,6 +36,8 @@ export interface StaffMember {
   id: string;
   email: string | null;
   status: StaffStatus;
+  /** While suspended: Flyviman (only it can lift that) or the operator. */
+  suspendedBy: 'PLATFORM' | 'OPERATOR' | null;
   permissions: StaffPermissions;
   invitedAt: Date;
   lastLoginAt: Date | null;
@@ -114,6 +116,7 @@ export class OperatorStaffService {
           id: member.id,
           email: account.email,
           status: staffStatus(account.status),
+          suspendedBy: account.suspendedBy,
           permissions: parsePermissions(member.permissions),
           invitedAt: member.createdAt,
           lastLoginAt: account.lastLoginAt,
@@ -319,7 +322,7 @@ export class OperatorStaffService {
         }
       }
       if (nextStatus) {
-        await this.users.changeStatus(member.userId, nextStatus, tx);
+        await this.users.changeStatus(member.userId, nextStatus, account, tx);
         if (nextStatus === UserStatus.SUSPENDED) {
           await this.auth.revokeAllSessions(member.userId, tx);
         }
@@ -360,13 +363,27 @@ export class OperatorStaffService {
     const { access } = await this.operators.accessFor(user);
     assertAdmin(access);
     await this.staffMember(access.operatorId, memberId);
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'Give a reason for removing this staff member.',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'reason', issue: 'must be at least 3 characters' }],
+      );
+    }
     const userId = await this.prisma.$transaction(async (tx) => {
       const member = await this.lockedMember(tx, access.operatorId, memberId);
       const account = await this.users.suspensionOf(member.userId, tx);
       await tx.operatorMember.delete({ where: { id: member.id } });
       // A Flyviman suspension is kept as it is.
       if (account.status !== UserStatus.SUSPENDED) {
-        await this.users.changeStatus(member.userId, UserStatus.SUSPENDED, tx);
+        await this.users.changeStatus(
+          member.userId,
+          UserStatus.SUSPENDED,
+          account,
+          tx,
+        );
       }
       await this.auth.revokeAllSessions(member.userId, tx);
       await this.record(tx, 'operator_staff.remove', member.id, {
@@ -375,7 +392,7 @@ export class OperatorStaffService {
           status: account.status,
           ...parsePermissions(member.permissions),
         },
-        reason: reason.trim(),
+        reason: trimmed,
       });
       return member.userId;
     });
@@ -429,6 +446,7 @@ export class OperatorStaffService {
       id: member.id,
       email: account.email,
       status: staffStatus(account.status),
+      suspendedBy: account.suspendedBy,
       permissions: parsePermissions(member.permissions),
       invitedAt: member.createdAt,
       lastLoginAt: account.lastLoginAt,
