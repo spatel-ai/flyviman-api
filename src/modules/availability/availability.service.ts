@@ -519,6 +519,49 @@ export class AvailabilityService {
     });
   }
 
+  /**
+   * For search (M5): whether time offered by the operator covers the whole
+   * window, and whether any block (maintenance, blackout, booking, an
+   * unexpired soft hold, other) overlaps it. A departure slot counts only
+   * from its own origin.
+   */
+  async windowState(
+    aircraftId: string,
+    from: Date,
+    to: Date,
+    originId: string,
+  ): Promise<{ covered: boolean; blocked: boolean }> {
+    const now = new Date();
+    const [slot, block] = await Promise.all([
+      this.prisma.availabilitySlot.findFirst({
+        where: {
+          aircraftId,
+          startsAt: { lte: from },
+          endsAt: { gte: to },
+          OR: [
+            { kind: AvailabilitySlotKind.OPEN },
+            { kind: AvailabilitySlotKind.DEPARTURE_SLOT, originId },
+          ],
+        },
+        select: { id: true },
+      }),
+      this.prisma.availabilityBlock.findFirst({
+        where: {
+          aircraftId,
+          startsAt: { lt: to },
+          endsAt: { gt: from },
+          OR: [
+            { reason: { not: AvailabilityBlockReason.SOFT_HOLD } },
+            { expiresAt: null },
+            { expiresAt: { gt: now } },
+          ],
+        },
+        select: { id: true },
+      }),
+    ]);
+    return { covered: Boolean(slot), blocked: Boolean(block) };
+  }
+
   /** Used by tests and, later, by bookings. The database constraint is the backstop. */
   async assertNoBookingOverlap(
     aircraftId: string,

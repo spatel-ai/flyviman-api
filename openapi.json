@@ -3139,6 +3139,140 @@
         ]
       }
     },
+    "/api/v1/search/charter": {
+      "post": {
+        "operationId": "SearchController_charter",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharterSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search eligible charter aircraft with estimates",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/helicopter": {
+      "post": {
+        "operationId": "SearchController_helicopter",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelicopterSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search helicopter options with estimates",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/{searchId}": {
+      "get": {
+        "operationId": "SearchController_get",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A stored search and its results",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/{searchId}/results/{resultId}": {
+      "get": {
+        "operationId": "SearchController_result",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resultId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResultDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One result with its breakdown and conditions",
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v1/enquiries": {
       "post": {
         "description": "Charter, aircraft sales or consultancy. Needs an email address or a phone number, or both. Operations are emailed; the answer is a reference and never repeats what was sent. Limited per caller (5 per 10 minutes by default; 429 `RATE_LIMITED`). A repeat with the same `Idempotency-Key` and body returns the first answer; with a different body, 409 `IDEMPOTENCY_CONFLICT`.",
@@ -6742,6 +6876,412 @@
           "operatorName",
           "aircraftId",
           "registration"
+        ]
+      },
+      "CharterCategory": {
+        "type": "string",
+        "enum": [
+          "TURBOPROP",
+          "LIGHT_JET",
+          "MIDSIZE_JET",
+          "HEAVY_JET"
+        ],
+        "description": "Limit to one fixed-wing category. All of them when left out."
+      },
+      "CharterSearchDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active location (`GET /locations`)."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureAt": {
+            "type": "string",
+            "description": "ISO 8601 with offset, at least an hour ahead.",
+            "example": "2026-12-05T10:00:00+05:30"
+          },
+          "passengerCount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "example": 4
+          },
+          "category": {
+            "description": "Limit to one fixed-wing category. All of them when left out.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CharterCategory"
+              }
+            ]
+          }
+        },
+        "required": [
+          "originId",
+          "destinationId",
+          "departureAt",
+          "passengerCount"
+        ]
+      },
+      "SearchLegDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "originId",
+          "originName",
+          "destinationId",
+          "destinationName",
+          "departureAt"
+        ]
+      },
+      "SearchAircraftDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "manufacturer",
+          "model",
+          "category",
+          "passengerCapacity"
+        ]
+      },
+      "PriceType": {
+        "type": "string",
+        "enum": [
+          "ESTIMATE",
+          "LIVE_FARE",
+          "QUOTE",
+          "CONFIRMED"
+        ]
+      },
+      "SearchPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency"
+        ]
+      },
+      "SearchResultDto": {
+        "type": "object",
+        "properties": {
+          "resultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/SearchAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "distanceKm": {
+            "type": "number"
+          },
+          "flightMinutes": {
+            "type": "number",
+            "nullable": true
+          },
+          "price": {
+            "nullable": true,
+            "description": "Always an `ESTIMATE`. Null when the price is on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceDto"
+              }
+            ]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "resultId",
+          "aircraft",
+          "operatorName",
+          "distanceKm",
+          "flightMinutes",
+          "price",
+          "validUntil",
+          "warnings"
+        ]
+      },
+      "SearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "results": {
+            "description": "Priced first, cheapest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResultDto"
+            }
+          }
+        },
+        "required": [
+          "searchId",
+          "category",
+          "legs",
+          "passengerCount",
+          "createdAt",
+          "results"
+        ]
+      },
+      "HelicopterSearchDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active location (`GET /locations`)."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureAt": {
+            "type": "string",
+            "description": "ISO 8601 with offset, at least an hour ahead.",
+            "example": "2026-12-05T10:00:00+05:30"
+          },
+          "passengerCount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "example": 4
+          }
+        },
+        "required": [
+          "originId",
+          "destinationId",
+          "departureAt",
+          "passengerCount"
+        ]
+      },
+      "BreakdownLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "OPERATING"
+          },
+          "label": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "basis": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "amountMinor"
+        ]
+      },
+      "SearchResultDetailDto": {
+        "type": "object",
+        "properties": {
+          "resultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/SearchAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "distanceKm": {
+            "type": "number"
+          },
+          "flightMinutes": {
+            "type": "number",
+            "nullable": true
+          },
+          "price": {
+            "nullable": true,
+            "description": "Always an `ESTIMATE`. Null when the price is on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceDto"
+              }
+            ]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BreakdownLineDto"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "description": "What the estimate leaves out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bookingMode": {
+            "type": "string",
+            "enum": [
+              "REQUEST"
+            ],
+            "description": "Charter is confirmed only after the operator accepts."
+          },
+          "confirmationRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cancellationNote": {
+            "type": "string",
+            "description": "Shown before the customer commits (business rule 9)."
+          }
+        },
+        "required": [
+          "resultId",
+          "aircraft",
+          "operatorName",
+          "distanceKm",
+          "flightMinutes",
+          "price",
+          "validUntil",
+          "warnings",
+          "searchId",
+          "legs",
+          "passengerCount",
+          "breakdown",
+          "assumptions",
+          "exclusions",
+          "bookingMode",
+          "confirmationRequirements",
+          "cancellationNote"
         ]
       },
       "EnquiryTopic": {

@@ -688,3 +688,135 @@ model Enquiry {
 
   @@index([handledAt, createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// M5. Search and pricing (docs/architecture/pricing-engine.md)
+// ---------------------------------------------------------------------------
+
+enum PricingRuleScope {
+  PLATFORM
+  CATEGORY
+  OPERATOR
+  AIRCRAFT
+  ROUTE
+}
+
+enum PricingRuleType {
+  HOURLY_RATE
+  SECTOR_RATE
+  FIXED_ROUTE
+  MIN_BILLABLE_HOURS
+  POSITIONING
+  WAITING
+  OVERNIGHT
+  LANDING
+  HANDLING
+  CREW
+  FUEL_SURCHARGE
+  PERMIT
+  NAVIGATION
+  OTHER
+  COMMISSION
+  MARKUP
+  SERVICE_FEE
+  MIN_CHARGE
+  TAX
+  DISCOUNT
+  ROUTING_FACTOR
+  /// Minutes added to each leg for taxi, departure and arrival.
+  TIME_ALLOWANCE
+  VALIDITY
+}
+
+/// Every price carries one (business rule 1).
+enum PriceType {
+  ESTIMATE
+  LIVE_FARE
+  QUOTE
+  CONFIRMED
+}
+
+enum TripType {
+  ONE_WAY
+  ROUND_TRIP
+  MULTI_LEG
+}
+
+/// A pricing input. Never edited in place: a change closes this row
+/// (`validTo`, `isActive`) and creates the next `version`, so past
+/// calculations stay explainable. `scopeRef` is the category, operator,
+/// aircraft or route the rule belongs to; null for PLATFORM.
+model PricingRule {
+  id          String           @id @default(uuid()) @db.Uuid
+  scope       PricingRuleScope
+  scopeRef    String?
+  type        PricingRuleType
+  config      Json
+  priority    Int              @default(0)
+  validFrom   DateTime         @default(now()) @db.Timestamptz
+  validTo     DateTime?        @db.Timestamptz
+  isActive    Boolean          @default(true)
+  version     Int              @default(1)
+  createdById String?          @db.Uuid
+  createdAt   DateTime         @default(now()) @db.Timestamptz
+
+  @@index([type, scope, scopeRef, isActive])
+}
+
+/// One customer search. Doubles as the search log for reporting. `results`
+/// holds the offered aircraft in order; `exclusions` why the others were
+/// left out (operations only).
+model Search {
+  id             String          @id @default(uuid()) @db.Uuid
+  userId         String?         @db.Uuid
+  category       ServiceCategory
+  tripType       TripType
+  legs           Json
+  passengerCount Int
+  preferences    Json?
+  results        Json
+  exclusions     Json?
+  resultCount    Int
+  durationMs     Int
+  providerStatus Json?
+  createdAt      DateTime        @default(now()) @db.Timestamptz
+
+  calculations PriceCalculation[]
+
+  @@index([createdAt])
+}
+
+/// An engine-generated price with everything needed to explain it.
+/// Immutable once written. `operatorPayableMinor` and
+/// `platformRevenueMinor` are never shown to customers.
+model PriceCalculation {
+  id                    String    @id @default(uuid()) @db.Uuid
+  searchId              String?   @db.Uuid
+  aircraftId            String    @db.Uuid
+  operatorId            String    @db.Uuid
+  inputs                Json
+  appliedRules          Json
+  breakdown             Json
+  baseMinor             Int
+  feesMinor             Int
+  taxMinor              Int
+  discountMinor         Int
+  totalMinor            Int
+  operatorPayableMinor  Int
+  platformRevenueMinor  Int
+  currency              String    @db.Char(3)
+  priceType             PriceType
+  validUntil            DateTime  @db.Timestamptz
+  availabilityCheckedAt DateTime  @db.Timestamptz
+  assumptions           Json
+  exclusions            Json
+  warnings              Json
+  overriddenById        String?   @db.Uuid
+  overrideReason        String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz
+
+  search Search? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+
+  @@index([searchId])
+  @@index([aircraftId, createdAt])
+}

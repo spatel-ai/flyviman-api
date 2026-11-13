@@ -413,6 +413,35 @@ export class AircraftService implements OnModuleInit {
     }
   }
 
+  // --- Search (M5) ---------------------------------------------------------
+
+  /**
+   * Listed, in-service aircraft of the given categories, each with what it
+   * is still missing (`missing()`), for matching. The operator's status is
+   * checked by the caller through OperatorsService.
+   */
+  async searchCandidates(filter: {
+    categories: AircraftCategory[];
+    minPassengers: number;
+    /** Before routing factor and reserve; matching checks those. */
+    minRangeKm: number;
+  }): Promise<(Aircraft & { missing: string[] })[]> {
+    // Every eligible aircraft is considered (no cap), so none is hidden.
+    const rows = await this.prisma.aircraft.findMany({
+      where: {
+        category: { in: filter.categories },
+        listingStatus: AircraftListingStatus.APPROVED,
+        availabilityStatus: AircraftAvailabilityStatus.AVAILABLE,
+        passengerCapacity: { gte: filter.minPassengers },
+        rangeKm: { gte: Math.floor(filter.minRangeKm) },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return Promise.all(
+      rows.map(async (row) => ({ ...row, missing: await this.missing(row) })),
+    );
+  }
+
   // --- Completeness -------------------------------------------------------
 
   async missing(

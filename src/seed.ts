@@ -184,6 +184,35 @@ async function ensureCustomerProfile(email: string) {
   });
 }
 
+/**
+ * Platform pricing rules (M5). Placeholders until finance enters the real
+ * commission and tax (open decisions 6 and 13); each is created only when
+ * no platform rule of its type exists, so finance's changes are kept.
+ */
+const PLATFORM_RULES: { type: string; config: Prisma.InputJsonValue }[] = [
+  { type: 'COMMISSION', config: { percent: 10, mode: 'ADD_ON' } },
+  { type: 'TAX', config: { name: 'GST', percent: 18 } },
+  { type: 'ROUTING_FACTOR', config: { factor: 1.08 } },
+  { type: 'TIME_ALLOWANCE', config: { minutes: 15 } },
+  { type: 'MIN_BILLABLE_HOURS', config: { hours: 1 } },
+  { type: 'POSITIONING', config: { rateFactor: 0.8, freeWithinKm: 50 } },
+  { type: 'VALIDITY', config: { minutes: 60 } },
+];
+
+async function ensurePricingRules() {
+  for (const { type, config } of PLATFORM_RULES) {
+    const existing = await prisma.pricingRule.findFirst({
+      where: { scope: 'PLATFORM', type: type as never },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await prisma.pricingRule.create({
+      data: { scope: 'PLATFORM', type: type as never, config },
+    });
+    console.log(`created  pricing rule   ${type}`);
+  }
+}
+
 /** A draft organisation for the local operator administrator. */
 async function ensureOperator(email: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
@@ -206,6 +235,7 @@ async function ensureOperator(email: string) {
 try {
   await ensureContent();
   await ensureLocations();
+  await ensurePricingRules();
   await ensureUser(
     required('SEED_ADMIN_EMAIL').toLowerCase(),
     Role.SUPER_ADMIN,

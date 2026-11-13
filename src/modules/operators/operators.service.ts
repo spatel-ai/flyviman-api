@@ -289,6 +289,21 @@ export class OperatorsService implements OnModuleInit {
   }
 
   /**
+   * Customer-facing names of the operators among `ids` that are approved
+   * (business rule 4). Search uses it: an operator missing from the map is
+   * not offered.
+   */
+  async approvedNames(ids: string[]): Promise<Map<string, string>> {
+    const rows = await this.prisma.operator.findMany({
+      where: { id: { in: ids }, status: OperatorStatus.APPROVED },
+      select: { id: true, legalName: true, tradingName: true },
+    });
+    return new Map(
+      rows.map((row) => [row.id, row.tradingName ?? row.legalName]),
+    );
+  }
+
+  /**
    * An operator's status. Inside a transaction the row is share-locked, so a
    * suspension cannot commit between this read and the caller's change.
    */

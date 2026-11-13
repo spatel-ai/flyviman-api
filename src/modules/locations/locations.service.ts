@@ -246,6 +246,37 @@ export class LocationsService {
 
   // --- For other modules --------------------------------------------------
 
+  /**
+   * Active locations with what pricing needs: coordinates and the
+   * per-category charges (never on the public location routes).
+   */
+  async pricingPoints(ids: string[]): Promise<
+    Map<
+      string,
+      {
+        id: string;
+        name: string;
+        latitude: number;
+        longitude: number;
+        timeZone: string;
+        charges: Prisma.JsonValue;
+      }
+    >
+  > {
+    const rows = await this.prisma.location.findMany({
+      where: { id: { in: ids }, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        latitude: true,
+        longitude: true,
+        timeZone: true,
+        charges: true,
+      },
+    });
+    return new Map(rows.map((row) => [row.id, row]));
+  }
+
   /** Whether an active location has this id. */
   async isActive(id: string): Promise<boolean> {
     const row = await this.prisma.location.findFirst({
