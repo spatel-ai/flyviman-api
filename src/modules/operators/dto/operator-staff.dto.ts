@@ -11,7 +11,6 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
-  ValidateIf,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../common/dto/optional.js';
 import { Role } from '../../../generated/prisma/enums.js';
@@ -98,10 +97,11 @@ export class UpdateStaffDto {
   @IsIn(STAFF_STATUS_CHANGES)
   status?: (typeof STAFF_STATUS_CHANGES)[number];
 
-  @ApiPropertyOptional({ description: 'Required when suspending. Audited.' })
-  @ValidateIf((dto: UpdateStaffDto) => dto.status === 'SUSPENDED')
+  @ApiPropertyOptional({
+    description: 'Required when suspending (at least 3 characters). Audited.',
+  })
+  @OptionalNotNull()
   @IsString()
-  @MinLength(3)
   @MaxLength(1000)
   reason?: string;
 }

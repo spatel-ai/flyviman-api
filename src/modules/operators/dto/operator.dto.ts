@@ -312,7 +312,17 @@ export class OperatorProfileResponseDto {
   missing: string[];
 }
 
-export class OperatorProfileWithAccessDto extends OperatorProfileResponseDto {
+/** `GET /operator/me`: what the portal needs, for staff and administrators. */
+export class OperatorMeResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  operatorId: string;
+
+  @ApiProperty({ enum: OperatorStatus, enumName: 'OperatorStatus' })
+  status: OperatorStatus;
+
+  @ApiProperty({ description: 'Trading name, or the legal name if none.' })
+  displayName: string;
+
   @ApiProperty({ type: OperatorAccessDto })
   access: OperatorAccessDto;
 }

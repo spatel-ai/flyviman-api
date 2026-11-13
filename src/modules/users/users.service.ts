@@ -4,7 +4,11 @@ import { Paginated } from '../../common/dto/paginated.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import { uniqueOrNull } from '../../common/errors/unique.js';
 import type { Prisma } from '../../generated/prisma/client.js';
-import { Role, UserStatus } from '../../generated/prisma/enums.js';
+import {
+  Role,
+  SuspensionSource,
+  UserStatus,
+} from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
@@ -244,7 +248,13 @@ export class UsersService {
 
       const updated = await tx.user.update({
         where: { id },
-        data: { status },
+        // A Flyviman suspension is marked as such, so an operator cannot
+        // lift it (D-070).
+        data: {
+          status,
+          suspendedBy:
+            status === UserStatus.SUSPENDED ? SuspensionSource.PLATFORM : null,
+        },
         omit: { passwordHash: true },
       });
       await this.audit.record(
@@ -357,18 +367,46 @@ export class UsersService {
   ): Promise<UserAccount> {
     return db.user.update({
       where: { id },
-      data: { status: UserStatus.PENDING_VERIFICATION, passwordHash: null },
+      data: {
+        status: UserStatus.PENDING_VERIFICATION,
+        passwordHash: null,
+        suspendedBy: null,
+      },
       select: ACCOUNT,
     });
   }
 
-  /** Sets an account's status; the caller audits the action it belongs to. */
+  /**
+   * Suspends or reinstates an account on its operator's behalf; the caller
+   * audits the action it belongs to. A suspension made here is marked as the
+   * operator's, the only kind an operator may lift (D-070).
+   */
   async changeStatus(
     id: string,
     status: UserStatus,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
-    await db.user.update({ where: { id }, data: { status } });
+    await db.user.update({
+      where: { id },
+      data: {
+        status,
+        suspendedBy:
+          status === UserStatus.SUSPENDED ? SuspensionSource.OPERATOR : null,
+      },
+    });
+  }
+
+  /** An account's status and, while suspended, who suspended it. */
+  async suspensionOf(
+    id: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<{ status: UserStatus; suspendedBy: SuspensionSource | null }> {
+    const row = await db.user.findUnique({
+      where: { id },
+      select: { status: true, suspendedBy: true },
+    });
+    if (!row) throw notFound();
+    return row;
   }
 
   /** What a team list shows of each account. */
@@ -379,6 +417,7 @@ export class UsersService {
         email: string | null;
         role: Role;
         status: UserStatus;
+        suspendedBy: SuspensionSource | null;
         lastLoginAt: Date | null;
         createdAt: Date;
       }
@@ -392,6 +431,7 @@ export class UsersService {
         email: true,
         role: true,
         status: true,
+        suspendedBy: true,
         lastLoginAt: true,
         createdAt: true,
       },

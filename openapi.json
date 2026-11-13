@@ -871,9 +871,37 @@
         ]
       }
     },
+    "/api/v1/operator/me": {
+      "get": {
+        "description": "For the portal: status, a display name and `access`. Staff use this; the full profile is for administrators (D-070).",
+        "operationId": "OperatorController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorMeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The caller's organisation in brief, and what they may do in it",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
     "/api/v1/operator/profile": {
       "get": {
-        "description": "Also says what the caller may do in it (`access`), so the portal shows staff only what they can use.",
+        "description": "Administrators only: it holds tax and registration numbers and the review note. Staff read `GET /operator/me` (D-070).",
         "operationId": "OperatorController_profile",
         "parameters": [],
         "responses": {
@@ -882,7 +910,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperatorProfileWithAccessDto"
+                  "$ref": "#/components/schemas/OperatorProfileResponseDto"
                 }
               }
             }
@@ -3957,6 +3985,77 @@
           "SUSPENDED"
         ]
       },
+      "StaffCapability": {
+        "type": "string",
+        "enum": [
+          "MANAGE_AIRCRAFT",
+          "MANAGE_AVAILABILITY"
+        ]
+      },
+      "OperatorAccessDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "OPERATOR_ADMIN",
+              "OPERATOR_STAFF"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffCapability"
+            }
+          },
+          "allAircraft": {
+            "type": "boolean"
+          },
+          "aircraftIds": {
+            "description": "Assigned aircraft; empty when allAircraft is true.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "capabilities",
+          "allAircraft",
+          "aircraftIds"
+        ]
+      },
+      "OperatorMeResponseDto": {
+        "type": "object",
+        "properties": {
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Trading name, or the legal name if none."
+          },
+          "access": {
+            "$ref": "#/components/schemas/OperatorAccessDto"
+          }
+        },
+        "required": [
+          "operatorId",
+          "status",
+          "displayName",
+          "access"
+        ]
+      },
       "AddressDto": {
         "type": "object",
         "properties": {
@@ -4000,235 +4099,6 @@
           "EMPTY_LEG",
           "AIR_AMBULANCE"
         ]
-      },
-      "StaffCapability": {
-        "type": "string",
-        "enum": [
-          "MANAGE_AIRCRAFT",
-          "MANAGE_AVAILABILITY"
-        ]
-      },
-      "OperatorAccessDto": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "enum": [
-              "OPERATOR_ADMIN",
-              "OPERATOR_STAFF"
-            ]
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StaffCapability"
-            }
-          },
-          "allAircraft": {
-            "type": "boolean"
-          },
-          "aircraftIds": {
-            "description": "Assigned aircraft; empty when allAircraft is true.",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        },
-        "required": [
-          "role",
-          "capabilities",
-          "allAircraft",
-          "aircraftIds"
-        ]
-      },
-      "OperatorProfileWithAccessDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OperatorStatus"
-              }
-            ]
-          },
-          "legalName": {
-            "type": "string"
-          },
-          "tradingName": {
-            "type": "string",
-            "nullable": true
-          },
-          "registrationNumber": {
-            "type": "string",
-            "nullable": true
-          },
-          "taxNumber": {
-            "type": "string",
-            "nullable": true
-          },
-          "businessAddress": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AddressDto"
-              }
-            ]
-          },
-          "billingAddress": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AddressDto"
-              }
-            ]
-          },
-          "contactName": {
-            "type": "string"
-          },
-          "contactEmail": {
-            "type": "string"
-          },
-          "contactPhone": {
-            "type": "string",
-            "nullable": true
-          },
-          "serviceCategories": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServiceCategory"
-            }
-          },
-          "operatingRegions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "submittedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "reviewedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "reviewNote": {
-            "type": "string",
-            "nullable": true,
-            "description": "The reason given when the application was rejected or suspended."
-          },
-          "missing": {
-            "description": "What is still needed before the application can be submitted. Empty when it is complete.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "access": {
-            "$ref": "#/components/schemas/OperatorAccessDto"
-          }
-        },
-        "required": [
-          "id",
-          "status",
-          "legalName",
-          "tradingName",
-          "registrationNumber",
-          "taxNumber",
-          "businessAddress",
-          "billingAddress",
-          "contactName",
-          "contactEmail",
-          "contactPhone",
-          "serviceCategories",
-          "operatingRegions",
-          "submittedAt",
-          "reviewedAt",
-          "reviewNote",
-          "missing",
-          "access"
-        ]
-      },
-      "UpdateOperatorProfileDto": {
-        "type": "object",
-        "properties": {
-          "legalName": {
-            "type": "string"
-          },
-          "tradingName": {
-            "type": "string",
-            "nullable": true
-          },
-          "registrationNumber": {
-            "type": "string",
-            "nullable": true
-          },
-          "taxNumber": {
-            "type": "string",
-            "nullable": true,
-            "description": "GSTIN."
-          },
-          "businessAddress": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AddressDto"
-              }
-            ]
-          },
-          "billingAddress": {
-            "nullable": true,
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AddressDto"
-              }
-            ]
-          },
-          "contactName": {
-            "type": "string"
-          },
-          "contactEmail": {
-            "type": "string"
-          },
-          "contactPhone": {
-            "type": "string",
-            "nullable": true
-          },
-          "serviceCategories": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "PRIVATE_CHARTER",
-                "HELICOPTER",
-                "EMPTY_LEG",
-                "AIR_AMBULANCE"
-              ]
-            }
-          },
-          "operatingRegions": {
-            "example": [
-              "Maharashtra",
-              "Goa"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
       },
       "OperatorProfileResponseDto": {
         "type": "object",
@@ -4341,6 +4211,77 @@
           "reviewNote",
           "missing"
         ]
+      },
+      "UpdateOperatorProfileDto": {
+        "type": "object",
+        "properties": {
+          "legalName": {
+            "type": "string"
+          },
+          "tradingName": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "taxNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "GSTIN."
+          },
+          "businessAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "billingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCategories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRIVATE_CHARTER",
+                "HELICOPTER",
+                "EMPTY_LEG",
+                "AIR_AMBULANCE"
+              ]
+            }
+          },
+          "operatingRegions": {
+            "example": [
+              "Maharashtra",
+              "Goa"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "OperatorDocumentType": {
         "type": "string",
@@ -4576,7 +4517,7 @@
           },
           "reason": {
             "type": "string",
-            "description": "Required when suspending. Audited."
+            "description": "Required when suspending (at least 3 characters). Audited."
           }
         }
       },

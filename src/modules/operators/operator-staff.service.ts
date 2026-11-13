@@ -6,6 +6,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import {
   OperatorStatus,
   Role,
+  SuspensionSource,
   UserStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -181,10 +182,12 @@ export class OperatorStaffService {
               [{ field: 'email', issue: 'is already a member' }],
             );
           }
-          await tx.operatorMember.update({
-            where: { id: membership.id },
+          // A concurrent removal leaves nothing to update: refuse, not 500.
+          const { count } = await tx.operatorMember.updateMany({
+            where: { id: membership.id, operatorId: operator.id },
             data: { permissions: { ...permissions } },
           });
+          if (count !== 1) throw inUse();
           await this.record(tx, 'operator_staff.reinvite', membership.id, {
             before: parsePermissions(membership.permissions),
             after: permissions,
@@ -192,7 +195,16 @@ export class OperatorStaffService {
           return { userId: existing.id, memberId: membership.id };
         }
 
-        // A staff account whose earlier membership was removed.
+        // A staff account whose earlier membership was removed. Only an
+        // operator's own removal can be undone this way; an account Flyviman
+        // suspended stays suspended (D-070).
+        const suspension = await this.users.suspensionOf(existing.id, tx);
+        if (
+          suspension.status !== UserStatus.SUSPENDED ||
+          suspension.suspendedBy !== SuspensionSource.OPERATOR
+        ) {
+          throw inUse();
+        }
         await this.users.resetToInvited(existing.id, tx);
         await this.auth.revokeAllSessions(existing.id, tx);
         const member = await tx.operatorMember.create({
@@ -229,7 +241,10 @@ export class OperatorStaffService {
   /**
    * Changes a staff member's permissions, or suspends or reinstates them.
    * Suspending signs them out everywhere at once. A pending invitation is
-   * withdrawn with remove, not suspended.
+   * withdrawn with remove, not suspended. Only an operator's own suspension
+   * can be lifted here; one by Flyviman cannot (D-070). The member row is
+   * locked and every check made inside the transaction, so two changes at
+   * once cannot overwrite each other.
    */
   async update(
     user: AuthUser,
@@ -241,55 +256,67 @@ export class OperatorStaffService {
   ): Promise<StaffMember> {
     const { access } = await this.operators.accessFor(user);
     assertAdmin(access);
-    const { member, account } = await this.staffMember(
-      access.operatorId,
-      memberId,
-    );
-    const before = parsePermissions(member.permissions);
+    // Fails fast (404) for a member out of reach; re-read under lock below.
+    await this.staffMember(access.operatorId, memberId);
+    const reason = changes.reason?.trim();
+    if (changes.status === 'SUSPENDED' && (!reason || reason.length < 3)) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'Give a reason for the suspension.',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'reason', issue: 'must be at least 3 characters' }],
+      );
+    }
     const touchesPermissions =
       changes.capabilities !== undefined ||
       changes.allAircraft !== undefined ||
       changes.aircraftIds !== undefined;
-    const permissions = touchesPermissions
-      ? await this.checked(access.operatorId, {
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const member = await this.lockedMember(tx, access.operatorId, memberId);
+      const account = await this.users.suspensionOf(member.userId, tx);
+      const before = parsePermissions(member.permissions);
+
+      let nextStatus: UserStatus | null = null;
+      if (changes.status === 'SUSPENDED') {
+        if (account.status !== UserStatus.ACTIVE) {
+          throw invalidTransition(
+            account.status === UserStatus.PENDING_VERIFICATION
+              ? 'An invitation that has not been accepted is withdrawn by removing it, not suspended.'
+              : 'This staff member is already suspended.',
+          );
+        }
+        nextStatus = UserStatus.SUSPENDED;
+      } else if (changes.status === 'ACTIVE') {
+        if (account.status !== UserStatus.SUSPENDED) {
+          throw invalidTransition(
+            'Only a suspended staff member can be reinstated.',
+          );
+        }
+        if (account.suspendedBy !== SuspensionSource.OPERATOR) {
+          throw invalidTransition(
+            'Flyviman suspended this account. Contact Flyviman support to reinstate it.',
+          );
+        }
+        nextStatus = UserStatus.ACTIVE;
+      }
+
+      if (touchesPermissions) {
+        const permissions = await this.checked(access.operatorId, {
           capabilities: changes.capabilities ?? before.capabilities,
           allAircraft: changes.allAircraft ?? before.allAircraft,
           aircraftIds: changes.aircraftIds ?? before.aircraftIds,
-        })
-      : null;
-
-    let nextStatus: UserStatus | null = null;
-    if (changes.status === 'SUSPENDED') {
-      if (account.status !== UserStatus.ACTIVE) {
-        throw invalidTransition(
-          account.status === UserStatus.PENDING_VERIFICATION
-            ? 'An invitation that has not been accepted is withdrawn by removing it, not suspended.'
-            : 'This staff member is already suspended.',
-        );
-      }
-      nextStatus = UserStatus.SUSPENDED;
-    } else if (changes.status === 'ACTIVE') {
-      if (account.status !== UserStatus.SUSPENDED) {
-        throw invalidTransition(
-          'Only a suspended staff member can be reinstated.',
-        );
-      }
-      nextStatus = UserStatus.ACTIVE;
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      if (
-        permissions &&
-        JSON.stringify(permissions) !== JSON.stringify(before)
-      ) {
-        await tx.operatorMember.update({
-          where: { id: member.id },
-          data: { permissions: { ...permissions } },
         });
-        await this.record(tx, 'operator_staff.update', member.id, {
-          before,
-          after: permissions,
-        });
+        if (JSON.stringify(permissions) !== JSON.stringify(before)) {
+          await tx.operatorMember.update({
+            where: { id: member.id },
+            data: { permissions: { ...permissions } },
+          });
+          await this.record(tx, 'operator_staff.update', member.id, {
+            before,
+            after: permissions,
+          });
+        }
       }
       if (nextStatus) {
         await this.users.changeStatus(member.userId, nextStatus, tx);
@@ -305,19 +332,25 @@ export class OperatorStaffService {
           {
             before: { status: account.status },
             after: { status: nextStatus },
-            reason: changes.reason?.trim(),
+            reason,
           },
         );
       }
+      return {
+        userId: member.userId,
+        suspended: nextStatus === UserStatus.SUSPENDED,
+      };
     });
-    return this.member(access.operatorId, member.id);
+    if (outcome.suspended) await this.revokeLinks(outcome.userId);
+    return this.member(access.operatorId, memberId);
   }
 
   /**
    * Takes someone off the team: the membership goes, the account is
    * suspended (so an outstanding invitation link stops working) and signed
    * out everywhere. The account is kept so its audit history and uploads
-   * keep their owner; inviting the address again brings it back (D-068).
+   * keep their owner; inviting the address again brings it back, unless
+   * Flyviman had suspended it (D-068, D-070).
    */
   async remove(
     user: AuthUser,
@@ -326,12 +359,12 @@ export class OperatorStaffService {
   ): Promise<void> {
     const { access } = await this.operators.accessFor(user);
     assertAdmin(access);
-    const { member, account } = await this.staffMember(
-      access.operatorId,
-      memberId,
-    );
-    await this.prisma.$transaction(async (tx) => {
+    await this.staffMember(access.operatorId, memberId);
+    const userId = await this.prisma.$transaction(async (tx) => {
+      const member = await this.lockedMember(tx, access.operatorId, memberId);
+      const account = await this.users.suspensionOf(member.userId, tx);
       await tx.operatorMember.delete({ where: { id: member.id } });
+      // A Flyviman suspension is kept as it is.
       if (account.status !== UserStatus.SUSPENDED) {
         await this.users.changeStatus(member.userId, UserStatus.SUSPENDED, tx);
       }
@@ -344,7 +377,32 @@ export class OperatorStaffService {
         },
         reason: reason.trim(),
       });
+      return member.userId;
     });
+    await this.revokeLinks(userId);
+  }
+
+  /** The member row, locked for the rest of the transaction, or 404. */
+  private async lockedMember(
+    tx: Prisma.TransactionClient,
+    operatorId: string,
+    memberId: string,
+  ) {
+    await tx.$queryRaw`
+      SELECT id FROM "OperatorMember"
+      WHERE id = ${memberId}::uuid AND "operatorId" = ${operatorId}::uuid
+      FOR UPDATE`;
+    const member = await tx.operatorMember.findFirst({
+      where: { id: memberId, operatorId },
+    });
+    if (!member) throw notFound();
+    return member;
+  }
+
+  /** Cancels any emailed invitation or reset link the person still holds. */
+  private async revokeLinks(userId: string): Promise<void> {
+    await this.tokens.revokeFor(userId, 'invitation');
+    await this.tokens.revokeFor(userId, 'password-reset');
   }
 
   // --- Helpers ------------------------------------------------------------

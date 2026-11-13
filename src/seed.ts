@@ -69,6 +69,7 @@ async function ensureUser(
       email,
       role,
       status,
+      suspendedBy: status === UserStatus.SUSPENDED ? 'PLATFORM' : null,
       passwordHash: await hashPassword(plain),
       emailVerifiedAt: new Date(),
     },

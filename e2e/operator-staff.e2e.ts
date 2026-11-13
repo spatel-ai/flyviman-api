@@ -148,20 +148,31 @@ test.describe('operator staff: invitations', () => {
       status: 'ACTIVE',
     });
 
-    // The portal learns what the person may do.
-    const profile = (await (await staff.get('operator/profile')).json()).data;
-    expect(profile.access).toEqual({
+    // The portal learns what the person may do from /operator/me; the full
+    // company profile (tax and registration numbers, review note) is for
+    // administrators only (D-070).
+    const me = (await (await staff.get('operator/me')).json()).data;
+    expect(me).toMatchObject({ status: 'APPROVED' });
+    expect(me.displayName).toBeTruthy();
+    expect(me.access).toEqual({
       role: 'OPERATOR_STAFF',
       capabilities: ['MANAGE_AVAILABILITY'],
       allAircraft: false,
       aircraftIds: [a],
     });
-    const adminProfile = (await (await request.get('operator/profile')).json())
-      .data;
-    expect(adminProfile.access).toMatchObject({
+    expect(Object.keys(me).sort()).toEqual([
+      'access',
+      'displayName',
+      'operatorId',
+      'status',
+    ]);
+    expect((await staff.get('operator/profile')).status()).toBe(403);
+    const adminMe = (await (await request.get('operator/me')).json()).data;
+    expect(adminMe.access).toMatchObject({
       role: 'OPERATOR_ADMIN',
       allAircraft: true,
     });
+    expect((await request.get('operator/profile')).status()).toBe(200);
 
     const list = (await (await request.get('operator/staff')).json()).data;
     expect(list).toEqual([
@@ -699,5 +710,113 @@ test.describe('operator staff: suspension and removal', () => {
       ).status(),
     ).toBe(404);
     await rival.dispose();
+  });
+});
+
+test.describe('operator staff: Flyviman decisions and links', () => {
+  test('an operator cannot lift or bypass a suspension made by Flyviman', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { a, headers } = await fleet(request, playwright, baseURL);
+    const { staff, email, memberId } = await staffMember(
+      request,
+      playwright,
+      baseURL,
+      { capabilities: ['MANAGE_AIRCRAFT'], aircraftIds: [a] },
+    );
+    const userId = await withPrisma(async (prisma) => {
+      const member = await prisma.operatorMember.findUniqueOrThrow({
+        where: { id: memberId },
+      });
+      return member.userId;
+    });
+
+    // A Flyviman administrator suspends the account.
+    const admin = await playwright.request.newContext({ baseURL });
+    await signIn(admin, 'superAdmin');
+    expect(
+      (
+        await admin.patch(`admin/users/${userId}/status`, {
+          headers: await csrfHeaders(admin),
+          data: { status: 'SUSPENDED', reason: 'Abuse report under review' },
+        })
+      ).status(),
+    ).toBe(200);
+
+    // The operator can neither reinstate it...
+    const reinstate = await request.patch(`operator/staff/${memberId}`, {
+      headers,
+      data: { status: 'ACTIVE' },
+    });
+    expect(reinstate.status()).toBe(409);
+    expect((await reinstate.json()).error.code).toBe('USER_INVALID_TRANSITION');
+
+    // ...nor remove and invite it back to clear the suspension.
+    expect(
+      (
+        await request.delete(`operator/staff/${memberId}`, {
+          headers,
+          data: { reason: 'Trying to restore access' },
+        })
+      ).status(),
+    ).toBe(204);
+    const again = await invite(request, email, {
+      capabilities: ['MANAGE_AIRCRAFT'],
+      aircraftIds: [a],
+    });
+    expect(again.status()).toBe(409);
+    const account = await withPrisma((prisma) =>
+      prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { status: true, suspendedBy: true },
+      }),
+    );
+    expect(account).toEqual({ status: 'SUSPENDED', suspendedBy: 'PLATFORM' });
+    await admin.dispose();
+    await staff.dispose();
+  });
+
+  test('only the newest invitation link works, and a reason must be text', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { a, headers } = await fleet(request, playwright, baseURL);
+    const email = uniqueEmail('staff');
+    const permissions = {
+      capabilities: ['MANAGE_AIRCRAFT'] as Permissions['capabilities'],
+      aircraftIds: [a],
+    };
+    const first = await invite(request, email, permissions);
+    const memberId = (await first.json()).data.id as string;
+    const invitee = await playwright.request.newContext({ baseURL });
+    const oldToken = await latestLinkToken(invitee, email);
+    expect((await invite(request, email, permissions)).status()).toBe(201);
+    const newToken = await latestLinkToken(invitee, email);
+    expect(newToken).not.toBe(oldToken);
+
+    const stale = await invitee.post('auth/password/reset', {
+      data: { token: oldToken, password: PASSWORD },
+    });
+    expect(stale.status()).toBe(400);
+    expect((await stale.json()).error.code).toBe('AUTH_TOKEN_INVALID');
+    expect(
+      (
+        await invitee.post('auth/password/reset', {
+          data: { token: newToken, password: PASSWORD },
+        })
+      ).status(),
+    ).toBe(204);
+
+    for (const reason of [{}, 42, 'x'.repeat(1001)]) {
+      const bad = await request.patch(`operator/staff/${memberId}`, {
+        headers,
+        data: { status: 'ACTIVE', reason },
+      });
+      expect(bad.status()).toBe(400);
+    }
+    await invitee.dispose();
   });
 });

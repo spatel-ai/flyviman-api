@@ -29,7 +29,7 @@ import {
   AddOperatorDocumentDto,
   OperatorDocumentResponseDto,
   OperatorProfileResponseDto,
-  OperatorProfileWithAccessDto,
+  OperatorMeResponseDto,
   RegisterOperatorDto,
   UpdateOperatorProfileDto,
 } from './dto/operator.dto.js';
@@ -58,20 +58,20 @@ export class OperatorController {
     return this.operators.register(body);
   }
 
-  @Get('profile')
+  @Get('me')
   @Roles(Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF)
   @ApiOperation({
-    summary: 'The operator organisation and its review status',
+    summary: "The caller's organisation in brief, and what they may do in it",
     description:
-      'Also says what the caller may do in it (`access`), so the portal shows staff only what they can use.',
+      'For the portal: status, a display name and `access`. Staff use this; the full profile is for administrators (D-070).',
   })
-  @ApiOkResponse({ type: OperatorProfileWithAccessDto })
-  async profile(
-    @CurrentUser() user: AuthUser,
-  ): Promise<OperatorProfileWithAccessDto> {
+  @ApiOkResponse({ type: OperatorMeResponseDto })
+  async me(@CurrentUser() user: AuthUser): Promise<OperatorMeResponseDto> {
     const { operator, access } = await this.operators.accessFor(user);
     return {
-      ...toProfileDto(operator, await this.operators.missing(operator)),
+      operatorId: operator.id,
+      status: operator.status,
+      displayName: operator.tradingName ?? operator.legalName,
       access: {
         role: access.role,
         capabilities: access.capabilities,
@@ -79,6 +79,21 @@ export class OperatorController {
         aircraftIds: access.aircraft === 'ALL' ? [] : access.aircraft,
       },
     };
+  }
+
+  @Get('profile')
+  @Roles(Role.OPERATOR_ADMIN)
+  @ApiOperation({
+    summary: 'The operator organisation and its review status',
+    description:
+      'Administrators only: it holds tax and registration numbers and the review note. Staff read `GET /operator/me` (D-070).',
+  })
+  @ApiOkResponse({ type: OperatorProfileResponseDto })
+  async profile(
+    @CurrentUser() user: AuthUser,
+  ): Promise<OperatorProfileResponseDto> {
+    const operator = await this.operators.forMember(user.id);
+    return toProfileDto(operator, await this.operators.missing(operator));
   }
 
   @Patch('profile')

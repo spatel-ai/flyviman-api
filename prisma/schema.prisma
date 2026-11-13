@@ -27,18 +27,28 @@ enum UserStatus {
   SUSPENDED
 }
 
+/// Who suspended an account: Flyviman (an administrator) or the operator the
+/// staff member belongs to. Only an operator's own suspension can be lifted
+/// by that operator (D-070).
+enum SuspensionSource {
+  PLATFORM
+  OPERATOR
+}
+
 model User {
-  id              String     @id @default(uuid()) @db.Uuid
-  email           String?    @unique
-  phone           String?    @unique
+  id              String            @id @default(uuid()) @db.Uuid
+  email           String?           @unique
+  phone           String?           @unique
   passwordHash    String?
-  role            Role       @default(CUSTOMER)
-  status          UserStatus @default(PENDING_VERIFICATION)
-  emailVerifiedAt DateTime?  @db.Timestamptz
-  phoneVerifiedAt DateTime?  @db.Timestamptz
-  lastLoginAt     DateTime?  @db.Timestamptz
-  createdAt       DateTime   @default(now()) @db.Timestamptz
-  updatedAt       DateTime   @updatedAt @db.Timestamptz
+  role            Role              @default(CUSTOMER)
+  status          UserStatus        @default(PENDING_VERIFICATION)
+  /// Set while SUSPENDED; null otherwise.
+  suspendedBy     SuspensionSource?
+  emailVerifiedAt DateTime?         @db.Timestamptz
+  phoneVerifiedAt DateTime?         @db.Timestamptz
+  lastLoginAt     DateTime?         @db.Timestamptz
+  createdAt       DateTime          @default(now()) @db.Timestamptz
+  updatedAt       DateTime          @updatedAt @db.Timestamptz
 
   sessions        Session[]
   consents        Consent[]
