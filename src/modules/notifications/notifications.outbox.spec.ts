@@ -16,7 +16,7 @@ type Row = {
 };
 
 /** One queued row and just enough of Prisma's notification API around it. */
-function setup(options: { failSends?: number } = {}) {
+function setup(options: { failSends?: number; failRecords?: number } = {}) {
   const row: Row = {
     id: 'n-1',
     status: 'QUEUED',
@@ -32,6 +32,7 @@ function setup(options: { failSends?: number } = {}) {
     attempts: 0,
     nextAttemptAt: new Date(Date.now() - 1000),
   };
+  let recordFailures = options.failRecords ?? 0;
   const matches = (where: Record<string, unknown>) => {
     if (where.status && where.status !== row.status) return false;
     const due = where.nextAttemptAt as { lte?: Date } | undefined;
@@ -50,6 +51,10 @@ function setup(options: { failSends?: number } = {}) {
         where: Record<string, unknown>;
         data: Record<string, unknown>;
       }) => {
+        if (data.status === 'SENT' && recordFailures > 0) {
+          recordFailures -= 1;
+          throw new Error('database blip');
+        }
         if (!matches(where)) return { count: 0 };
         for (const [key, value] of Object.entries(data)) {
           if (key === 'attempts' && typeof value === 'object') {
@@ -115,5 +120,16 @@ describe('notification outbox', () => {
     await service.deliver(row.id);
     expect(sent).toEqual([]);
     expect(row.status).toBe('QUEUED');
+  });
+
+  it('never sends again when only recording the send failed', async () => {
+    const { service, row, sent } = setup({ failRecords: 1 });
+    await service.deliver(row.id);
+    expect(sent).toHaveLength(1);
+    expect(row.status).toBe('SENT');
+    // Even once due again, it is not resent.
+    row.nextAttemptAt = new Date(Date.now() - 1000);
+    await service.deliver(row.id);
+    expect(sent).toHaveLength(1);
   });
 });

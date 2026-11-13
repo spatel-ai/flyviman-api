@@ -34,8 +34,14 @@ const ALERT_WINDOW_DAYS = 30;
 /** Deletes the lock only if it still holds this run's token. */
 const RELEASE_LOCK = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
 
-function alertKey(document: ExpiringDocument, threshold: number): string {
-  return `${document.kind}:${document.documentId}:${threshold}:${document.expiresAt.toISOString().slice(0, 10)}`;
+/** One alert: kind, document, threshold and the expiry date it is about. */
+function alertKey(
+  kind: string,
+  documentId: string,
+  threshold: number,
+  expiresAt: Date,
+): string {
+  return `${kind}:${documentId}:${threshold}:${expiresAt.toISOString().slice(0, 10)}`;
 }
 
 /** 1 Dec 2026, as alerts show a date. */
@@ -132,7 +138,18 @@ export class ComplianceService implements OnApplicationBootstrap {
       const sent = await this.alreadySent(due);
       let alerted = 0;
       for (const { document, threshold } of due) {
-        if (sent.has(alertKey(document, threshold))) continue;
+        if (
+          sent.has(
+            alertKey(
+              document.kind,
+              document.documentId,
+              threshold,
+              document.expiresAt,
+            ),
+          )
+        ) {
+          continue;
+        }
         // One document's failure never stops the others; it is retried
         // on the next run.
         try {
@@ -204,9 +221,8 @@ export class ComplianceService implements OnApplicationBootstrap {
       },
     });
     return new Set(
-      rows.map(
-        (row) =>
-          `${row.kind}:${row.documentId}:${row.threshold}:${row.expiresAt.toISOString().slice(0, 10)}`,
+      rows.map((row) =>
+        alertKey(row.kind, row.documentId, row.threshold, row.expiresAt),
       ),
     );
   }

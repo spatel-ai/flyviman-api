@@ -188,7 +188,16 @@ export class NotificationsService {
       );
       return 0;
     }
-    for (const { id } of claimed) await this.sendLeased(id);
+    for (const { id } of claimed) {
+      // One row's failure never stops the rest of the batch.
+      try {
+        await this.sendLeased(id);
+      } catch (error) {
+        this.logger.error(
+          `Outbox delivery failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+        );
+      }
+    }
     return claimed.length;
   }
 
@@ -227,28 +236,27 @@ export class NotificationsService {
     if (
       !row ||
       row.status !== NotificationStatus.QUEUED ||
-      !row.recipient ||
       row.channel === NotificationChannel.IN_APP
     ) {
       return;
     }
+    if (!row.recipient) {
+      // Nowhere to send it: give up rather than lease it again forever.
+      await this.prisma.notification.updateMany({
+        where: { id, status: NotificationStatus.QUEUED },
+        data: { status: NotificationStatus.FAILED, nextAttemptAt: null },
+      });
+      return;
+    }
+
+    let sent: { providerMessageId?: string };
     try {
-      const sent = await this.dispatchMessage(
+      sent = await this.dispatchMessage(
         row.channel,
         row.templateKey,
         (row.payload ?? {}) as Variables,
         row.recipient,
       );
-      await this.prisma.notification.updateMany({
-        where: { id, status: NotificationStatus.QUEUED },
-        data: {
-          status: NotificationStatus.SENT,
-          providerMessageId: sent.providerMessageId,
-          attempts: { increment: 1 },
-          nextAttemptAt: null,
-          recipient: null,
-        },
-      });
     } catch (error) {
       this.logFailure(row.templateKey, row.channel, error);
       const attempts = row.attempts + 1;
@@ -265,12 +273,43 @@ export class NotificationsService {
                 }
               : {
                   attempts,
+                  // 1, 2, 4, 8 minutes.
                   nextAttemptAt: new Date(
                     Date.now() + 60_000 * 2 ** (attempts - 1),
                   ),
                 },
         })
         .catch(() => undefined);
+      return;
+    }
+
+    // Sent. Recording it is retried, never the send: a message the provider
+    // took is not sent again because the bookkeeping failed.
+    const done = {
+      where: { id, status: NotificationStatus.QUEUED },
+      data: {
+        status: NotificationStatus.SENT,
+        providerMessageId: sent.providerMessageId,
+        attempts: { increment: 1 },
+        nextAttemptAt: null,
+        recipient: null,
+      },
+    };
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.prisma.notification.updateMany(done);
+        return;
+      } catch (error) {
+        if (attempt >= 3) {
+          // Left leased (not due for five minutes); logged so it can be
+          // checked. A duplicate is preferred to a lost message only here.
+          this.logger.error(
+            `Outbox could not record a sent message: ${error instanceof Error ? error.name : 'unknown error'}`,
+          );
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+      }
     }
   }
 

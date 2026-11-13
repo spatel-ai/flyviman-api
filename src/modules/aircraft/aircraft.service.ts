@@ -21,6 +21,7 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
+import { assertDocumentDates } from '../../common/document-dates.js';
 import { indiaTodayAsDate } from '../../common/india-date.js';
 import { searchBlockers } from './aircraft-search.js';
 import type { ExpiryCandidate } from '../compliance/expiry.js';
@@ -1061,7 +1062,7 @@ export class AircraftService implements OnModuleInit {
       );
     }
 
-    this.assertDocumentDates(input.issuedAt, input.expiresAt);
+    assertDocumentDates(input.issuedAt, input.expiresAt);
     const revertToReview = this.needsReReview(aircraft.listingStatus);
 
     return this.prisma.$transaction(async (tx) => {
@@ -1156,29 +1157,6 @@ export class AircraftService implements OnModuleInit {
         }`,
       );
     });
-  }
-
-  private assertDocumentDates(
-    issuedAt?: string | null,
-    expiresAt?: string | null,
-  ): void {
-    const today = new Date().toISOString().slice(0, 10);
-    if (expiresAt && expiresAt < today) {
-      throw new AppException(
-        'VALIDATION_ERROR',
-        'The expiry date cannot be in the past.',
-        HttpStatus.BAD_REQUEST,
-        [{ field: 'expiresAt', issue: 'must not be in the past' }],
-      );
-    }
-    if (issuedAt && expiresAt && issuedAt > expiresAt) {
-      throw new AppException(
-        'VALIDATION_ERROR',
-        'The issue date cannot be after the expiry date.',
-        HttpStatus.BAD_REQUEST,
-        [{ field: 'issuedAt', issue: 'must not be after the expiry date' }],
-      );
-    }
   }
 
   private async assertFileRoom(operatorId: string): Promise<void> {

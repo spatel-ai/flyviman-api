@@ -16,6 +16,7 @@ import {
   assertAcceptablePassword,
   hashPassword,
 } from '../../common/crypto/password.js';
+import { assertDocumentDates } from '../../common/document-dates.js';
 import { uniqueOrNull } from '../../common/errors/unique.js';
 import {
   PendingRegistration,
@@ -468,6 +469,7 @@ export class OperatorsService implements OnModuleInit {
   ): Promise<OperatorDocumentRecord> {
     const operator = await this.forMember(userId);
     this.assertDocumentsEditable(operator);
+    assertDocumentDates(input.issuedAt, input.expiresAt);
     const held = await this.prisma.operatorDocument.count({
       where: { operatorId: operator.id },
     });

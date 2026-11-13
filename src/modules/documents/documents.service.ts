@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { AppException } from '../../common/errors/app.exception.js';
 import type { Prisma } from '../../generated/prisma/client.js';
-import { FilePurpose } from '../../generated/prisma/enums.js';
+import { FilePurpose, Role } from '../../generated/prisma/enums.js';
 import { ALLOWED_CONTENT_TYPES } from '../../integrations/storage/file-signature.js';
 import {
   SignedDownload,
@@ -46,6 +46,14 @@ function notFound(): AppException {
  * Upload authorisation, file metadata and access checks. Files live in
  * private storage and are reached only through short-lived signed URLs.
  */
+/** Who may reserve an upload for each purpose: the roles that attach it. */
+const PURPOSE_ROLES: Record<FilePurpose, Role[]> = {
+  OPERATOR_DOCUMENT: [Role.OPERATOR_ADMIN],
+  AIRCRAFT_PHOTO: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF],
+  AIRCRAFT_FLOOR_PLAN: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF],
+  AIRCRAFT_DOCUMENT: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF],
+};
+
 @Injectable()
 export class DocumentsService {
   private readonly accessChecks = new Map<FilePurpose, FileAccessCheck>();
@@ -69,6 +77,15 @@ export class DocumentsService {
       sizeBytes: number;
     },
   ): Promise<{ fileId: string; upload: SignedUpload }> {
+    // A slot can be reserved only by a role that could attach the file
+    // (M3 close-out security review).
+    if (!PURPOSE_ROLES[input.purpose]?.includes(user.role)) {
+      throw new AppException(
+        'FORBIDDEN',
+        'You cannot upload this kind of file.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
     if (!ALLOWED_CONTENT_TYPES.includes(input.contentType)) {
       throw new AppException(
         'VALIDATION_ERROR',

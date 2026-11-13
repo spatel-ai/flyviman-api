@@ -385,6 +385,42 @@ test.describe('compliance documents', () => {
     expect(forged.status()).toBe(403);
   });
 
+  test('an upload can be reserved only by a role that could attach it', async ({
+    request,
+  }) => {
+    await registerCustomer(request);
+    const data = {
+      purpose: 'OPERATOR_DOCUMENT',
+      fileName: 'aoc.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 100,
+    };
+    for (const purpose of ['OPERATOR_DOCUMENT', 'AIRCRAFT_DOCUMENT']) {
+      expect(
+        (
+          await request.post('uploads/presign', {
+            headers: await csrfHeaders(request),
+            data: { ...data, purpose },
+          })
+        ).status(),
+      ).toBe(403);
+    }
+  });
+
+  test('a company document cannot already be expired', async ({ request }) => {
+    await registerOperator(request);
+    const headers = await csrfHeaders(request);
+    const fileId = await uploadPdf(request, headers, 'aoc.pdf');
+    const response = await request.post('operator/documents', {
+      headers,
+      data: { type: 'AOC', fileId, expiresAt: '2001-01-01' },
+    });
+    expect(response.status()).toBe(400);
+    expect((await response.json()).error.details).toEqual([
+      { field: 'expiresAt', issue: 'must not be in the past' },
+    ]);
+  });
+
   test('presigning needs a session', async ({ request }) => {
     const response = await request.post('uploads/presign', { data: {} });
     expect(response.status()).toBe(401);

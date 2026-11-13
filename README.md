@@ -35,7 +35,7 @@ npm run build
 
 ## What is built
 
-Milestones M0 to M2 and M3 steps 1 to 8 (`../docs/progress.md` has the detail and `../docs/roadmap.md` what comes next):
+Milestones M0 to M3 (`../docs/progress.md` has the detail and `../docs/roadmap.md` what comes next):
 
 - **Foundations:** sign-in with rotating refresh tokens, roles checked against the database on every request, CSRF protection, rate limits, an append-only audit log, structured logs with request IDs.
 - **Identity:** customer registration by email or mobile with one-time codes, password reset, profiles and saved passengers; operator registration, compliance documents and review; internal staff accounts.
