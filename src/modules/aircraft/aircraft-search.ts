@@ -6,7 +6,7 @@ import {
 
 /**
  * Why an aircraft would not be offered in search (M3 step 8; search itself
- * arrives in M4 and must apply the same rules). Empty means searchable. The
+ * arrives in M5 and must apply the same rules). Empty means searchable. The
  * codes after the status checks are `missing()`'s: `homeBaseId`, `rangeKm`
  * and `document:<TYPE>` for a required document that is absent, rejected or
  * expired, so an expired insurance takes the aircraft out of search the day

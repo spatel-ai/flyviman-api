@@ -23,7 +23,7 @@ Workspace rules, the business rules that must never be broken, and the index of 
 | Unit tests | Vitest, `*.spec.ts` next to the code |
 | Integration tests | Playwright request client, `e2e/*.e2e.ts` |
 | Lint and format | oxlint (type-aware), Prettier |
-| Payments (M8) | Razorpay, behind `PaymentGatewayProvider` |
+| Payments (M9) | Razorpay, behind `PaymentGatewayProvider` |
 
 Because this is an ES module project: relative imports end in `.js`, use `import.meta.dirname` instead of `__dirname`, and mocks are `vi.fn()`.
 

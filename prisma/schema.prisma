@@ -497,7 +497,7 @@ enum AircraftDocumentType {
 
 /// An aircraft profile belonging to one operator. Searchable only when
 /// listingStatus is APPROVED, the operator is APPROVED, availabilityStatus is
-/// AVAILABLE, and required documents are unexpired (enforced in search, M4).
+/// AVAILABLE, and required documents are unexpired (enforced in search, M5).
 model Aircraft {
   id                 String                     @id @default(uuid()) @db.Uuid
   operatorId         String                     @db.Uuid
@@ -618,7 +618,7 @@ model AvailabilityBlock {
   startsAt   DateTime                @db.Timestamptz
   endsAt     DateTime                @db.Timestamptz
   reason     AvailabilityBlockReason
-  /// Set when bookings exist (M7). No foreign key until that table ships.
+  /// Set when bookings exist (M8). No foreign key until that table ships.
   bookingId  String?                 @db.Uuid
   expiresAt  DateTime?               @db.Timestamptz
   note       String?
@@ -679,7 +679,7 @@ model Enquiry {
   phone     String?
   topic     EnquiryTopic
   message   String
-  /// When operations dealt with it (set from the admin list, M9).
+  /// When operations dealt with it (set from the admin list, M10).
   handledAt DateTime?    @db.Timestamptz
   createdAt DateTime     @default(now()) @db.Timestamptz
   updatedAt DateTime     @updatedAt @db.Timestamptz

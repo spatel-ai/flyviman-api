@@ -31,7 +31,7 @@ import {
 } from '../../../generated/prisma/enums.js';
 import { HomeBaseSummaryDto } from '../../aircraft/dto/aircraft.dto.js';
 
-/** Reasons an operator may set. Confirmed bookings are created by bookings (M7). */
+/** Reasons an operator may set. Confirmed bookings are created by bookings (M8). */
 export const OPERATOR_BLOCK_REASONS = [
   AvailabilityBlockReason.MAINTENANCE,
   AvailabilityBlockReason.BLACKOUT,

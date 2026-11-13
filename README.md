@@ -42,7 +42,7 @@ Milestones M0 to M3 (`../docs/progress.md` has the detail and `../docs/roadmap.m
 - **Fleet:** airports and heliports (OurAirports), aircraft profiles with photos and documents, review and approval by operations, an availability calendar with conflict rules.
 - **Operator staff:** operator administrators invite staff, give them "manage aircraft" and/or "manage availability" on chosen aircraft (or all), and suspend or remove them (`/operator/staff`).
 - **Document expiry:** a daily job alerts operator administrators 30 days, 7 days and on the day before a certificate or insurance lapses; operations see `GET /admin/documents/expiring`; an aircraft with an expired required document is flagged as not searchable. Notifications go through an outbox with retries.
-- **Not yet:** search and pricing (M4), scheduled airlines, empty legs, bookings, payments, air ambulance; real messaging and storage providers.
+- **Not yet:** search and pricing (M5), scheduled airlines, empty legs, bookings, payments, air ambulance; real messaging and storage providers.
 
 The route catalogue is `../docs/api/api-routes.md`; request and response shapes are in `openapi.json` (the interactive reference at `/api/docs` runs outside production only).
 

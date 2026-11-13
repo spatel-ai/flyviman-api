@@ -13,9 +13,9 @@ Each integration is a folder containing:
 | -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------- | --------- |
 | `MessagingProvider`        | Email, SMS, WhatsApp                                  | Not chosen. Mock (development) and sink (proof of concept) built                | M1        |
 | `StorageProvider`          | Signed upload and download URLs for private documents | S3-compatible (assumed). Local-disk store built (development, proof of concept) | M1        |
-| `RoutingProvider`          | Distance between two locations                        | Built-in great-circle with routing factor                                       | M4        |
-| `AirlineInventoryProvider` | Scheduled search, fare rules, revalidation, booking   | Not chosen                                                                      | M5        |
-| `PaymentGatewayProvider`   | Orders, signature verification, webhooks, refunds     | Razorpay                                                                        | M8        |
+| `RoutingProvider`          | Distance between two locations                        | Built-in great-circle with routing factor                                       | M5        |
+| `AirlineInventoryProvider` | Scheduled search, fare rules, revalidation, booking   | Not chosen                                                                      | M6        |
+| `PaymentGatewayProvider`   | Orders, signature verification, webhooks, refunds     | Razorpay                                                                        | M9        |
 
 Every call to a real provider has a timeout, bounded retries for safe operations, and a defined fallback. Provider errors are mapped to our error codes and never passed through to clients.
 
