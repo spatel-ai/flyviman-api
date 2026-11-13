@@ -110,6 +110,20 @@ describe('calculatePrice', () => {
     expect(codes.REPOSITIONING).toBe(7_500_000); // 1.5 h × 0.5
   });
 
+  it('assumes a return to base only when the return is charged', () => {
+    const C = point('C', 0, -3);
+    const far = run([RATE, rule('POSITIONING', { rateFactor: 0.5 })], {
+      aircraft: { ...AIRCRAFT, base: C },
+    });
+    expect(far.assumptions.join(' ')).toMatch(/returns to C/);
+    const near = point('N', 0, 6.3); // 30 km from B, within the free distance
+    const free = run(
+      [RATE, rule('POSITIONING', { rateFactor: 0.5, freeWithinKm: 50 })],
+      { aircraft: { ...AIRCRAFT, base: near }, origin: near },
+    );
+    expect(free.assumptions.join(' ')).not.toMatch(/returns to/);
+  });
+
   it('does not charge positioning within the free distance', () => {
     const C = point('C', 0, -0.4); // 40 km
     const result = run(
