@@ -3139,6 +3139,50 @@
         ]
       }
     },
+    "/api/v1/enquiries": {
+      "post": {
+        "description": "Charter, aircraft sales or consultancy. Needs an email address or a phone number, or both. Operations are emailed; the answer is a reference and never repeats what was sent. Limited per caller (5 per 10 minutes by default; 429 `RATE_LIMITED`). A repeat with the same `Idempotency-Key` and body returns the first answer; with a different body, 409 `IDEMPOTENCY_CONFLICT`.",
+        "operationId": "EnquiriesController_create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each enquiry and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnquiryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnquiryResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Send a sales enquiry from the contact page",
+        "tags": [
+          "enquiries"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "description": "Newest first. Filter by entity, actor, action and time range.",
@@ -6698,6 +6742,80 @@
           "operatorName",
           "aircraftId",
           "registration"
+        ]
+      },
+      "EnquiryTopic": {
+        "type": "string",
+        "enum": [
+          "GENERAL",
+          "PRIVATE_CHARTER",
+          "CELEBRITY_CHARTER",
+          "ELECTION_CHARTER",
+          "MARRIAGE_CHARTER",
+          "PILGRIMAGE_CHARTER",
+          "MEDICAL_CHARTER",
+          "GROUP_CHARTER",
+          "FLOWER_DROP_CHARTER",
+          "AIRCRAFT_SALES",
+          "CONSULTANCY"
+        ]
+      },
+      "CreateEnquiryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "example": "Asha Rao"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "Send this, `phone`, or both.",
+            "example": "asha@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "E.164. Send this, `email`, or both.",
+            "example": "+919876543210"
+          },
+          "topic": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnquiryTopic"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "name",
+          "topic",
+          "message"
+        ]
+      },
+      "EnquiryResponseDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "Quote it when following up.",
+            "example": "FLY-ENQ-7K2M9Q"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-13T09:30:00.000Z"
+          }
+        },
+        "required": [
+          "reference",
+          "receivedAt"
         ]
       },
       "AuditLogResponseDto": {

@@ -57,8 +57,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
       );
     }
 
-    // Scoped to the caller and the route, so one client's key can never
-    // return another client's response.
+    // Scoped to the signed-in user and the route. Public routes have no
+    // user, so every caller shares the "anonymous" scope there: a replay
+    // still needs the same random key and the same body, and returns only
+    // what that request returned (for enquiries, a reference and a time).
     const owner = request.user?.id ?? 'anonymous';
     const route = `${request.method}:${request.baseUrl}${request.path}`;
     const storeKey = `idem:${owner}:${route}:${key}`;

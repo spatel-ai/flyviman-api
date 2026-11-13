@@ -6,6 +6,8 @@ export interface OutboundMessage {
   to: string;
   subject?: string;
   body: string;
+  /** The body holds someone's personal data: never print or log it. */
+  personal?: boolean;
 }
 
 export interface SentMessage {

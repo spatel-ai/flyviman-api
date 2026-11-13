@@ -330,7 +330,9 @@ enum NotificationStatus {
 /// a reset link or medical data.
 model Notification {
   id                String              @id @default(uuid()) @db.Uuid
-  userId            String              @db.Uuid
+  /// Null only for an email or SMS to a staff inbox rather than an account
+  /// (the operations inbox told of a new enquiry). In-app rows always have one.
+  userId            String?             @db.Uuid
   channel           NotificationChannel
   templateKey       String
   payload           Json
@@ -346,7 +348,7 @@ model Notification {
   createdAt         DateTime            @default(now()) @db.Timestamptz
   updatedAt         DateTime            @updatedAt @db.Timestamptz
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel, createdAt])
   @@index([status, nextAttemptAt])
@@ -645,4 +647,42 @@ model ContentItem {
 
   @@unique([kind, slug])
   @@index([kind, publishedAt, sortOrder])
+}
+
+// ---------------------------------------------------------------------------
+// Sales enquiries (contact page)
+// ---------------------------------------------------------------------------
+
+/// What a sales enquiry from the contact page is about.
+enum EnquiryTopic {
+  GENERAL
+  PRIVATE_CHARTER
+  CELEBRITY_CHARTER
+  ELECTION_CHARTER
+  MARRIAGE_CHARTER
+  PILGRIMAGE_CHARTER
+  MEDICAL_CHARTER
+  GROUP_CHARTER
+  FLOWER_DROP_CHARTER
+  AIRCRAFT_SALES
+  CONSULTANCY
+}
+
+/// A sales enquiry sent from the public contact page. Contact details and
+/// the message are personal data: never logged, never in the audit trail.
+model Enquiry {
+  id        String       @id @default(uuid()) @db.Uuid
+  /// Human reference, for example FLY-ENQ-7K2M9Q.
+  reference String       @unique
+  name      String
+  email     String?
+  phone     String?
+  topic     EnquiryTopic
+  message   String
+  /// When operations dealt with it (set from the admin list, M9).
+  handledAt DateTime?    @db.Timestamptz
+  createdAt DateTime     @default(now()) @db.Timestamptz
+  updatedAt DateTime     @updatedAt @db.Timestamptz
+
+  @@index([handledAt, createdAt])
 }

@@ -104,6 +104,37 @@ describe('validateEnv', () => {
     );
   });
 
+  it('needs the real operations inbox in production when messages are really sent', () => {
+    const production = {
+      ...valid,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'mock',
+    };
+    expect(() => validateEnv(production)).toThrow(/OPERATIONS_INBOX_EMAIL/);
+    expect(
+      validateEnv({ ...production, OPERATIONS_INBOX_EMAIL: 'ops@flyviman.com' })
+        .OPERATIONS_INBOX_EMAIL,
+    ).toBe('ops@flyviman.com');
+    // A host that discards every message does not need one.
+    expect(() =>
+      validateEnv({
+        ...production,
+        MESSAGING_PROVIDER: 'sink',
+        STORAGE_PROVIDER: 'local',
+        API_PUBLIC_URL: 'https://flyviman-api.example.com',
+      }),
+    ).not.toThrow();
+  });
+
+  it('gives enquiries their own limit, not the sign-in one', () => {
+    expect(validateEnv(valid).RATE_LIMIT_ENQUIRY_PER_WINDOW).toBe(5);
+    expect(
+      validateEnv({ ...valid, RATE_LIMIT_AUTH_PER_MINUTE: '100' })
+        .RATE_LIMIT_ENQUIRY_PER_WINDOW,
+    ).toBe(5);
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     expect(() => validateEnv({})).toThrow(/Invalid environment configuration/);
   });

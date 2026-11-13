@@ -182,7 +182,24 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     subject: 'Aircraft reinstated',
     body: '{{registration}} is active again.',
   },
+  {
+    // To the operations inbox, not to the customer. The subject carries no
+    // personal data; the body does, because staff need it to reply.
+    key: 'enquiry.received',
+    channel: 'EMAIL',
+    subject: 'New enquiry {{reference}}: {{topic}}',
+    body: 'A new enquiry arrived from the contact page.\nReference: {{reference}}\nTopic: {{topic}}\nReceived: {{receivedAt}}\nName: {{name}}\nEmail: {{email}}\nPhone: {{phone}}\n\n{{message}}',
+  },
 ];
+
+/**
+ * Templates whose body carries someone's personal data (contact details,
+ * free text). They are never printed by the development mock, and their
+ * stored variables are cleared once the message is sent or has failed.
+ */
+export const PERSONAL_TEMPLATES: ReadonlySet<string> = new Set([
+  'enquiry.received',
+]);
 
 /** Fills `{{name}}` placeholders. An unknown placeholder becomes empty. */
 export function render(

@@ -12,7 +12,7 @@ import {
 } from '../../integrations/messaging/messaging.provider.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { DEFAULT_TEMPLATES, render } from './templates.js';
+import { DEFAULT_TEMPLATES, PERSONAL_TEMPLATES, render } from './templates.js';
 
 type Variables = Record<string, string | number>;
 
@@ -54,6 +54,15 @@ export interface InAppNotification {
  * Renders templates, sends through the messaging adapter and keeps the
  * delivery log, which doubles as the in-app inbox. Never pass medical data.
  */
+/**
+ * Once a message whose variables hold personal data is sent or has failed,
+ * its stored copy of them is cleared: the source record (an enquiry) is the
+ * one place the data lives.
+ */
+function clearPersonal(templateKey: string) {
+  return PERSONAL_TEMPLATES.has(templateKey) ? { payload: {} } : {};
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -133,17 +142,23 @@ export class NotificationsService {
    * itself and are written as sent. Never for a message with a code or link.
    * Returns the row id; delivery follows from the dispatcher, or at once
    * with `deliver(id)` after the commit.
+   *
+   * `userId` may be left out only for an email or SMS to a staff inbox that
+   * is not an account (the operations inbox); an in-app message needs one.
    */
   async enqueue(
-    input: Omit<SendNotification, 'secret'> & { userId: string },
+    input: Omit<SendNotification, 'secret'>,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<string> {
+    if (input.channel === NotificationChannel.IN_APP && !input.userId) {
+      throw new Error('An in-app notification needs a user');
+    }
     if (input.channel !== NotificationChannel.IN_APP && !input.to) {
       throw new Error('No recipient address');
     }
     const row = await db.notification.create({
       data: {
-        userId: input.userId,
+        userId: input.userId ?? null,
         channel: input.channel,
         templateKey: input.templateKey,
         payload: input.variables ?? {},
@@ -270,6 +285,7 @@ export class NotificationsService {
                   attempts,
                   nextAttemptAt: null,
                   recipient: null,
+                  ...clearPersonal(row.templateKey),
                 }
               : {
                   attempts,
@@ -293,6 +309,7 @@ export class NotificationsService {
         attempts: { increment: 1 },
         nextAttemptAt: null,
         recipient: null,
+        ...clearPersonal(row.templateKey),
       },
     };
     for (let attempt = 1; ; attempt += 1) {
@@ -327,6 +344,7 @@ export class NotificationsService {
         ? render(template.subject, variables)
         : undefined,
       body: render(template.body, variables),
+      personal: PERSONAL_TEMPLATES.has(templateKey),
     });
   }
 

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsIn,
   IsInt,
@@ -109,6 +110,28 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   RATE_LIMIT_DEFAULT_PER_MINUTE: number = 100;
+
+  /**
+   * Enquiries (`POST /enquiries`) one caller may send per window. Its own
+   * number, never tied to the sign-in limit; test servers lift it.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RATE_LIMIT_ENQUIRY_PER_WINDOW: number = 5;
+
+  /** The enquiry window, in seconds (10 minutes by default). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RATE_LIMIT_ENQUIRY_WINDOW_SECONDS: number = 600;
+
+  /**
+   * Where a new enquiry from the contact page is emailed: the operations
+   * inbox. Deployments set the real address.
+   */
+  @IsEmail()
+  OPERATIONS_INBOX_EMAIL: string = 'operations@flyviman.test';
 
   /**
    * Encrypts sensitive columns (identity document numbers). 32 random bytes,
@@ -228,6 +251,19 @@ export function validateEnv(
       .map((error) => Object.values(error.constraints ?? {}).join(', '))
       .join('; ');
     throw new Error(`Invalid environment configuration: ${problems}`);
+  }
+
+  // Enquiries are emailed to the operations inbox. In production with a
+  // provider that really sends, the reserved .test default would lose them
+  // while the visitor is told they were received.
+  if (
+    validated.NODE_ENV === NodeEnv.Production &&
+    validated.MESSAGING_PROVIDER !== 'sink' &&
+    validated.OPERATIONS_INBOX_EMAIL.toLowerCase().endsWith('.test')
+  ) {
+    throw new Error(
+      'Invalid environment configuration: set OPERATIONS_INBOX_EMAIL to the real operations inbox in production.',
+    );
   }
 
   return validated;

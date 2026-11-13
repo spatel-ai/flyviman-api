@@ -43,6 +43,20 @@ describe('MockMessagingProvider', () => {
     },
   );
 
+  it('never prints the body of a message that holds personal data', async () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+    await provider('development').send({
+      ...message,
+      body: 'Name: Asha Rao\nPhone: +919876543210',
+      personal: true,
+    });
+
+    const line = String(log.mock.calls[0][0]);
+    expect(line).not.toContain('Asha Rao');
+    expect(line).not.toContain('+919876543210');
+    expect(line).toContain('not printed');
+  });
+
   it('still keeps every message for the outbox', async () => {
     vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     const mock = provider('test');

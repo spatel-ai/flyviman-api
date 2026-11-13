@@ -62,7 +62,9 @@ export class MockMessagingProvider extends MessagingProvider {
     this.logger.log(
       `[DEV ONLY, not sent] ${message.channel} to ${maskRecipient(message.to)}` +
         (message.subject ? ` | ${message.subject}` : '') +
-        ` | ${message.body.replace(/\s+/g, ' ')}`,
+        (message.personal
+          ? ' | (body holds personal data, not printed)'
+          : ` | ${message.body.replace(/\s+/g, ' ')}`),
     );
     return { providerMessageId };
   }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import {
   ThrottlerGuard,
+  type ThrottlerLimitDetail,
   ThrottlerModuleOptions,
   ThrottlerOptionsFactory,
 } from '@nestjs/throttler';
@@ -16,6 +17,16 @@ const RATE_TIER = 'rateTier';
  */
 export const StrictRateLimit = () => SetMetadata(RATE_TIER, 'auth' as RateTier);
 
+const ENQUIRY_LIMIT = 'enquiryLimit';
+
+/**
+ * Adds a second, longer-window limit to a public form that sends a message
+ * to staff (the contact page's enquiries): `RATE_LIMIT_ENQUIRY_PER_WINDOW`
+ * requests per `RATE_LIMIT_ENQUIRY_WINDOW_SECONDS`, per caller, on top of
+ * the default tier. Response headers carry the `-enquiry` suffix.
+ */
+export const EnquiryRateLimit = () => SetMetadata(ENQUIRY_LIMIT, true);
+
 @Injectable()
 export class RateLimitConfig implements ThrottlerOptionsFactory {
   constructor(
@@ -28,7 +39,25 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
       auth: this.config.getOrThrow<number>('RATE_LIMIT_AUTH_PER_MINUTE'),
       default: this.config.getOrThrow<number>('RATE_LIMIT_DEFAULT_PER_MINUTE'),
     };
+    // Its own number, never tied to the sign-in tier: raising the sign-in
+    // limit must not raise the public spam limit. Test servers set it.
+    const enquiryLimit = this.config.getOrThrow<number>(
+      'RATE_LIMIT_ENQUIRY_PER_WINDOW',
+    );
+    const enquiryWindowMs =
+      this.config.getOrThrow<number>('RATE_LIMIT_ENQUIRY_WINDOW_SECONDS') *
+      1000;
     return [
+      {
+        name: 'enquiry',
+        ttl: enquiryWindowMs,
+        limit: enquiryLimit,
+        skipIf: (context: ExecutionContext) =>
+          !this.reflector.getAllAndOverride<boolean | undefined>(
+            ENQUIRY_LIMIT,
+            [context.getHandler(), context.getClass()],
+          ),
+      },
       {
         name: 'default',
         ttl: 60_000,
@@ -71,5 +100,20 @@ export class RateLimitGuard extends ThrottlerGuard {
     return (
       (await RateLimitGuard.identify(request)) ?? super.getTracker(request)
     );
+  }
+
+  /**
+   * A named limit other than `default` sets `Retry-After-<name>`; clients
+   * read the standard `Retry-After` (api-design.md), so it is set too.
+   */
+  protected async throwThrottlingException(
+    context: ExecutionContext,
+    detail: ThrottlerLimitDetail,
+  ): Promise<void> {
+    const response = context.switchToHttp().getResponse<{
+      setHeader(name: string, value: number): void;
+    }>();
+    response.setHeader('Retry-After', detail.timeToBlockExpire);
+    return super.throwThrottlingException(context, detail);
   }
 }

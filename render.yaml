@@ -64,6 +64,11 @@ services:
         value: "60"
       - key: RATE_LIMIT_DEFAULT_PER_MINUTE
         value: "600"
+      # Enquiries from every visitor share the web host's address here, so
+      # the contact form's limit is raised too. Until the web proxy passes
+      # the visitor's address on, this is a shared counter (deployment.md).
+      - key: RATE_LIMIT_ENQUIRY_PER_WINDOW
+        value: "60"
       - key: DATABASE_URL
         fromDatabase:
           name: flyviman-db

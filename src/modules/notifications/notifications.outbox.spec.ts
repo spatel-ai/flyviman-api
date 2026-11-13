@@ -16,12 +16,18 @@ type Row = {
 };
 
 /** One queued row and just enough of Prisma's notification API around it. */
-function setup(options: { failSends?: number; failRecords?: number } = {}) {
+function setup(
+  options: {
+    failSends?: number;
+    failRecords?: number;
+    templateKey?: string;
+  } = {},
+) {
   const row: Row = {
     id: 'n-1',
     status: 'QUEUED',
     channel: 'EMAIL',
-    templateKey: 'document.expiring',
+    templateKey: options.templateKey ?? 'document.expiring',
     payload: {
       document: 'Insurance',
       subject: 'VT-ABC',
@@ -131,5 +137,29 @@ describe('notification outbox', () => {
     row.nextAttemptAt = new Date(Date.now() - 1000);
     await service.deliver(row.id);
     expect(sent).toHaveLength(1);
+  });
+
+  it('clears the stored variables of a personal message once it is sent', async () => {
+    const { service, row } = setup({ templateKey: 'enquiry.received' });
+    await service.deliver(row.id);
+    expect(row.status).toBe('SENT');
+    expect(row.payload).toEqual({});
+  });
+
+  it('clears them too when a personal message fails for good', async () => {
+    const { service, row } = setup({
+      templateKey: 'enquiry.received',
+      failSends: 99,
+    });
+    row.attempts = 4;
+    await service.deliver(row.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.payload).toEqual({});
+  });
+
+  it('keeps the variables of other messages', async () => {
+    const { service, row } = setup();
+    await service.deliver(row.id);
+    expect(row.payload).not.toEqual({});
   });
 });
