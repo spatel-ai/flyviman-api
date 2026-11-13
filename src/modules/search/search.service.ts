@@ -14,6 +14,11 @@ import { LocationsService } from '../locations/locations.service.js';
 import { MatchingService } from '../matching/matching.service.js';
 import { calculatePrice, type PricePoint } from '../pricing/engine.js';
 import { PricingService } from '../pricing/pricing.service.js';
+import { calendarDepartures } from './calendar.js';
+import type {
+  FareCalendarQueryDto,
+  FareCalendarResponseDto,
+} from './dto/calendar.dto.js';
 import {
   CHARTER_CATEGORIES,
   type CharterSearchDto,
@@ -36,6 +41,12 @@ interface StoredResult extends SearchResultDto {
 
 @Injectable()
 export class SearchService {
+  /** Fare calendars for five minutes, so flipping months stays cheap. */
+  private readonly calendarCache = new Map<
+    string,
+    { expires: number; value: FareCalendarResponseDto }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly locations: LocationsService,
@@ -58,32 +69,22 @@ export class SearchService {
     if (departureAt.getTime() < now.getTime() + MIN_NOTICE_MINUTES * 60_000) {
       throw invalid('departureAt', 'must be at least an hour from now');
     }
-    const points = await this.locations.pricingPoints([
+    const { origin, destination } = await this.routePoints(
       dto.originId,
       dto.destinationId,
-    ]);
-    const origin = points.get(dto.originId);
-    const destination = points.get(dto.destinationId);
-    if (!origin) throw invalid('originId', 'must be an active location');
-    if (!destination)
-      throw invalid('destinationId', 'must be an active location');
-
-    const categories: AircraftCategory[] =
-      category === 'HELICOPTER'
-        ? [AircraftCategory.HELICOPTER]
-        : dto.category
-          ? [dto.category]
-          : [...CHARTER_CATEGORIES];
+    );
     const rules = await this.pricing.activeRules(now);
-    const { candidates, exclusions } = await this.matching.match({
-      categories,
-      origin,
-      destination,
+    const { candidates, exclusions } = await this.matching.match(
+      {
+        categories: categoriesFor(category, dto.category),
+        origin,
+        destination,
+        passengerCount: dto.passengerCount,
+        rules,
+      },
       departureAt,
-      passengerCount: dto.passengerCount,
-      rules,
       now,
-    });
+    );
 
     const searchId = randomUUID();
     const leg: SearchLegDto = {
@@ -248,6 +249,106 @@ export class SearchService {
     };
   }
 
+  /**
+   * The fare calendar: for each day of a month, how many aircraft can fly
+   * the route at 10:00 India time and the lowest estimate among them.
+   * Previews only: nothing is stored; the real search stores its prices.
+   */
+  async calendar(
+    query: FareCalendarQueryDto,
+  ): Promise<FareCalendarResponseDto> {
+    const key = JSON.stringify(query);
+    const cached = this.calendarCache.get(key);
+    if (cached && cached.expires > Date.now()) return cached.value;
+
+    if (query.originId === query.destinationId) {
+      throw invalid('destinationId', 'must differ from originId');
+    }
+    const now = new Date();
+    const { origin, destination } = await this.routePoints(
+      query.originId,
+      query.destinationId,
+    );
+    const departures = calendarDepartures(query.month, now, MIN_NOTICE_MINUTES);
+    const days: FareCalendarResponseDto['days'] = [];
+    if (departures.length > 0) {
+      const prepared = await this.matching.prepare(
+        {
+          categories: categoriesFor(query.category, query.aircraftCategory),
+          origin,
+          destination,
+          passengerCount: query.passengerCount,
+          rules: await this.pricing.activeRules(now),
+        },
+        departures[0].departureAt,
+        departures[departures.length - 1].departureAt,
+      );
+      const distance = (a: PricePoint, b: PricePoint) =>
+        this.routing.distanceKm(a, b);
+      for (const { date, departureAt } of departures) {
+        const { candidates } = this.matching.evaluate(
+          prepared,
+          departureAt,
+          now,
+        );
+        let lowest: number | null = null;
+        for (const candidate of candidates) {
+          const result = calculatePrice({
+            now,
+            origin,
+            destination,
+            departureAt,
+            aircraft: {
+              id: candidate.aircraft.id,
+              operatorId: candidate.aircraft.operatorId,
+              category: candidate.aircraft.category,
+              cruiseSpeedKmh: candidate.aircraft.cruiseSpeedKmh,
+              base: candidate.base,
+            },
+            rules: candidate.rules,
+            rawDistanceKm: distance,
+          });
+          if (result.priced && (lowest == null || result.totalMinor < lowest)) {
+            lowest = result.totalMinor;
+          }
+        }
+        days.push({
+          date,
+          availableCount: candidates.length,
+          lowest:
+            lowest == null
+              ? null
+              : {
+                  priceType: PriceType.ESTIMATE,
+                  amountMinor: lowest,
+                  currency: 'INR',
+                },
+        });
+      }
+    }
+    const value: FareCalendarResponseDto = { month: query.month, days };
+    if (this.calendarCache.size > 500) this.calendarCache.clear();
+    this.calendarCache.set(key, {
+      expires: Date.now() + CALENDAR_TTL_MS,
+      value,
+    });
+    return value;
+  }
+
+  private async routePoints(originId: string, destinationId: string) {
+    const points = await this.locations.pricingPoints([
+      originId,
+      destinationId,
+    ]);
+    const origin = points.get(originId);
+    const destination = points.get(destinationId);
+    if (!origin) throw invalid('originId', 'must be an active location');
+    if (!destination) {
+      throw invalid('destinationId', 'must be an active location');
+    }
+    return { origin, destination };
+  }
+
   private async find(searchId: string) {
     const search = await this.prisma.search.findUnique({
       where: { id: searchId },
@@ -257,6 +358,16 @@ export class SearchService {
     }
     return search;
   }
+}
+
+const CALENDAR_TTL_MS = 5 * 60_000;
+
+function categoriesFor(
+  category: 'PRIVATE_CHARTER' | 'HELICOPTER',
+  fixedWing?: (typeof CHARTER_CATEGORIES)[number],
+): AircraftCategory[] {
+  if (category === 'HELICOPTER') return [AircraftCategory.HELICOPTER];
+  return fixedWing ? [fixedWing] : [...CHARTER_CATEGORIES];
 }
 
 function isCustomerCategory(category: ServiceCategory): boolean {

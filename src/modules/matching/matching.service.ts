@@ -14,16 +14,19 @@ import {
   type ResolvedRules,
   type RuleRow,
 } from '../pricing/rules.js';
-import { staticChecks, type ExclusionReason } from './criteria.js';
+import {
+  staticChecks,
+  windowFree,
+  type AircraftWindows,
+  type ExclusionReason,
+} from './criteria.js';
 
-export interface MatchRequest {
+export interface MatchRoute {
   categories: AircraftCategory[];
   origin: PricePoint;
   destination: PricePoint;
-  departureAt: Date;
   passengerCount: number;
   rules: RuleRow[];
-  now: Date;
 }
 
 export interface Candidate {
@@ -31,6 +34,9 @@ export interface Candidate {
   operatorName: string;
   base: PricePoint | null;
   rules: ResolvedRules;
+  /** The leg and the positioning to it, for this aircraft. */
+  legMinutes: number | null;
+  positioningMinutes: number;
 }
 
 export interface MatchResult {
@@ -38,11 +44,25 @@ export interface MatchResult {
   exclusions: { aircraftId: string; reasons: ExclusionReason[] }[];
 }
 
+/** Everything about a route that does not depend on the departure time. */
+export interface PreparedRoute {
+  route: MatchRoute;
+  /** Aircraft that pass every check except time, with their windows. */
+  ready: (Candidate & {
+    windows: AircraftWindows | undefined;
+    rangeKm: number | null;
+    distanceKm: number;
+  })[];
+  /** Left out whatever the date. */
+  excluded: MatchResult['exclusions'];
+}
+
 /**
  * Which aircraft can fly this trip (pricing-engine.md, step 3). Only
  * approved inventory (business rule 4): listing and operator approved, in
  * service, required documents current. Then seats, range, positioning and
- * the operator's offered time.
+ * the operator's offered time. `prepare` does every database read once;
+ * `evaluate` applies a departure time, so a month of days costs one load.
  */
 @Injectable()
 export class MatchingService {
@@ -54,11 +74,27 @@ export class MatchingService {
     private readonly routing: RoutingProvider,
   ) {}
 
-  async match(request: MatchRequest): Promise<MatchResult> {
+  async match(
+    route: MatchRoute,
+    departureAt: Date,
+    now: Date,
+  ): Promise<MatchResult> {
+    const prepared = await this.prepare(route, departureAt, departureAt);
+    return this.evaluate(prepared, departureAt, now);
+  }
+
+  /** Loads the aircraft and their offered time for departures in [from, to]. */
+  async prepare(
+    route: MatchRoute,
+    firstDeparture: Date,
+    lastDeparture: Date,
+  ): Promise<PreparedRoute> {
+    const distance = (a: PricePoint, b: PricePoint) =>
+      this.routing.distanceKm(a, b);
     const rows = await this.aircraft.searchCandidates({
-      categories: request.categories,
-      minPassengers: request.passengerCount,
-      minRangeKm: this.routing.distanceKm(request.origin, request.destination),
+      categories: route.categories,
+      minPassengers: route.passengerCount,
+      minRangeKm: distance(route.origin, route.destination),
     });
     const operatorNames = await this.operators.approvedNames([
       ...new Set(rows.map((row) => row.operatorId)),
@@ -68,12 +104,9 @@ export class MatchingService {
       return id ? [id] : [];
     });
     const bases = await this.locations.pricingPoints([...new Set(baseIds)]);
-    const distance = (a: PricePoint, b: PricePoint) =>
-      this.routing.distanceKm(a, b);
 
-    const candidates: Candidate[] = [];
-    const exclusions: MatchResult['exclusions'] = [];
-
+    const ready: PreparedRoute['ready'] = [];
+    const excluded: PreparedRoute['excluded'] = [];
     for (const row of rows) {
       const operatorName = operatorNames.get(row.operatorId);
       const reasons: ExclusionReason[] = searchBlockers({
@@ -85,63 +118,90 @@ export class MatchingService {
       const baseId = row.currentLocationId ?? row.homeBaseId;
       const base = (baseId && bases.get(baseId)) || null;
       if (!base) reasons.push('location');
-
-      const rules = resolveRules(request.rules, {
+      if (reasons.length > 0) {
+        excluded.push({ aircraftId: row.id, reasons });
+        continue;
+      }
+      const rules = resolveRules(route.rules, {
         aircraftId: row.id,
         operatorId: row.operatorId,
         category: row.category,
       });
       const leg = legMetrics(
         rules,
-        distance(request.origin, request.destination),
+        distance(route.origin, route.destination),
         row.cruiseSpeedKmh,
       );
       const out =
-        base && base.id !== request.origin.id
-          ? legMetrics(
-              rules,
-              distance(base, request.origin),
-              row.cruiseSpeedKmh,
-            )
+        base && base.id !== route.origin.id
+          ? legMetrics(rules, distance(base, route.origin), row.cruiseSpeedKmh)
           : { minutes: 0 };
-      reasons.push(
-        ...staticChecks({
-          passengerCapacity: row.passengerCapacity,
-          passengerCount: request.passengerCount,
-          rangeKm: row.rangeKm,
-          distanceKm: leg.distanceKm,
-          positioningMinutes: out.minutes ?? 0,
-          departureAt: request.departureAt,
-          now: request.now,
-        }),
-      );
+      ready.push({
+        aircraft: row,
+        operatorName: operatorName!,
+        base,
+        rules,
+        legMinutes: leg.minutes,
+        positioningMinutes: out.minutes ?? 0,
+        rangeKm: row.rangeKm,
+        distanceKm: leg.distanceKm,
+        windows: undefined,
+      });
+    }
 
+    // One read of offered time for every aircraft, covering every departure.
+    const longest = Math.max(
+      0,
+      ...ready.map((r) => r.positioningMinutes + (r.legMinutes ?? 60)),
+    );
+    const windows = await this.availability.windowsFor(
+      ready.map((r) => r.aircraft.id),
+      new Date(firstDeparture.getTime() - longest * 60_000),
+      new Date(lastDeparture.getTime() + longest * 60_000),
+    );
+    for (const entry of ready) {
+      entry.windows = windows.get(entry.aircraft.id) as
+        AircraftWindows | undefined;
+    }
+    return { route, ready, excluded };
+  }
+
+  /** The aircraft that can fly at this departure time. No database access. */
+  evaluate(prepared: PreparedRoute, departureAt: Date, now: Date): MatchResult {
+    const candidates: Candidate[] = [];
+    const exclusions = [...prepared.excluded];
+    for (const entry of prepared.ready) {
+      const reasons = staticChecks({
+        passengerCapacity: entry.aircraft.passengerCapacity,
+        passengerCount: prepared.route.passengerCount,
+        rangeKm: entry.rangeKm,
+        distanceKm: entry.distanceKm,
+        positioningMinutes: entry.positioningMinutes,
+        departureAt,
+        now,
+      });
       if (reasons.length === 0) {
-        // The aircraft is busy from leaving base to landing at the destination.
+        // Busy from leaving base to landing at the destination.
         const from = new Date(
-          request.departureAt.getTime() - (out.minutes ?? 0) * 60_000,
+          departureAt.getTime() - entry.positioningMinutes * 60_000,
         );
         const to = new Date(
-          request.departureAt.getTime() + (leg.minutes ?? 60) * 60_000,
+          departureAt.getTime() + (entry.legMinutes ?? 60) * 60_000,
         );
-        const state = await this.availability.windowState(
-          row.id,
-          from,
-          to,
-          request.origin.id,
-        );
-        if (!state.covered || state.blocked) reasons.push('availability');
+        if (!windowFree(entry.windows, from, to, prepared.route.origin.id)) {
+          reasons.push('availability');
+        }
       }
-
       if (reasons.length > 0) {
-        exclusions.push({ aircraftId: row.id, reasons });
+        exclusions.push({ aircraftId: entry.aircraft.id, reasons });
       } else {
-        candidates.push({
-          aircraft: row,
-          operatorName: operatorName!,
-          base,
-          rules,
-        });
+        const {
+          windows: _w,
+          rangeKm: _r,
+          distanceKm: _d,
+          ...candidate
+        } = entry;
+        candidates.push(candidate);
       }
     }
     return { candidates, exclusions };

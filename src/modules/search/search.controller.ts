@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/auth.decorators.js';
@@ -16,6 +17,10 @@ import {
   SearchResponseDto,
   SearchResultDetailDto,
 } from './dto/search.dto.js';
+import {
+  FareCalendarQueryDto,
+  FareCalendarResponseDto,
+} from './dto/calendar.dto.js';
 import { SearchService } from './search.service.js';
 
 /**
@@ -43,6 +48,18 @@ export class SearchController {
   @ApiOkResponse({ type: SearchResponseDto })
   helicopter(@Body() dto: HelicopterSearchDto): Promise<SearchResponseDto> {
     return this.search.search('HELICOPTER', dto, null);
+  }
+
+  // Before ':searchId', which would otherwise take "calendar" as an id.
+  @Get('calendar')
+  @ApiOperation({
+    summary: 'Lowest estimate and aircraft count for each day of a month',
+  })
+  @ApiOkResponse({ type: FareCalendarResponseDto })
+  calendar(
+    @Query() query: FareCalendarQueryDto,
+  ): Promise<FareCalendarResponseDto> {
+    return this.search.calendar(query);
   }
 
   @Get(':searchId')

@@ -3203,6 +3203,87 @@
         ]
       }
     },
+    "/api/v1/search/calendar": {
+      "get": {
+        "operationId": "SearchController_calendar",
+        "parameters": [
+          {
+            "name": "category",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PRIVATE_CHARTER",
+                "HELICOPTER"
+              ]
+            }
+          },
+          {
+            "name": "originId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "destinationId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "required": true,
+            "in": "query",
+            "description": "YYYY-MM.",
+            "schema": {
+              "example": "2026-12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "passengerCount",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "aircraftCategory",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/CharterCategory"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FareCalendarResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Lowest estimate and aircraft count for each day of a month",
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v1/search/{searchId}": {
       "get": {
         "operationId": "SearchController_get",
@@ -7148,6 +7229,54 @@
           "destinationId",
           "departureAt",
           "passengerCount"
+        ]
+      },
+      "FareCalendarDayDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "example": "2026-12-05"
+          },
+          "availableCount": {
+            "type": "number",
+            "description": "Aircraft that can fly the route at 10:00 India time."
+          },
+          "lowest": {
+            "nullable": true,
+            "description": "The lowest estimate that day. Null when none is priced.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "availableCount",
+          "lowest"
+        ]
+      },
+      "FareCalendarResponseDto": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "example": "2026-12"
+          },
+          "days": {
+            "description": "Days inside the minimum notice are left out.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FareCalendarDayDto"
+            }
+          }
+        },
+        "required": [
+          "month",
+          "days"
         ]
       },
       "BreakdownLineDto": {

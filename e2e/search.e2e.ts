@@ -213,3 +213,58 @@ test.describe('charter search', () => {
     expect(missing.status()).toBe(404);
   });
 });
+
+test.describe('fare calendar', () => {
+  test('a day with offered time shows aircraft and the lowest estimate; past days are left out', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { mumbai, goa } = await bookableJet({ request, playwright, baseURL });
+    const day = inDays(4);
+    const month = day.toISOString().slice(0, 7);
+    const response = await request.get('search/calendar', {
+      params: {
+        category: 'PRIVATE_CHARTER',
+        originId: mumbai,
+        destinationId: goa,
+        month,
+        passengerCount: 4,
+      },
+    });
+    expect(response.status()).toBe(200);
+    const calendar = (await response.json()).data;
+    expect(calendar.month).toBe(month);
+    const today = new Date().toISOString().slice(0, 10);
+    for (const entry of calendar.days) {
+      expect(entry.date >= today).toBe(true);
+    }
+    const offered = calendar.days.find(
+      (entry: { date: string }) =>
+        entry.date === day.toISOString().slice(0, 10),
+    );
+    expect(offered.availableCount).toBeGreaterThan(0);
+    expect(offered.lowest).toMatchObject({
+      priceType: 'ESTIMATE',
+      currency: 'INR',
+    });
+  });
+
+  test('a calendar request that cannot be answered says why', async ({
+    request,
+  }) => {
+    const mumbai = await locationId(request, 'BOM');
+    const goa = await locationId(request, 'GOI');
+    const bad = await request.get('search/calendar', {
+      params: {
+        category: 'PRIVATE_CHARTER',
+        originId: mumbai,
+        destinationId: goa,
+        month: '2026-13',
+        passengerCount: 2,
+      },
+    });
+    expect(bad.status()).toBe(400);
+    expect((await bad.json()).error.code).toBe('VALIDATION_ERROR');
+  });
+});

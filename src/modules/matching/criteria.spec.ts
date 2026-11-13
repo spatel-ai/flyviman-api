@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { staticChecks } from './criteria.js';
+import { staticChecks, windowFree } from './criteria.js';
 
 const now = new Date('2026-12-01T00:00:00Z');
 const eligible = {
@@ -32,5 +32,49 @@ describe('staticChecks', () => {
     expect(staticChecks({ ...eligible, positioningMinutes: 400 })).toEqual([
       'positioning',
     ]);
+  });
+});
+
+describe('windowFree', () => {
+  const at = (hour: number) => new Date(Date.UTC(2026, 11, 5, hour));
+  const open = {
+    startsAt: at(0),
+    endsAt: at(23),
+    kind: 'OPEN' as const,
+    originId: null,
+  };
+
+  it('needs offered time covering the whole window', () => {
+    expect(windowFree({ slots: [open], blocks: [] }, at(4), at(6), 'A')).toBe(
+      true,
+    );
+    expect(windowFree({ slots: [], blocks: [] }, at(4), at(6), 'A')).toBe(
+      false,
+    );
+    expect(windowFree(undefined, at(4), at(6), 'A')).toBe(false);
+  });
+
+  it('a block anywhere in the window rules it out', () => {
+    const block = { startsAt: at(5), endsAt: at(8) };
+    expect(
+      windowFree({ slots: [open], blocks: [block] }, at(4), at(6), 'A'),
+    ).toBe(false);
+    expect(
+      windowFree({ slots: [open], blocks: [block] }, at(9), at(10), 'A'),
+    ).toBe(true);
+  });
+
+  it('a departure slot counts only from its own origin', () => {
+    const departure = {
+      ...open,
+      kind: 'DEPARTURE_SLOT' as const,
+      originId: 'A',
+    };
+    expect(
+      windowFree({ slots: [departure], blocks: [] }, at(4), at(6), 'A'),
+    ).toBe(true);
+    expect(
+      windowFree({ slots: [departure], blocks: [] }, at(4), at(6), 'B'),
+    ).toBe(false);
   });
 });

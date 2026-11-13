@@ -520,34 +520,46 @@ export class AvailabilityService {
   }
 
   /**
-   * For search (M5): whether time offered by the operator covers the whole
-   * window, and whether any block (maintenance, blackout, booking, an
-   * unexpired soft hold, other) overlaps it. A departure slot counts only
-   * from its own origin.
+   * Offered time and blocks of many aircraft over a period, in two queries,
+   * for search and the fare calendar (M5). Expired soft holds are left out.
    */
-  async windowState(
-    aircraftId: string,
+  async windowsFor(
+    aircraftIds: string[],
     from: Date,
     to: Date,
-    originId: string,
-  ): Promise<{ covered: boolean; blocked: boolean }> {
+  ): Promise<
+    Map<
+      string,
+      {
+        slots: {
+          startsAt: Date;
+          endsAt: Date;
+          kind: AvailabilitySlotKind;
+          originId: string | null;
+        }[];
+        blocks: { startsAt: Date; endsAt: Date }[];
+      }
+    >
+  > {
     const now = new Date();
-    const [slot, block] = await Promise.all([
-      this.prisma.availabilitySlot.findFirst({
+    const [slots, blocks] = await Promise.all([
+      this.prisma.availabilitySlot.findMany({
         where: {
-          aircraftId,
-          startsAt: { lte: from },
-          endsAt: { gte: to },
-          OR: [
-            { kind: AvailabilitySlotKind.OPEN },
-            { kind: AvailabilitySlotKind.DEPARTURE_SLOT, originId },
-          ],
+          aircraftId: { in: aircraftIds },
+          startsAt: { lt: to },
+          endsAt: { gt: from },
         },
-        select: { id: true },
+        select: {
+          aircraftId: true,
+          startsAt: true,
+          endsAt: true,
+          kind: true,
+          originId: true,
+        },
       }),
-      this.prisma.availabilityBlock.findFirst({
+      this.prisma.availabilityBlock.findMany({
         where: {
-          aircraftId,
+          aircraftId: { in: aircraftIds },
           startsAt: { lt: to },
           endsAt: { gt: from },
           OR: [
@@ -556,10 +568,28 @@ export class AvailabilityService {
             { expiresAt: { gt: now } },
           ],
         },
-        select: { id: true },
+        select: { aircraftId: true, startsAt: true, endsAt: true },
       }),
     ]);
-    return { covered: Boolean(slot), blocked: Boolean(block) };
+    const windows = new Map(
+      aircraftIds.map((id) => [
+        id,
+        {
+          slots: [] as {
+            startsAt: Date;
+            endsAt: Date;
+            kind: AvailabilitySlotKind;
+            originId: string | null;
+          }[],
+          blocks: [] as { startsAt: Date; endsAt: Date }[],
+        },
+      ]),
+    );
+    for (const { aircraftId, ...slot } of slots)
+      windows.get(aircraftId)?.slots.push(slot);
+    for (const { aircraftId, ...block } of blocks)
+      windows.get(aircraftId)?.blocks.push(block);
+    return windows;
   }
 
   /** Used by tests and, later, by bookings. The database constraint is the backstop. */
