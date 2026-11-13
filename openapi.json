@@ -3061,6 +3061,84 @@
         ]
       }
     },
+    "/api/v1/admin/documents/expiring": {
+      "get": {
+        "description": "The current copy of each operator and aircraft document (a renewal replaces the copy it renews), for live operators and listings, soonest first.",
+        "operationId": "AdminComplianceController_expiring",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "withinDays",
+            "required": false,
+            "in": "query",
+            "description": "Documents expiring within this many days; expired ones are always included.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 90,
+              "default": 30,
+              "type": "number"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPERATOR",
+                "AIRCRAFT"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExpiringDocumentDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Certificates and insurance nearing expiry, or expired",
+        "tags": [
+          "admin-compliance"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "description": "Newest first. Filter by entity, actor, action and time range.",
@@ -5320,6 +5398,13 @@
               "type": "string"
             }
           },
+          "searchBlockers": {
+            "description": "Why search (M4) would not offer this aircraft; empty when it would. `listingNotApproved`, `operatorNotApproved`, `notAvailable`, then the `missing` codes, including `document:<TYPE>` for a required document that is absent or expired.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "media": {
             "type": "array",
             "items": {
@@ -5354,6 +5439,7 @@
           "listingStatus",
           "pricingModel",
           "missing",
+          "searchBlockers",
           "media",
           "documents",
           "createdAt",
@@ -5705,6 +5791,13 @@
               "type": "string"
             }
           },
+          "searchBlockers": {
+            "description": "Why search (M4) would not offer this aircraft; empty when it would. `listingNotApproved`, `operatorNotApproved`, `notAvailable`, then the `missing` codes, including `document:<TYPE>` for a required document that is absent or expired.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "media": {
             "type": "array",
             "items": {
@@ -5742,6 +5835,7 @@
           "listingStatus",
           "pricingModel",
           "missing",
+          "searchBlockers",
           "media",
           "documents",
           "createdAt",
@@ -6537,6 +6631,73 @@
           "startsAt",
           "endsAt",
           "reason"
+        ]
+      },
+      "ExpiryDocumentKind": {
+        "type": "string",
+        "enum": [
+          "OPERATOR",
+          "AIRCRAFT"
+        ]
+      },
+      "ExpiringDocumentDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExpiryDocumentKind"
+              }
+            ]
+          },
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "description": "OperatorDocumentType for an operator document, AircraftDocumentType for an aircraft one."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-12-01"
+          },
+          "daysLeft": {
+            "type": "number",
+            "description": "Days from today (India); negative once expired."
+          },
+          "verificationStatus": {
+            "type": "string"
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "registration": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "kind",
+          "documentId",
+          "type",
+          "expiresAt",
+          "daysLeft",
+          "verificationStatus",
+          "operatorId",
+          "operatorName",
+          "aircraftId",
+          "registration"
         ]
       },
       "AuditLogResponseDto": {

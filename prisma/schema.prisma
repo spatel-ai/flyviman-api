@@ -337,12 +337,42 @@ model Notification {
   status            NotificationStatus  @default(QUEUED)
   readAt            DateTime?           @db.Timestamptz
   providerMessageId String?
+  /// Outbox (D-072): where a QUEUED email or SMS goes, how many delivery
+  /// attempts were made and when the next one is due. Never set for
+  /// messages carrying a code or link (those are sent at once, not stored).
+  recipient         String?
+  attempts          Int                 @default(0)
+  nextAttemptAt     DateTime?           @db.Timestamptz
   createdAt         DateTime            @default(now()) @db.Timestamptz
   updatedAt         DateTime            @updatedAt @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, channel, createdAt])
+  @@index([status, nextAttemptAt])
+}
+
+/// Which table an expiring document lives in.
+enum ExpiryDocumentKind {
+  OPERATOR
+  AIRCRAFT
+}
+
+/// One row per expiry alert sent (M3 step 8, D-048): a document is alerted
+/// once per threshold (30, 7 and 0 days) for a given expiry date, so a
+/// renewed document with a new date is alerted afresh. Owned by compliance.
+model DocumentExpiryAlert {
+  id         String             @id @default(uuid()) @db.Uuid
+  kind       ExpiryDocumentKind
+  documentId String             @db.Uuid
+  /// Days before expiry: 30, 7, or 0 (on or after the day).
+  threshold  Int
+  expiresAt  DateTime           @db.Date
+  createdAt  DateTime           @default(now()) @db.Timestamptz
+  updatedAt  DateTime           @updatedAt @db.Timestamptz
+
+  @@unique([kind, documentId, threshold, expiresAt])
+  @@index([documentId])
 }
 
 model NotificationTemplate {

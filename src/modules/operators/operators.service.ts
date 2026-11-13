@@ -36,6 +36,7 @@ import {
   parsePermissions,
   staffAccess,
 } from './operator-access.js';
+import type { ExpiryCandidate } from '../compliance/expiry.js';
 import { nextOperatorStatus, OperatorAction } from './operator-transitions.js';
 
 export type OperatorRecord = Prisma.OperatorGetPayload<object>;
@@ -306,6 +307,42 @@ export class OperatorsService implements OnModuleInit {
     });
     if (!row) throw notFound();
     return row.status;
+  }
+
+  /**
+   * Compliance documents for the expiry job and page (compliance module,
+   * D-072): every non-rejected copy of each type that has a copy expiring by
+   * `until`, for live operators (approved or suspended), so the caller can
+   * tell a renewed copy from the one it replaces.
+   */
+  async expiryCandidates(until: Date): Promise<ExpiryCandidate[]> {
+    const live = [OperatorStatus.APPROVED, OperatorStatus.SUSPENDED];
+    const notRejected = { not: DocumentVerificationStatus.REJECTED };
+    const expiring = await this.prisma.operatorDocument.findMany({
+      where: {
+        expiresAt: { lte: until },
+        verificationStatus: notRejected,
+        operator: { status: { in: live } },
+      },
+      select: { operatorId: true, type: true },
+      distinct: ['operatorId', 'type'],
+    });
+    if (expiring.length === 0) return [];
+    const rows = await this.prisma.operatorDocument.findMany({
+      where: { verificationStatus: notRejected, OR: expiring },
+      include: { operator: { select: { legalName: true, tradingName: true } } },
+    });
+    return rows.map((row) => ({
+      kind: 'OPERATOR',
+      documentId: row.id,
+      type: row.type,
+      expiresAt: row.expiresAt,
+      verificationStatus: row.verificationStatus,
+      operatorId: row.operatorId,
+      operatorName: row.operator.tradingName ?? row.operator.legalName,
+      aircraftId: null,
+      registration: null,
+    }));
   }
 
   /** The operator's administrators, who receive fleet notifications. */

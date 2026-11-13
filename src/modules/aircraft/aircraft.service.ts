@@ -21,6 +21,8 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
+import { searchBlockers } from './aircraft-search.js';
+import type { ExpiryCandidate } from '../compliance/expiry.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import {
   aircraftWhere,
@@ -194,6 +196,63 @@ export class AircraftService implements OnModuleInit {
       include: { homeBase: { select: HOME_BASE_SELECT } },
       orderBy: [{ registration: 'asc' }, { id: 'asc' }],
     });
+  }
+
+  /**
+   * Aircraft documents for the expiry job and page (compliance module,
+   * D-072): every non-rejected copy of each type that has a copy expiring by
+   * `until`, for listings that are live or under review, of live operators.
+   * Reads the operator's name for display (a read-only join, as in the admin
+   * list, D-066).
+   */
+  async expiryCandidates(until: Date): Promise<ExpiryCandidate[]> {
+    const notRejected = { not: DocumentVerificationStatus.REJECTED };
+    const liveAircraft = {
+      listingStatus: {
+        in: [
+          AircraftListingStatus.APPROVED,
+          AircraftListingStatus.PENDING_REVIEW,
+          AircraftListingStatus.SUSPENDED,
+        ],
+      },
+      operator: {
+        status: { in: [OperatorStatus.APPROVED, OperatorStatus.SUSPENDED] },
+      },
+    };
+    const expiring = await this.prisma.aircraftDocument.findMany({
+      where: {
+        expiresAt: { lte: until },
+        verificationStatus: notRejected,
+        aircraft: liveAircraft,
+      },
+      select: { aircraftId: true, type: true },
+      distinct: ['aircraftId', 'type'],
+    });
+    if (expiring.length === 0) return [];
+    const rows = await this.prisma.aircraftDocument.findMany({
+      where: { verificationStatus: notRejected, OR: expiring },
+      include: {
+        aircraft: {
+          select: {
+            registration: true,
+            operatorId: true,
+            operator: { select: { legalName: true, tradingName: true } },
+          },
+        },
+      },
+    });
+    return rows.map((row) => ({
+      kind: 'AIRCRAFT',
+      documentId: row.id,
+      type: row.type,
+      expiresAt: row.expiresAt,
+      verificationStatus: row.verificationStatus,
+      operatorId: row.aircraft.operatorId,
+      operatorName:
+        row.aircraft.operator.tradingName ?? row.aircraft.operator.legalName,
+      aircraftId: row.aircraftId,
+      registration: row.aircraft.registration,
+    }));
   }
 
   /** IDs of every aircraft within the caller's reach. */
@@ -398,9 +457,10 @@ export class AircraftService implements OnModuleInit {
       ...mediaRows.map((row) => row.fileId),
       ...documentRows.map((row) => row.fileId),
     ];
-    const [files, homeBase] = await Promise.all([
+    const [files, homeBase, operatorStatus] = await Promise.all([
       this.documents.describe(fileIds),
       aircraft.homeBaseId ? this.locations.summary(aircraft.homeBaseId) : null,
+      this.operators.statusOf(aircraft.operatorId),
     ]);
     const media: AircraftMediaRecord[] = mediaRows.map((row) => ({
       ...row,
@@ -410,7 +470,19 @@ export class AircraftService implements OnModuleInit {
       ...row,
       fileName: files.get(row.fileId)?.fileName ?? 'document',
     }));
-    return { ...aircraft, homeBase, media, documents, missing };
+    return {
+      ...aircraft,
+      homeBase,
+      media,
+      documents,
+      missing,
+      searchBlockers: searchBlockers({
+        listingStatus: aircraft.listingStatus,
+        availabilityStatus: aircraft.availabilityStatus,
+        operatorStatus,
+        missing,
+      }),
+    };
   }
 
   // --- CRUD ---------------------------------------------------------------

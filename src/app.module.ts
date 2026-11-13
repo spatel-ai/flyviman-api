@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
@@ -36,6 +37,7 @@ import { DocumentsModule } from './modules/documents/documents.module.js';
 import { ContentModule } from './modules/content/content.module.js';
 import { ReportsModule } from './modules/reports/reports.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
+import { ComplianceModule } from './modules/compliance/compliance.module.js';
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { AuditModule } from './modules/audit/audit.module.js';
       useFactory: loggerOptions,
     }),
     ThrottlerModule.forRootAsync({ useClass: RateLimitConfig }),
+    // Background work: the notification outbox and daily compliance jobs.
+    ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
     HealthModule,
@@ -54,6 +58,7 @@ import { AuditModule } from './modules/audit/audit.module.js';
     OperatorsModule,
     AircraftModule,
     AvailabilityModule,
+    ComplianceModule,
     LocationsModule,
     EmptyLegsModule,
     SearchModule,

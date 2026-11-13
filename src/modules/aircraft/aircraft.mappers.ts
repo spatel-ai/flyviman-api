@@ -43,6 +43,7 @@ export type AircraftDetail = AircraftWithHomeBase & {
   media: AircraftMediaRecord[];
   documents: AircraftDocumentRecord[];
   missing: string[];
+  searchBlockers: string[];
 };
 
 function asObject(
@@ -120,6 +121,7 @@ export function toAircraftDto(row: AircraftDetail): AircraftResponseDto {
     submittedAt: row.submittedAt?.toISOString() ?? null,
     reviewNote: row.reviewNote,
     missing: row.missing,
+    searchBlockers: row.searchBlockers,
     media: row.media.map(toMediaDto),
     documents: row.documents.map(toDocumentDto),
     createdAt: row.createdAt.toISOString(),

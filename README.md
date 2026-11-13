@@ -35,12 +35,13 @@ npm run build
 
 ## What is built
 
-Milestones M0 to M2 and M3 steps 1 to 7 (`../docs/progress.md` has the detail and `../docs/roadmap.md` what comes next):
+Milestones M0 to M2 and M3 steps 1 to 8 (`../docs/progress.md` has the detail and `../docs/roadmap.md` what comes next):
 
 - **Foundations:** sign-in with rotating refresh tokens, roles checked against the database on every request, CSRF protection, rate limits, an append-only audit log, structured logs with request IDs.
 - **Identity:** customer registration by email or mobile with one-time codes, password reset, profiles and saved passengers; operator registration, compliance documents and review; internal staff accounts.
 - **Fleet:** airports and heliports (OurAirports), aircraft profiles with photos and documents, review and approval by operations, an availability calendar with conflict rules.
 - **Operator staff:** operator administrators invite staff, give them "manage aircraft" and/or "manage availability" on chosen aircraft (or all), and suspend or remove them (`/operator/staff`).
+- **Document expiry:** a daily job alerts operator administrators 30 days, 7 days and on the day before a certificate or insurance lapses; operations see `GET /admin/documents/expiring`; an aircraft with an expired required document is flagged as not searchable. Notifications go through an outbox with retries.
 - **Not yet:** search and pricing (M4), scheduled airlines, empty legs, bookings, payments, air ambulance; real messaging and storage providers.
 
 The route catalogue is `../docs/api/api-routes.md`; request and response shapes are in `openapi.json` (the interactive reference at `/api/docs` runs outside production only).

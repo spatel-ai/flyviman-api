@@ -45,6 +45,30 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     body: '{{operatorName}} has invited you to help manage its aircraft on Flyviman. Choose your password here: {{link}}\nThe link works once and expires in {{hours}} hours. If you were not expecting this, you can ignore this email.',
   },
   {
+    key: 'document.expiring',
+    channel: 'EMAIL',
+    subject: '{{document}} for {{subject}} expires in {{days}} days',
+    body: '{{document}} for {{subject}} expires on {{date}}. Upload the renewed copy in the Flyviman operator portal before then. An aircraft whose required documents have expired is not offered to customers.',
+  },
+  {
+    key: 'document.expiring',
+    channel: 'IN_APP',
+    subject: '{{document}} expires in {{days}} days',
+    body: '{{document}} for {{subject}} expires on {{date}}. Upload the renewed copy before then.',
+  },
+  {
+    key: 'document.expired',
+    channel: 'EMAIL',
+    subject: '{{document}} for {{subject}} is due today or has expired',
+    body: '{{document}} for {{subject}} expires on {{date}}. Until a renewed copy is uploaded and verified, an aircraft that needs it is not offered to customers.',
+  },
+  {
+    key: 'document.expired',
+    channel: 'IN_APP',
+    subject: '{{document}} is due today or has expired',
+    body: '{{document}} for {{subject}} expires on {{date}}. Upload the renewed copy now.',
+  },
+  {
     key: 'customer.welcome',
     channel: 'EMAIL',
     subject: 'Welcome to Flyviman',
