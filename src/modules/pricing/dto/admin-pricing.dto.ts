@@ -1,15 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsDefined,
   IsIn,
+  IsInt,
   IsISO8601,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -21,6 +24,7 @@ import {
   type AdminRuleScope,
   type AdminRuleType,
 } from '../admin-rule-config.js';
+import { IsPlainText } from '../../../common/validation/text.js';
 
 const trim = () =>
   Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
@@ -39,6 +43,7 @@ class ReasonDto {
   })
   @trim()
   @IsString()
+  @IsPlainText()
   @MinLength(3)
   @MaxLength(500)
   reason!: string;
@@ -140,6 +145,22 @@ export class PricingRuleResponseDto {
 // --- Price calculations --------------------------------------------------
 
 export class ListPriceCalculationsDto extends PageQueryDto {
+  // Every search writes calculations, so the table grows quickly; deep pages
+  // would scan far. Narrow by date, aircraft or operator to go further back.
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 100,
+    default: 1,
+    description:
+      'At most 100; narrow with from, to or an id to look further back.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  override page: number = 1;
+
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID()
@@ -190,7 +211,13 @@ export class PriceCalculationSummaryDto {
 export class CalculationLineDto {
   @ApiProperty() code!: string;
   @ApiProperty() label!: string;
-  @ApiProperty() amountMinor!: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The line amount. Finance and super administrators see every line; operations see the tax line only, since the other amounts give away operator payable and platform revenue.',
+  })
+  amountMinor!: number | null;
   @ApiPropertyOptional({
     type: String,
     nullable: true,
@@ -226,8 +253,18 @@ export class PriceCalculationDetailDto extends PriceCalculationSummaryDto {
   inputs!: Record<string, unknown>;
   @ApiProperty({ type: [CalculationLineDto] })
   breakdown!: CalculationLineDto[];
-  @ApiProperty() baseMinor!: number;
-  @ApiProperty() feesMinor!: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Operator charges. Finance and super administrators only.',
+  })
+  baseMinor!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Platform fees. Finance and super administrators only.',
+  })
+  feesMinor!: number | null;
   @ApiProperty() taxMinor!: number;
   @ApiProperty() discountMinor!: number;
   @ApiProperty({ type: [AppliedRuleDto] })

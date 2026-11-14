@@ -819,4 +819,6 @@ model PriceCalculation {
 
   @@index([searchId])
   @@index([aircraftId, createdAt])
+  @@index([operatorId, createdAt])
+  @@index([createdAt])
 }

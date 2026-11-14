@@ -69,6 +69,50 @@ test.describe('operator pricing', () => {
     expect(audits).toBe(2);
   });
 
+  test('saves made at the same moment leave one rate in force', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    // A double click, or two tabs (security review M2): each save used to
+    // close version 1 and create its own version 2.
+    const { aircraftId } = await listedJet({ request, playwright, baseURL });
+    const body = (hourlyRateMinor: number) => ({
+      hourlyRateMinor,
+      taxInclusive: false,
+      commissionInclusive: false,
+      minBillableHours: null,
+    });
+    const first = await request.put(`operator/aircraft/${aircraftId}/pricing`, {
+      headers: await csrfHeaders(request),
+      data: body(18_000_000),
+    });
+    expect(first.status()).toBe(200);
+
+    const headers = await csrfHeaders(request);
+    const answers = await Promise.all(
+      [19_000_000, 21_000_000, 23_000_000].map((rate) =>
+        request.put(`operator/aircraft/${aircraftId}/pricing`, {
+          headers,
+          data: body(rate),
+        }),
+      ),
+    );
+    for (const answer of answers) expect(answer.status()).toBe(200);
+
+    const active = await withPrisma((prisma) =>
+      prisma.pricingRule.findMany({
+        where: { scopeRef: aircraftId, type: 'HOURLY_RATE', isActive: true },
+      }),
+    );
+    expect(active).toHaveLength(1);
+    expect(active[0].version).toBe(4);
+    const read = await request.get(`operator/aircraft/${aircraftId}/pricing`);
+    expect((await read.json()).data.hourlyRateMinor).toBe(
+      (active[0].config as { amountMinor: number }).amountMinor,
+    );
+  });
+
   test('operator defaults are saved and read back; cleared values are removed', async ({
     request,
     playwright,
@@ -138,5 +182,74 @@ test.describe('operator pricing', () => {
     expect(fields).toEqual(
       expect.arrayContaining(['hourlyRateMinor', 'taxInclusive']),
     );
+
+    // Every field is required, so leaving one out never clears it silently.
+    const partial = await request.put(
+      `operator/aircraft/${aircraftId}/pricing`,
+      {
+        headers: await csrfHeaders(request),
+        data: {
+          hourlyRateMinor: 18_000_000,
+          taxInclusive: false,
+          commissionInclusive: false,
+        },
+      },
+    );
+    expect(partial.status()).toBe(400);
+    expect(
+      (await partial.json()).error.details.map(
+        (detail: { field: string }) => detail.field,
+      ),
+    ).toContain('minBillableHours');
+  });
+
+  test('a suspended operator can read its rates but not change them', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { aircraftId } = await listedJet({ request, playwright, baseURL });
+    const { operatorId } = await withPrisma((prisma) =>
+      prisma.aircraft.findUniqueOrThrow({
+        where: { id: aircraftId },
+        select: { operatorId: true },
+      }),
+    );
+    await withPrisma((prisma) =>
+      prisma.operator.update({
+        where: { id: operatorId },
+        data: { status: 'SUSPENDED' },
+      }),
+    );
+    const read = await request.get(`operator/aircraft/${aircraftId}/pricing`);
+    expect(read.status()).toBe(200);
+    for (const [path, data] of [
+      [
+        `operator/aircraft/${aircraftId}/pricing`,
+        {
+          hourlyRateMinor: 18_000_000,
+          taxInclusive: false,
+          commissionInclusive: false,
+          minBillableHours: null,
+        },
+      ],
+      [
+        'operator/pricing',
+        {
+          minBillableHours: 2,
+          positioningRateFactor: null,
+          freeWithinKm: null,
+          landingFallbackMinor: null,
+          handlingFallbackMinor: null,
+        },
+      ],
+    ] as const) {
+      const refused = await request.put(path, {
+        headers: await csrfHeaders(request),
+        data,
+      });
+      expect(refused.status()).toBe(409);
+      expect((await refused.json()).error.code).toBe('OPERATOR_NOT_APPROVED');
+    }
   });
 });

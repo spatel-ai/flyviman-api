@@ -3,7 +3,6 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
-  IsOptional,
   Max,
   Min,
   ValidateIf,
@@ -128,9 +127,8 @@ export class AircraftPricingDto {
     minimum: 0.5,
     maximum: 12,
     description:
-      "Overrides the operator's minimum billable hours for this aircraft.",
+      "Overrides the operator's minimum billable hours for this aircraft. Required; `null` clears the override.",
   })
-  @IsOptional()
   @ValidateIf((_, value) => value !== null)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.5)

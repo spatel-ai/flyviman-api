@@ -3728,9 +3728,10 @@
             "name": "page",
             "required": false,
             "in": "query",
+            "description": "At most 100; narrow with from, to or an id to look further back.",
             "schema": {
               "minimum": 1,
-              "maximum": 10000,
+              "maximum": 100,
               "default": 1,
               "type": "number"
             }
@@ -3858,7 +3859,7 @@
     },
     "/api/v1/admin/audit-logs": {
       "get": {
-        "description": "Newest first. Filter by entity, actor, action and time range.",
+        "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only; other roles get null for those fields.",
         "operationId": "AdminAuditController_list",
         "parameters": [
           {
@@ -8048,7 +8049,7 @@
             "nullable": true,
             "minimum": 0.5,
             "maximum": 12,
-            "description": "Overrides the operator's minimum billable hours for this aircraft."
+            "description": "Overrides the operator's minimum billable hours for this aircraft. Required; `null` clears the override."
           },
           "aircraftId": {
             "type": "string",
@@ -8090,7 +8091,7 @@
             "nullable": true,
             "minimum": 0.5,
             "maximum": 12,
-            "description": "Overrides the operator's minimum billable hours for this aircraft."
+            "description": "Overrides the operator's minimum billable hours for this aircraft. Required; `null` clears the override."
           }
         },
         "required": [
@@ -8330,7 +8331,9 @@
             "type": "string"
           },
           "amountMinor": {
-            "type": "number"
+            "type": "number",
+            "nullable": true,
+            "description": "The line amount. Finance and super administrators see every line; operations see the tax line only, since the other amounts give away operator payable and platform revenue."
           },
           "basis": {
             "type": "string",
@@ -8453,10 +8456,14 @@
             }
           },
           "baseMinor": {
-            "type": "number"
+            "type": "number",
+            "nullable": true,
+            "description": "Operator charges. Finance and super administrators only."
           },
           "feesMinor": {
-            "type": "number"
+            "type": "number",
+            "nullable": true,
+            "description": "Platform fees. Finance and super administrators only."
           },
           "taxMinor": {
             "type": "number"

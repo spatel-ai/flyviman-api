@@ -26,6 +26,8 @@ export class PricingService {
         priority: true,
         version: true,
       },
+      // A fixed order, so resolving rules never depends on row order.
+      orderBy: [{ scope: 'asc' }, { type: 'asc' }, { version: 'desc' }],
     });
   }
 

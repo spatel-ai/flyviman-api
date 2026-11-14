@@ -148,6 +148,32 @@ test.describe.serial('admin pricing rules', () => {
     ]);
     expect(audits[1].before).toMatchObject({ config: { percent: 8 } });
     expect(audits[1].after).toMatchObject({ config: { percent: 7.5 } });
+
+    // Through the audit log, finance reads the settings; operations sees that
+    // the change happened, but not the commission (security review H1).
+    const financeLog = await finance.get('admin/audit-logs', {
+      params: { entityId: first.id, action: 'pricing_rule.create' },
+    });
+    expect((await financeLog.json()).data[0]).toMatchObject({
+      after: { config: { percent: 8 } },
+      reason: 'Turboprop launch rate',
+    });
+    const ops = await as(playwright, baseURL, 'ops');
+    const opsLog = await ops.get('admin/audit-logs', {
+      params: { entityId: first.id },
+    });
+    expect(opsLog.status()).toBe(200);
+    const opsRows = (await opsLog.json()).data;
+    expect(opsRows.length).toBeGreaterThan(0);
+    for (const row of opsRows) {
+      expect(row).toMatchObject({
+        entityType: 'PricingRule',
+        before: null,
+        after: null,
+        reason: null,
+      });
+    }
+    await ops.dispose();
     await finance.dispose();
   });
 
@@ -222,6 +248,10 @@ test.describe.serial('admin pricing rules', () => {
       (await post({ ...base, scope: 'PLATFORM', scopeRef: CATEGORY })).status(),
     ).toBe(400);
     expect((await post({ ...base, reason: ' x ' })).status()).toBe(400);
+    // A reason that would read differently in the audit viewer is refused.
+    expect(
+      (await post({ ...base, reason: 'Rate \u202edesrever' })).status(),
+    ).toBe(400);
     // Types the engine does not apply yet, and operator-owned scopes, are refused.
     expect((await post({ ...base, type: 'MARKUP' })).status()).toBe(400);
     expect((await post({ ...base, scope: 'OPERATOR' })).status()).toBe(400);
@@ -351,6 +381,21 @@ test.describe('calculation viewer', () => {
         (rule: { config: unknown }) => rule.config === null,
       ),
     ).toBe(true);
+    // No amount that gives the split away: only total and tax (review M1).
+    expect(limited).toMatchObject({
+      baseMinor: null,
+      feesMinor: null,
+      taxMinor: full.taxMinor,
+    });
+    for (const line of limited.breakdown as {
+      code: string;
+      amountMinor: number | null;
+    }[]) {
+      expect(line.amountMinor === null).toBe(line.code !== 'TAX');
+    }
+    expect(
+      limited.breakdown.map((line: { label: string }) => line.label),
+    ).toEqual(full.breakdown.map((line: { label: string }) => line.label));
     await ops.dispose();
   });
 
@@ -373,6 +418,17 @@ test.describe('calculation viewer', () => {
     expect(
       (await ops.get('admin/price-calculations/not-a-uuid')).status(),
     ).toBe(400);
+    // Deep pages are refused: narrow by date or id instead.
+    expect(
+      (
+        await ops.get('admin/price-calculations', { params: { page: 101 } })
+      ).status(),
+    ).toBe(400);
+    expect(
+      (
+        await ops.get('admin/price-calculations', { params: { page: 100 } })
+      ).status(),
+    ).toBe(200);
     await ops.dispose();
   });
 });

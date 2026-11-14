@@ -3,14 +3,16 @@ import type {
   PricingRuleScope,
   PricingRuleType,
 } from '../../generated/prisma/enums.js';
+import { hasHiddenCharacter } from '../../common/validation/text.js';
 
 /**
  * Rule types Flyviman's finance team sets through `/admin/pricing-rules`
  * (M5 slice 3; pricing-engine.md, "Who edits what"). Only types the engine
  * applies today: a markup, service fee or discount would be stored and then
  * silently ignored, so they arrive with the engine change that applies them.
- * `MIN_BILLABLE_HOURS` and `POSITIONING` are platform defaults here; operators
- * override them for their own organisation and aircraft.
+ * `MIN_BILLABLE_HOURS` and `POSITIONING` are defaults here, for all aircraft
+ * or one category; operators override them for their own organisation and
+ * aircraft.
  */
 export const ADMIN_RULE_TYPES = [
   'COMMISSION',
@@ -132,7 +134,7 @@ export function checkRuleConfig(
   const out: Record<string, unknown> = {};
 
   for (const key of Object.keys(source)) {
-    if (!(key in fields)) {
+    if (!Object.hasOwn(fields, key)) {
       errors.push({
         field: `config.${key}`,
         message: `${key} is not a setting of ${type}.`,
@@ -187,22 +189,6 @@ function checkField(field: Field, value: unknown): string | null {
         : null;
     }
   }
-}
-
-/** Control characters (line breaks included) and text-direction overrides. */
-function hasHiddenCharacter(text: string): boolean {
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (
-      code < 0x20 ||
-      code === 0x7f ||
-      (code >= 0x202a && code <= 0x202e) ||
-      (code >= 0x2066 && code <= 0x2069)
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** A platform rule has no reference; a category rule names its category. */

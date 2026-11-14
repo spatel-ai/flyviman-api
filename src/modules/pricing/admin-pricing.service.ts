@@ -28,6 +28,7 @@ import type {
   PricingRuleResponseDto,
 } from './dto/admin-pricing.dto.js';
 import type { AppliedRule, LineItem } from './engine.js';
+import { lockRuleKey } from './rule-lock.js';
 
 /** Roles that see operator payable, platform revenue, rule settings and line bases. */
 const FINANCE_VIEW = new Set<Role>([Role.FINANCE_ADMIN, Role.SUPER_ADMIN]);
@@ -100,7 +101,7 @@ export class AdminPricingService {
     const config = configOrThrow(dto.type, dto.config);
 
     return this.prisma.$transaction(async (tx) => {
-      await lockKey(tx, dto.type, dto.scope, scopeRef);
+      await lockRuleKey(tx, dto.type, dto.scope, scopeRef);
       const now = new Date();
       const existing = await tx.pricingRule.findFirst({
         where: {
@@ -159,7 +160,7 @@ export class AdminPricingService {
     const next = configOrThrow(rule.type as AdminRuleType, config);
 
     return this.prisma.$transaction(async (tx) => {
-      await lockKey(tx, rule.type, rule.scope, rule.scopeRef);
+      await lockRuleKey(tx, rule.type, rule.scope, rule.scopeRef);
       const now = new Date();
       const current = await this.currentOrThrow(tx, id, now);
       if (jsonEqual(current.config, next)) return toRuleDto(current, now);
@@ -208,7 +209,7 @@ export class AdminPricingService {
       );
     }
     return this.prisma.$transaction(async (tx) => {
-      await lockKey(tx, rule.type, rule.scope, rule.scopeRef);
+      await lockRuleKey(tx, rule.type, rule.scope, rule.scopeRef);
       const now = new Date();
       const current = await this.currentOrThrow(tx, id, now);
       const ended = await tx.pricingRule.update({
@@ -326,11 +327,14 @@ export class AdminPricingService {
       breakdown: asArray<LineItem>(row.breakdown).map((line) => ({
         code: line.code,
         label: line.label,
-        amountMinor: line.amountMinor,
+        // Any amount but tax lets operations work out operator payable and
+        // platform revenue (total - tax - operator lines = fee): security
+        // review M1. The total and tax are what the customer was told.
+        amountMinor: finance || line.code === 'TAX' ? line.amountMinor : null,
         basis: finance ? (line.basis ?? null) : null,
       })),
-      baseMinor: row.baseMinor,
-      feesMinor: row.feesMinor,
+      baseMinor: finance ? row.baseMinor : null,
+      feesMinor: finance ? row.feesMinor : null,
       taxMinor: row.taxMinor,
       discountMinor: row.discountMinor,
       appliedRules: applied.map((rule) => ({
@@ -382,16 +386,6 @@ function inForceWhere(now: Date): Prisma.PricingRuleWhereInput {
 }
 
 /** One writer at a time per rule key, held until the transaction ends. */
-async function lockKey(
-  tx: Prisma.TransactionClient,
-  type: string,
-  scope: string,
-  scopeRef: string | null,
-): Promise<void> {
-  const key = `pricing_rule:${type}:${scope}:${scopeRef ?? ''}`;
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
-}
-
 function isEditable(rule: { type: string; scope: string }): boolean {
   return (
     isAdminRuleType(rule.type) &&

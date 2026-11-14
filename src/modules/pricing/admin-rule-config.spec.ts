@@ -29,6 +29,17 @@ describe('checkRuleConfig', () => {
     ]);
   });
 
+  it('treats built-in object names as unknown fields', () => {
+    const result = checkRuleConfig('COMMISSION', {
+      percent: 10,
+      mode: 'ADD_ON',
+      toString: 1,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.map((e) => e.field)).toEqual(['config.toString']);
+  });
+
   it('bounds percentages and decimals', () => {
     expect(checkRuleConfig('TAX', { name: 'GST', percent: 41 }).ok).toBe(false);
     expect(checkRuleConfig('TAX', { name: 'GST', percent: 18.005 }).ok).toBe(

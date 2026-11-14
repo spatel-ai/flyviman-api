@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { AppException } from '../../common/errors/app.exception.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import {
+  OperatorStatus,
   PricingRuleScope,
   PricingRuleType,
 } from '../../generated/prisma/enums.js';
@@ -17,6 +18,7 @@ import type {
 } from './dto/operator-pricing.dto.js';
 import { planRuleChanges } from './rule-changes.js';
 import type { RuleConfigs, RuleRow } from './rules.js';
+import { lockRuleKey } from './rule-lock.js';
 
 const OPERATOR_TYPES = [
   PricingRuleType.MIN_BILLABLE_HOURS,
@@ -66,7 +68,7 @@ export class OperatorPricingService {
     user: AuthUser,
     dto: OperatorPricingDto,
   ): Promise<OperatorPricingResponseDto> {
-    const operatorId = await this.operatorOf(user);
+    const operatorId = await this.approvedOperatorOf(user);
     const desired = new Map<string, unknown>([
       [
         PricingRuleType.MIN_BILLABLE_HOURS,
@@ -120,6 +122,7 @@ export class OperatorPricingService {
     aircraftId: string,
     dto: AircraftPricingDto,
   ): Promise<AircraftPricingResponseDto> {
+    await this.approvedOperatorOf(user);
     await this.ownAircraft(user, aircraftId);
     const desired = new Map<string, unknown>([
       [
@@ -152,6 +155,22 @@ export class OperatorPricingService {
 
   private async operatorOf(user: AuthUser): Promise<string> {
     const { operator } = await this.operators.accessFor(user);
+    return operator.id;
+  }
+
+  /**
+   * Changing rates needs an approved operator (security-rbac.md); reading
+   * stays open, so a suspended operator still sees what it had set.
+   */
+  private async approvedOperatorOf(user: AuthUser): Promise<string> {
+    const { operator } = await this.operators.accessFor(user);
+    if (operator.status !== OperatorStatus.APPROVED) {
+      throw new AppException(
+        'OPERATOR_NOT_APPROVED',
+        'Only an approved operator can change pricing.',
+        HttpStatus.CONFLICT,
+      );
+    }
     return operator.id;
   }
 
@@ -203,6 +222,12 @@ export class OperatorPricingService {
     desired: Map<string, unknown>,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      // One lock per rule key, in a fixed order so two saves never wait on
+      // each other in a cycle; the in-force read then sees any save that
+      // finished first (security review M2).
+      for (const type of [...types].sort()) {
+        await lockRuleKey(tx, type, scope, scopeRef);
+      }
       const now = new Date();
       const current = await this.inForce(scope, scopeRef, types, tx);
       for (const change of planRuleChanges(current, desired)) {
