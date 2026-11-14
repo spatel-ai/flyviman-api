@@ -3354,19 +3354,112 @@
         ]
       }
     },
-    "/api/v1/enquiries": {
-      "post": {
-        "description": "Charter, aircraft sales or consultancy. Needs an email address or a phone number, or both. Operations are emailed; the answer is a reference and never repeats what was sent. Limited per caller (5 per 10 minutes by default; 429 `RATE_LIMITED`). A repeat with the same `Idempotency-Key` and body returns the first answer; with a different body, 409 `IDEMPOTENCY_CONFLICT`.",
-        "operationId": "EnquiriesController_create",
+    "/api/v1/operator/pricing": {
+      "get": {
+        "operationId": "OperatorPricingController_getOperator",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorPricingResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Operator-wide pricing defaults",
+        "tags": [
+          "operator-pricing"
+        ]
+      },
+      "put": {
+        "operationId": "OperatorPricingController_setOperator",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorPricingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorPricingResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Set operator-wide pricing defaults (new rule versions, audited)",
+        "tags": [
+          "operator-pricing"
+        ]
+      }
+    },
+    "/api/v1/operator/aircraft/{id}/pricing": {
+      "get": {
+        "operationId": "OperatorPricingController_getAircraft",
         "parameters": [
           {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "A UUID, new for each enquiry and reused on retry.",
+            "name": "id",
             "required": true,
+            "in": "path",
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AircraftPricingResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One aircraft's rate",
+        "tags": [
+          "operator-pricing"
+        ]
+      },
+      "put": {
+        "operationId": "OperatorPricingController_setAircraft",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -3375,26 +3468,31 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateEnquiryDto"
+                "$ref": "#/components/schemas/AircraftPricingDto"
               }
             }
           }
         },
         "responses": {
-          "201": {
+          "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnquiryResponseDto"
+                  "$ref": "#/components/schemas/AircraftPricingResponseDto"
                 }
               }
             }
           }
         },
-        "summary": "Send a sales enquiry from the contact page",
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Set one aircraft's rate (new rule versions, audited)",
         "tags": [
-          "enquiries"
+          "operator-pricing"
         ]
       }
     },
@@ -3504,6 +3602,50 @@
         "summary": "List audit records",
         "tags": [
           "admin: audit"
+        ]
+      }
+    },
+    "/api/v1/enquiries": {
+      "post": {
+        "description": "Charter, aircraft sales or consultancy. Needs an email address or a phone number, or both. Operations are emailed; the answer is a reference and never repeats what was sent. Limited per caller (5 per 10 minutes by default; 429 `RATE_LIMITED`). A repeat with the same `Idempotency-Key` and body returns the first answer; with a different body, 409 `IDEMPOTENCY_CONFLICT`.",
+        "operationId": "EnquiriesController_create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each enquiry and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnquiryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnquiryResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Send a sales enquiry from the contact page",
+        "tags": [
+          "enquiries"
         ]
       }
     }
@@ -7423,6 +7565,252 @@
           "cancellationNote"
         ]
       },
+      "OperatorPricingResponseDto": {
+        "type": "object",
+        "properties": {
+          "minBillableHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.5,
+            "maximum": 12,
+            "description": "Minimum billable hours per flight.",
+            "example": 1.5
+          },
+          "positioningRateFactor": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Positioning and return flying, charged as this share of the hourly rate.",
+            "example": 0.8
+          },
+          "freeWithinKm": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Positioning within this distance is not charged.",
+            "example": 50
+          },
+          "landingFallbackMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Landing charge in paise, used where the airport has none on record.",
+            "example": 1500000
+          },
+          "handlingFallbackMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Handling charge per stop in paise, used where the airport has none on record.",
+            "example": 500000
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          }
+        },
+        "required": [
+          "minBillableHours",
+          "positioningRateFactor",
+          "freeWithinKm",
+          "landingFallbackMinor",
+          "handlingFallbackMinor",
+          "currency"
+        ]
+      },
+      "OperatorPricingDto": {
+        "type": "object",
+        "properties": {
+          "minBillableHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.5,
+            "maximum": 12,
+            "description": "Minimum billable hours per flight.",
+            "example": 1.5
+          },
+          "positioningRateFactor": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Positioning and return flying, charged as this share of the hourly rate.",
+            "example": 0.8
+          },
+          "freeWithinKm": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Positioning within this distance is not charged.",
+            "example": 50
+          },
+          "landingFallbackMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Landing charge in paise, used where the airport has none on record.",
+            "example": 1500000
+          },
+          "handlingFallbackMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Handling charge per stop in paise, used where the airport has none on record.",
+            "example": 500000
+          }
+        },
+        "required": [
+          "minBillableHours",
+          "positioningRateFactor",
+          "freeWithinKm",
+          "landingFallbackMinor",
+          "handlingFallbackMinor"
+        ]
+      },
+      "AircraftPricingResponseDto": {
+        "type": "object",
+        "properties": {
+          "hourlyRateMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Hourly rate in paise (₹1,80,000 is 18000000).",
+            "example": 18000000
+          },
+          "taxInclusive": {
+            "type": "boolean",
+            "description": "The rate already includes GST. It is reduced before tax is added."
+          },
+          "commissionInclusive": {
+            "type": "boolean",
+            "description": "The rate already includes Flyviman's commission. It is reduced before commission is added."
+          },
+          "minBillableHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.5,
+            "maximum": 12,
+            "description": "Overrides the operator's minimum billable hours for this aircraft."
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          }
+        },
+        "required": [
+          "hourlyRateMinor",
+          "taxInclusive",
+          "commissionInclusive",
+          "minBillableHours",
+          "aircraftId",
+          "currency"
+        ]
+      },
+      "AircraftPricingDto": {
+        "type": "object",
+        "properties": {
+          "hourlyRateMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Hourly rate in paise (₹1,80,000 is 18000000).",
+            "example": 18000000
+          },
+          "taxInclusive": {
+            "type": "boolean",
+            "description": "The rate already includes GST. It is reduced before tax is added."
+          },
+          "commissionInclusive": {
+            "type": "boolean",
+            "description": "The rate already includes Flyviman's commission. It is reduced before commission is added."
+          },
+          "minBillableHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.5,
+            "maximum": 12,
+            "description": "Overrides the operator's minimum billable hours for this aircraft."
+          }
+        },
+        "required": [
+          "hourlyRateMinor",
+          "taxInclusive",
+          "commissionInclusive",
+          "minBillableHours"
+        ]
+      },
+      "AuditLogResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "actorRole": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "action": {
+            "type": "string",
+            "example": "auth.login"
+          },
+          "entityType": {
+            "type": "string",
+            "example": "User"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "before": {
+            "type": "object",
+            "nullable": true
+          },
+          "after": {
+            "type": "object",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "ipAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "actorRole",
+          "action",
+          "entityType",
+          "entityId",
+          "before",
+          "after",
+          "reason",
+          "ipAddress",
+          "requestId",
+          "createdAt"
+        ]
+      },
       "EnquiryTopic": {
         "type": "string",
         "enum": [
@@ -7497,77 +7885,6 @@
         "required": [
           "reference",
           "receivedAt"
-        ]
-      },
-      "AuditLogResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "actorId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "actorRole": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Role"
-              }
-            ]
-          },
-          "action": {
-            "type": "string",
-            "example": "auth.login"
-          },
-          "entityType": {
-            "type": "string",
-            "example": "User"
-          },
-          "entityId": {
-            "type": "string"
-          },
-          "before": {
-            "type": "object",
-            "nullable": true
-          },
-          "after": {
-            "type": "object",
-            "nullable": true
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true
-          },
-          "ipAddress": {
-            "type": "string",
-            "nullable": true
-          },
-          "requestId": {
-            "type": "string",
-            "nullable": true
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "actorId",
-          "actorRole",
-          "action",
-          "entityType",
-          "entityId",
-          "before",
-          "after",
-          "reason",
-          "ipAddress",
-          "requestId",
-          "createdAt"
         ]
       }
     }
