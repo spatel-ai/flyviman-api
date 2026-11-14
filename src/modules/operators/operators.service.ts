@@ -303,6 +303,18 @@ export class OperatorsService implements OnModuleInit {
     );
   }
 
+  /** Display names of any operators, whatever their status (staff views only). */
+  async names(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.operator.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, legalName: true, tradingName: true },
+    });
+    return new Map(
+      rows.map((row) => [row.id, row.tradingName ?? row.legalName]),
+    );
+  }
+
   /**
    * An operator's status. Inside a transaction the row is share-locked, so a
    * suspension cannot commit between this read and the caller's change.

@@ -3496,6 +3496,366 @@
         ]
       }
     },
+    "/api/v1/admin/pricing-rules": {
+      "get": {
+        "description": "Platform and category rules. `active=true` (default): in force now; `active=false`: every version.",
+        "operationId": "AdminPricingRulesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PLATFORM",
+                "CATEGORY"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "COMMISSION",
+                "TAX",
+                "MIN_CHARGE",
+                "ROUTING_FACTOR",
+                "TIME_ALLOWANCE",
+                "VALIDITY",
+                "MIN_BILLABLE_HOURS",
+                "POSITIONING"
+              ]
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "description": "true (the default): rules in force now. false: every version, newest first, ended ones included.",
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PricingRuleResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List pricing rules",
+        "tags": [
+          "admin: pricing"
+        ]
+      },
+      "post": {
+        "description": "Takes effect at once. One rule per type and scope: 409 `PRICING_RULE_EXISTS` when one is in force. Audited with the reason.",
+        "operationId": "AdminPricingRulesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePricingRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingRuleResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a pricing rule",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing-rules/{id}": {
+      "patch": {
+        "description": "Closes the version in force and creates the next; identical settings write nothing. 409 `PRICING_RULE_NOT_CURRENT` if it was changed or ended meanwhile. Audited with before, after and the reason.",
+        "operationId": "AdminPricingRulesController_change",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePricingRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingRuleResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change a pricing rule (creates a new version)",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing-rules/{id}/deactivate": {
+      "post": {
+        "description": "Category rules only; the platform default then applies. Platform rules answer 409 `PRICING_RULE_REQUIRED`. Audited with the reason.",
+        "operationId": "AdminPricingRulesController_deactivate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeactivatePricingRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingRuleResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "End a pricing rule",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/price-calculations": {
+      "get": {
+        "operationId": "AdminPriceCalculationsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "searchId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "aircraftId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "Made at or after.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Made before.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PriceCalculationSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List stored price calculations, newest first",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/price-calculations/{id}": {
+      "get": {
+        "operationId": "AdminPriceCalculationsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceCalculationDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One calculation: inputs, rules and breakdown",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "description": "Newest first. Filter by entity, actor, action and time range.",
@@ -7738,6 +8098,441 @@
           "taxInclusive",
           "commissionInclusive",
           "minBillableHours"
+        ]
+      },
+      "PricingRuleResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "scopeRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "priority": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "inForce": {
+            "type": "boolean",
+            "description": "Applied to new prices now."
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Whether this screen may change it (types the engine applies, platform or category scope)."
+          },
+          "createdById": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "scope",
+          "scopeRef",
+          "config",
+          "priority",
+          "version",
+          "validFrom",
+          "validTo",
+          "inForce",
+          "editable",
+          "createdById",
+          "createdAt"
+        ]
+      },
+      "CreatePricingRuleDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the change is made. Kept in the audit record."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "COMMISSION",
+              "TAX",
+              "MIN_CHARGE",
+              "ROUTING_FACTOR",
+              "TIME_ALLOWANCE",
+              "VALIDITY",
+              "MIN_BILLABLE_HOURS",
+              "POSITIONING"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "PLATFORM",
+              "CATEGORY"
+            ]
+          },
+          "scopeRef": {
+            "type": "string",
+            "nullable": true,
+            "description": "The aircraft category of a CATEGORY rule; none for PLATFORM."
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Settings of the rule type, checked exactly: COMMISSION { percent, mode }, TAX { name, percent }, MIN_CHARGE { amountMinor }, ROUTING_FACTOR { factor }, TIME_ALLOWANCE { minutes }, VALIDITY { minutes }, MIN_BILLABLE_HOURS { hours }, POSITIONING { rateFactor, freeWithinKm? }."
+          }
+        },
+        "required": [
+          "reason",
+          "type",
+          "scope",
+          "config"
+        ]
+      },
+      "UpdatePricingRuleDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the change is made. Kept in the audit record."
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The complete new settings; checked as on create."
+          }
+        },
+        "required": [
+          "reason",
+          "config"
+        ]
+      },
+      "DeactivatePricingRuleDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the change is made. Kept in the audit record."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "PriceCalculationSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraftLabel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Registration."
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warningCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "searchId",
+          "aircraftId",
+          "aircraftLabel",
+          "operatorId",
+          "operatorName",
+          "totalMinor",
+          "currency",
+          "priceType",
+          "validUntil",
+          "warningCount",
+          "createdAt"
+        ]
+      },
+      "CalculationLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          },
+          "basis": {
+            "type": "string",
+            "nullable": true,
+            "description": "How the line was worked out (hours × rate). Finance and super administrators only; null for operations."
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "amountMinor"
+        ]
+      },
+      "AppliedRuleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "The rule version as applied. Finance and super administrators only; null for operations."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "scope",
+          "version"
+        ]
+      },
+      "CalculationFinanceDto": {
+        "type": "object",
+        "properties": {
+          "operatorPayableMinor": {
+            "type": "number"
+          },
+          "platformRevenueMinor": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "operatorPayableMinor",
+          "platformRevenueMinor"
+        ]
+      },
+      "PriceCalculationDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraftLabel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Registration."
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalMinor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warningCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculationLineDto"
+            }
+          },
+          "baseMinor": {
+            "type": "number"
+          },
+          "feesMinor": {
+            "type": "number"
+          },
+          "taxMinor": {
+            "type": "number"
+          },
+          "discountMinor": {
+            "type": "number"
+          },
+          "appliedRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppliedRuleDto"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "availabilityCheckedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "overrideReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "finance": {
+            "nullable": true,
+            "description": "Finance and super administrators only; null for operations.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CalculationFinanceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "searchId",
+          "aircraftId",
+          "aircraftLabel",
+          "operatorId",
+          "operatorName",
+          "totalMinor",
+          "currency",
+          "priceType",
+          "validUntil",
+          "warningCount",
+          "createdAt",
+          "inputs",
+          "breakdown",
+          "baseMinor",
+          "feesMinor",
+          "taxMinor",
+          "discountMinor",
+          "appliedRules",
+          "assumptions",
+          "exclusions",
+          "warnings",
+          "availabilityCheckedAt",
+          "overrideReason",
+          "finance"
         ]
       },
       "AuditLogResponseDto": {

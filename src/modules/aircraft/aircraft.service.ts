@@ -257,6 +257,16 @@ export class AircraftService implements OnModuleInit {
     }));
   }
 
+  /** Registration marks by aircraft id (staff views such as the calculation viewer). */
+  async registrations(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.aircraft.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, registration: true },
+    });
+    return new Map(rows.map((row) => [row.id, row.registration]));
+  }
+
   /** IDs of every aircraft within the caller's reach. */
   async idsFor(access: OperatorAccess): Promise<string[]> {
     const rows = await this.prisma.aircraft.findMany({

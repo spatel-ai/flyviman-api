@@ -1,66 +1,10 @@
-import { APIRequestContext, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { withPrisma } from './support/db.js';
-import {
-  addAircraftDocument,
-  aircraftBody,
-  approvedOperator,
-} from './support/fleet.js';
+import { approvedOperator } from './support/fleet.js';
+import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
 /** Operator pricing inputs (M5 slice 2). */
-
-async function locationId(request: APIRequestContext, q: string) {
-  const response = await request.get('locations', {
-    params: { q, pageSize: 1 },
-  });
-  return (await response.json()).data[0].id as string;
-}
-
-function inDays(days: number, hourUtc = 6): Date {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() + days);
-  date.setUTCHours(hourUtc, 0, 0, 0);
-  return date;
-}
-
-/** An approved jet in Mumbai with time offered, and no rate yet. */
-async function listedJet(contexts: {
-  request: APIRequestContext;
-  playwright: Parameters<typeof approvedOperator>[1];
-  baseURL: string | undefined;
-}) {
-  const { request } = contexts;
-  await approvedOperator(request, contexts.playwright, contexts.baseURL);
-  const mumbai = await locationId(request, 'BOM');
-  const created = await request.post('operator/aircraft', {
-    headers: await csrfHeaders(request),
-    data: aircraftBody(mumbai),
-  });
-  expect(created.status()).toBe(201);
-  const aircraftId = (await created.json()).data.id as string;
-  for (const type of ['REGISTRATION', 'AIRWORTHINESS', 'INSURANCE']) {
-    await addAircraftDocument(request, aircraftId, type);
-  }
-  await withPrisma((prisma) =>
-    prisma.aircraft.update({
-      where: { id: aircraftId },
-      data: { listingStatus: 'APPROVED' },
-    }),
-  );
-  const slot = await request.post(
-    `operator/aircraft/${aircraftId}/availability/slots`,
-    {
-      headers: await csrfHeaders(request),
-      data: {
-        startsAt: inDays(3, 0).toISOString(),
-        endsAt: inDays(5, 0).toISOString(),
-        kind: 'OPEN',
-      },
-    },
-  );
-  expect(slot.status()).toBe(201);
-  return { aircraftId, mumbai, goa: await locationId(request, 'GOI') };
-}
 
 test.describe('operator pricing', () => {
   test('an aircraft rate turns "price on request" into an estimate, versioned and audited', async ({
@@ -68,27 +12,9 @@ test.describe('operator pricing', () => {
     playwright,
     baseURL,
   }) => {
-    const { aircraftId, mumbai, goa } = await listedJet({
-      request,
-      playwright,
-      baseURL,
-    });
-    const search = async () => {
-      const response = await request.post('search/charter', {
-        headers: await csrfHeaders(request),
-        data: {
-          originId: mumbai,
-          destinationId: goa,
-          departureAt: inDays(4).toISOString(),
-          passengerCount: 2,
-        },
-      });
-      expect(response.status()).toBe(200);
-      return (await response.json()).data.results.find(
-        (result: { aircraft: { id: string } }) =>
-          result.aircraft.id === aircraftId,
-      );
-    };
+    const trip = await listedJet({ request, playwright, baseURL });
+    const { aircraftId } = trip;
+    const search = async () => (await searchFor(request, trip)).result;
 
     // No rate yet: offered, but on request.
     expect((await search()).price).toBeNull();
