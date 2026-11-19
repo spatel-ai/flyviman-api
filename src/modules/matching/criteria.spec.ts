@@ -356,6 +356,15 @@ describe('limitsFor', () => {
     });
   });
 
+  it('(10) a platform limit alone excludes an otherwise-eligible aircraft', () => {
+    const limits = limitsFor(
+      [rule('PLATFORM', null, { minRunwayM: 3000 })],
+      'LIGHT_JET',
+    );
+    expect(routeChecks({ ...route, limits }).reasons).toEqual(['runway']);
+    expect(routeChecks(route).reasons).toEqual([]);
+  });
+
   it('ignores malformed configuration', () => {
     expect(
       limitsFor(
