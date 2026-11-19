@@ -38,9 +38,21 @@ export class EnvironmentVariables {
   @Max(65535)
   PORT: number = 4000;
 
+  /**
+   * The API's own connection: the restricted role, which cannot alter
+   * tables or change the audit trail (docs/deployment.md).
+   */
   @IsString()
   @IsNotEmpty()
   DATABASE_URL: string;
+
+  /**
+   * The tables' owner, for migrations and the seed only; the API never
+   * connects with it. Unset, those use DATABASE_URL.
+   */
+  @IsOptional()
+  @IsString()
+  MIGRATION_DATABASE_URL?: string;
 
   /** Origin of flyviman-web, allowed by CORS with credentials. */
   @IsString()

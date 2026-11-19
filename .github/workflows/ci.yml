@@ -49,6 +49,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      # The API's restricted role, with the local throwaway password. The
+      # migrations grant its privileges.
+      - name: Create the API's database role
+        run: docker exec -i ${{ job.services.postgres.id }} psql -U flyviman -d flyviman -v ON_ERROR_STOP=1 < docker/postgres-init/10-app-role.sql
+
       # Test-only values, made fresh on every run. Nothing here is a real
       # secret: the database and Redis live only inside this job.
       - name: Write the test environment
@@ -56,7 +61,8 @@ jobs:
           cat > .env <<EOF
           NODE_ENV=development
           PORT=4000
-          DATABASE_URL=postgresql://flyviman:flyviman@localhost:5432/flyviman?schema=public
+          DATABASE_URL=postgresql://flyviman_app:flyviman_app@localhost:5432/flyviman?schema=public
+          MIGRATION_DATABASE_URL=postgresql://flyviman:flyviman@localhost:5432/flyviman?schema=public
           WEB_ORIGIN=http://localhost:3000
           REDIS_URL=redis://localhost:6379
           JWT_ACCESS_SECRET=$(openssl rand -base64 48 | tr -d '\n')

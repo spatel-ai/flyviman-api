@@ -29,6 +29,7 @@
     "prisma:validate": "prisma validate",
     "db:up": "docker compose up -d",
     "db:seed": "nest build && node dist/seed.js",
+    "db:grant": "prisma db execute --file prisma/migrations/20261119130000_app_role_privileges/migration.sql",
     "openapi:export": "nest build && node dist/openapi-export.js",
     "db:down": "docker compose down"
   },

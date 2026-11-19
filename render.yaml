@@ -39,7 +39,9 @@ services:
     buildCommand: npm ci --include=dev && npm run build
     # Migrate, seed (safe to repeat), then start. The API refuses to start
     # if PostgreSQL or Redis cannot be reached.
-    startCommand: npx prisma migrate deploy && node dist/seed.js && node dist/main
+    # db:grant re-applies the restricted role's privileges (idempotent), for
+    # when the role was created after its migration ran.
+    startCommand: npx prisma migrate deploy && npm run db:grant && node dist/seed.js && node dist/main
     healthCheckPath: /api/v1/health
     envVars:
       - key: NODE_VERSION
@@ -74,6 +76,15 @@ services:
       # too: the search tier (20 a minute) is raised the same way (D-099).
       - key: RATE_LIMIT_SEARCH_PER_MINUTE
         value: "300"
+      # Migrations, db:grant and the seed connect as the database's owner.
+      - key: MIGRATION_DATABASE_URL
+        fromDatabase:
+          name: flyviman-db
+          property: connectionString
+      # The API's own connection. Until the restricted role flyviman_app has
+      # a login (docs/deployment.md), it is the owner too and the API warns at
+      # start. Then replace these three lines with `sync: false` and set the
+      # internal URL with flyviman_app and its password in the dashboard.
       - key: DATABASE_URL
         fromDatabase:
           name: flyviman-db

@@ -40,6 +40,7 @@ Run from this directory.
 | Unit tests | `npm test` |
 | Integration tests | `npm run test:e2e` (builds, migrates, seeds and starts the API itself; needs `npm run db:up`) |
 | Seed accounts, policies, templates and locations | `npm run db:seed` |
+| Re-apply the restricted role's privileges (after creating the role by hand) | `npm run db:grant` (as the owner, `MIGRATION_DATABASE_URL`) |
 | Export the API description for the web app | `npm run openapi:export` (writes `openapi.json`; then `npm run api:types` in `flyviman-web`) |
 | Build | `npm run build` |
 | Format | `npm run format` |
@@ -109,7 +110,7 @@ Strategy and conventions: `../docs/testing-strategy.md`.
 ## Working in a worktree
 
 Concurrent tasks run in worktree slots (`../docs/development-workflow.md`), created by `../scripts/worktree.sh`:
-- **Location:** `.worktrees/<task>/flyviman-api` at the workspace root, on branch `wt/<slot>-<task>`. Its `.env` points at slot n's database `flyviman_wt<n>` and Redis db n.
+- **Location:** `.worktrees/<task>/flyviman-api` at the workspace root, on branch `wt/<slot>-<task>`. Its `.env` points at slot n's database `flyviman_wt<n>` (`DATABASE_URL` as the restricted role `flyviman_app`, `MIGRATION_DATABASE_URL` as the owner) and Redis db n.
 - **Ports:** Playwright runs with `PORT=40n0` (the suite also uses 40n1 and 40n2). Never 4000–4002, which belong to the main checkout; `reuseExistingServer` would quietly test someone else's server.
 - **Documents:** from a worktree, `../docs/` and `../CLAUDE.md` resolve to nothing, because the worktree sits two levels deeper. Read them at the workspace root, and never edit them from a task; list document changes in the report.
 - **Contract:** `openapi.json` is regenerated (`npm run openapi:export`), never merged as text. Only one task changes `prisma/schema.prisma` at a time.

@@ -53,8 +53,13 @@ function password(name: string): string {
   return value;
 }
 
+// The seed runs as the owner, like the migrations, when the API itself
+// connects as the restricted role.
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: required('DATABASE_URL') }),
+  adapter: new PrismaPg({
+    connectionString:
+      process.env.MIGRATION_DATABASE_URL || required('DATABASE_URL'),
+  }),
 });
 
 async function ensureUser(

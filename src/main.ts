@@ -50,6 +50,19 @@ async function bootstrap() {
   await app.listen(port);
 
   const logger = new Logger('Bootstrap');
+  // The API should connect as the restricted role, which can neither delete
+  // audit records nor disable the trigger that guards them.
+  const [{ unrestricted }] = await app.get(PrismaService).$queryRaw<
+    { unrestricted: boolean }[]
+  >`SELECT EXISTS (
+      SELECT 1 FROM pg_class c WHERE c.oid = to_regclass('"AuditLog"')
+        AND (has_table_privilege(c.oid, 'DELETE') OR pg_has_role(c.relowner, 'USAGE'))
+    ) AS unrestricted`;
+  if (unrestricted) {
+    logger.warn(
+      'DATABASE_URL connects as a role that owns the tables or may delete audit records. Connect as the restricted role and give migrations MIGRATION_DATABASE_URL (docs/deployment.md).',
+    );
+  }
   // A proof-of-concept host must not be mistaken for production (D-064).
   if (config.get<string>('MESSAGING_PROVIDER') === 'sink') {
     logger.warn(
