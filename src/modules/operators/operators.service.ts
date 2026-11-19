@@ -316,6 +316,20 @@ export class OperatorsService implements OnModuleInit {
   }
 
   /**
+   * The operator's raw per-category booking mode and payment model overrides
+   * (jsonb, unvalidated: the configuration module parses them), or `null`
+   * when the operator does not exist.
+   */
+  async modeOverrides(
+    operatorId: string,
+  ): Promise<{ bookingMode: unknown; paymentModel: unknown } | null> {
+    return this.prisma.operator.findUnique({
+      where: { id: operatorId },
+      select: { bookingMode: true, paymentModel: true },
+    });
+  }
+
+  /**
    * An operator's status. Inside a transaction the row is share-locked, so a
    * suspension cannot commit between this read and the caller's change.
    */

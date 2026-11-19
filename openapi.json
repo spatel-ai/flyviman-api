@@ -3966,6 +3966,37 @@
         ]
       }
     },
+    "/api/v1/admin/category-config": {
+      "get": {
+        "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
+        "operationId": "AdminCategoryConfigController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Service category configuration",
+        "tags": [
+          "admin: configuration"
+        ]
+      }
+    },
     "/api/v1/enquiries": {
       "post": {
         "description": "Charter, aircraft sales or consultancy. Needs an email address or a phone number, or both. Operations are emailed; the answer is a reference and never repeats what was sent. Limited per caller (5 per 10 minutes by default; 429 `RATE_LIMITED`). A repeat with the same `Idempotency-Key` and body returns the first answer; with a different body, 409 `IDEMPOTENCY_CONFLICT`.",
@@ -8933,6 +8964,70 @@
           "ipAddress",
           "requestId",
           "createdAt"
+        ]
+      },
+      "BookingMode": {
+        "type": "string",
+        "enum": [
+          "INSTANT",
+          "REQUEST"
+        ],
+        "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST."
+      },
+      "PaymentModel": {
+        "type": "string",
+        "enum": [
+          "A_INSTANT",
+          "B_OPERATOR_CONFIRMED",
+          "C_DEPOSIT"
+        ],
+        "description": "Platform setting. Operators may override it per category."
+      },
+      "CategoryConfigResponseDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "region": {
+            "type": "string",
+            "example": "IN"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "bookingMode": {
+            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "paymentModel": {
+            "description": "Platform setting. Operators may override it per category.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentModel"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "category",
+          "region",
+          "isEnabled",
+          "bookingMode",
+          "paymentModel",
+          "updatedAt"
         ]
       },
       "EnquiryTopic": {
