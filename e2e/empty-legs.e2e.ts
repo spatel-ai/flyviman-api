@@ -1,7 +1,13 @@
 import { APIRequestContext, expect, test } from '@playwright/test';
-import { registerCustomer } from './support/data.js';
+import {
+  latestLinkToken,
+  outbox,
+  PASSWORD,
+  registerCustomer,
+  uniqueEmail,
+} from './support/data.js';
 import { withPrisma } from './support/db.js';
-import { asReviewer } from './support/fleet.js';
+import { aircraftBody, asReviewer } from './support/fleet.js';
 import { inDays, listedJet } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
@@ -49,8 +55,8 @@ async function publish(request: APIRequestContext, id: string) {
 
 async function follower(playwright: Playwright, baseURL: string | undefined) {
   const customer = await playwright.request.newContext({ baseURL });
-  await registerCustomer(customer);
-  return customer;
+  const { email } = await registerCustomer(customer);
+  return { customer, email };
 }
 
 async function follow(customer: APIRequestContext, id: string) {
@@ -74,12 +80,22 @@ async function inbox(customer: APIRequestContext, reference: string) {
     .map((n) => n.templateKey);
 }
 
+/**
+ * Listed offer ids for a query, every page: offers left by earlier runs can
+ * fill the first page (D-089).
+ */
 async function listedIds(request: APIRequestContext, params = {}) {
-  const response = await request.get('empty-legs', {
-    params: { pageSize: 100, ...params },
-  });
-  expect(response.status()).toBe(200);
-  return ((await response.json()).data as { id: string }[]).map((o) => o.id);
+  const ids: string[] = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const response = await request.get('empty-legs', {
+      params: { pageSize: 100, page, ...params },
+    });
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    ids.push(...(body.data as { id: string }[]).map((o) => o.id));
+    if (page * 100 >= body.meta.total) break;
+  }
+  return ids;
 }
 
 test.describe('operator offers and the public listing', () => {
@@ -159,7 +175,7 @@ test.describe('operator offers and the public listing', () => {
       ).status(),
     ).toBe(400);
 
-    const customer = await follower(playwright, baseURL);
+    const { customer } = await follower(playwright, baseURL);
     await follow(customer, offer.id);
     await follow(customer, offer.id); // repeatable
 
@@ -208,7 +224,7 @@ test.describe('operator offers and the public listing', () => {
   }) => {
     const { offer } = await draftOffer(request, playwright, baseURL);
     await publish(request, offer.id);
-    const customer = await follower(playwright, baseURL);
+    const { customer } = await follower(playwright, baseURL);
     await follow(customer, offer.id);
 
     const locked = await request.patch(`operator/empty-legs/${offer.id}`, {
@@ -454,7 +470,7 @@ test.describe('expiry', () => {
   }) => {
     const { trip, offer } = await draftOffer(request, playwright, baseURL);
     await publish(request, offer.id);
-    const customer = await follower(playwright, baseURL);
+    const { customer, email } = await follower(playwright, baseURL);
     await follow(customer, offer.id);
 
     await withPrisma((prisma) =>
@@ -487,7 +503,95 @@ test.describe('expiry', () => {
     expect(await inbox(customer, offer.reference)).toContain(
       'empty_leg.expired',
     );
+    // And by email, through the outbox.
+    const emails = await outbox(anonymous, email);
+    expect(
+      emails.some((message) => message.body.includes(offer.reference)),
+    ).toBe(true);
     const expired = await anonymous.get(`empty-legs/${offer.id}`);
     expect((await expired.json()).error.code).toBe('EMPTY_LEG_EXPIRED');
+  });
+});
+
+test.describe('operator staff', () => {
+  /** Invites staff with these permissions and signs them in. */
+  async function staffMember(
+    admin: APIRequestContext,
+    playwright: Playwright,
+    baseURL: string | undefined,
+    permissions: { capabilities: string[]; aircraftIds: string[] },
+  ) {
+    const email = uniqueEmail('staff');
+    const invited = await admin.post('operator/staff', {
+      headers: await csrfHeaders(admin),
+      data: { email, allAircraft: false, ...permissions },
+    });
+    expect(invited.status()).toBe(201);
+    const staff = await playwright.request.newContext({ baseURL });
+    const token = await latestLinkToken(staff, email);
+    expect(
+      (
+        await staff.post('auth/password/reset', {
+          data: { token, password: PASSWORD },
+        })
+      ).status(),
+    ).toBe(204);
+    expect(
+      (
+        await staff.post('auth/login', { data: { email, password: PASSWORD } })
+      ).status(),
+    ).toBe(200);
+    return staff;
+  }
+
+  test('staff need "manage empty legs" and reach only offers on their aircraft', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { trip, offer } = await draftOffer(request, playwright, baseURL);
+    const other = await request.post('operator/aircraft', {
+      headers: await csrfHeaders(request),
+      data: aircraftBody(trip.mumbai),
+    });
+    expect(other.status()).toBe(201);
+    const otherId = (await other.json()).data.id as string;
+
+    const withoutCapability = await staffMember(request, playwright, baseURL, {
+      capabilities: ['MANAGE_AVAILABILITY'],
+      aircraftIds: [trip.aircraftId],
+    });
+    expect(
+      (await withoutCapability.get(`operator/empty-legs/${offer.id}`)).status(),
+    ).toBe(403);
+
+    const elsewhere = await staffMember(request, playwright, baseURL, {
+      capabilities: ['MANAGE_EMPTY_LEGS'],
+      aircraftIds: [otherId],
+    });
+    expect(
+      (await elsewhere.get(`operator/empty-legs/${offer.id}`)).status(),
+    ).toBe(404);
+    const listed = await elsewhere.get('operator/empty-legs');
+    expect((await listed.json()).meta.total).toBe(0);
+    const outOfReach = await elsewhere.post('operator/empty-legs', {
+      headers: await csrfHeaders(elsewhere),
+      data: offerBody(trip),
+    });
+    expect(outOfReach.status()).toBe(404);
+
+    const assigned = await staffMember(request, playwright, baseURL, {
+      capabilities: ['MANAGE_EMPTY_LEGS'],
+      aircraftIds: [trip.aircraftId],
+    });
+    expect(
+      (await assigned.get(`operator/empty-legs/${offer.id}`)).status(),
+    ).toBe(200);
+    const published = await assigned.post(
+      `operator/empty-legs/${offer.id}/publish`,
+      { headers: await csrfHeaders(assigned) },
+    );
+    expect(published.status()).toBe(200);
+    expect((await published.json()).data.status).toBe('PUBLISHED');
   });
 });

@@ -644,14 +644,18 @@ export class EmptyLegsService {
       row.aircraft.passengerCapacity,
       new Date(),
     );
-    if (issues.length > 0) {
-      throw new AppException(
-        'EMPTY_LEG_EXPIRED',
-        'The offer has passed its validity or departure. Update the dates first.',
-        HttpStatus.GONE,
-        issues,
-      );
+    if (issues.length === 0) return;
+    // Time has run out on the offer: 410. Anything else (seats above a
+    // capacity lowered since) is a plain validation error.
+    if (!issues.every((issue) => issue.issue === 'must be in the future')) {
+      throw invalid(issues);
     }
+    throw new AppException(
+      'EMPTY_LEG_EXPIRED',
+      'The offer has passed its validity or departure. Update the dates first.',
+      HttpStatus.GONE,
+      issues,
+    );
   }
 
   async withdraw(user: AuthUser, id: string): Promise<OfferRow> {
