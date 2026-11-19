@@ -247,8 +247,9 @@ export class LocationsService {
   // --- For other modules --------------------------------------------------
 
   /**
-   * Active locations with what pricing needs: coordinates and the
-   * per-category charges (never on the public location routes).
+   * Active locations with what pricing and matching need: coordinates, the
+   * per-category charges (never on the public location routes), type, time
+   * zone and capabilities.
    */
   async pricingPoints(ids: string[]): Promise<
     Map<
@@ -256,9 +257,11 @@ export class LocationsService {
       {
         id: string;
         name: string;
+        type: LocationType;
         latitude: number;
         longitude: number;
         timeZone: string;
+        capabilities: Prisma.JsonValue;
         charges: Prisma.JsonValue;
       }
     >
@@ -268,9 +271,11 @@ export class LocationsService {
       select: {
         id: true,
         name: true,
+        type: true,
         latitude: true,
         longitude: true,
         timeZone: true,
+        capabilities: true,
         charges: true,
       },
     });

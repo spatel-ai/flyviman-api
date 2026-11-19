@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
 } from '@nestjs/common';
 import {
   ApiAcceptedResponse,
@@ -33,6 +34,10 @@ import {
   RegisterOperatorDto,
   UpdateOperatorProfileDto,
 } from './dto/operator.dto.js';
+import {
+  OperatorRestrictionsResponseDto,
+  SetOperatorRestrictionsDto,
+} from './dto/operator-restrictions.dto.js';
 import { toDocumentDto, toProfileDto } from './operator.mappers.js';
 import { OperatorsService } from './operators.service.js';
 
@@ -114,6 +119,40 @@ export class OperatorController {
       instanceToPlain(body) as Prisma.OperatorUpdateInput,
     );
     return toProfileDto(operator, await this.operators.missing(operator));
+  }
+
+  @Get('restrictions')
+  @Roles(Role.OPERATOR_ADMIN)
+  @ApiOperation({
+    summary: 'Operator-wide restrictions',
+    description:
+      "Operating hours, excluded locations and minimum notice for every aircraft, in the shape of an aircraft's restrictions. Approved operator only (`OPERATOR_NOT_APPROVED`).",
+  })
+  @ApiOkResponse({ type: OperatorRestrictionsResponseDto })
+  async restrictions(
+    @CurrentUser() user: AuthUser,
+  ): Promise<OperatorRestrictionsResponseDto> {
+    return { restrictions: await this.operators.restrictionsFor(user) };
+  }
+
+  @Put('restrictions')
+  @Roles(Role.OPERATOR_ADMIN)
+  @ApiOperation({
+    summary: 'Replace the operator-wide restrictions (audited)',
+    description:
+      'Replaces the whole object; `{ "restrictions": null }` clears it. Matching applies these and each aircraft\'s own; the stricter wins. Approved operator only (`OPERATOR_NOT_APPROVED`).',
+  })
+  @ApiOkResponse({ type: OperatorRestrictionsResponseDto })
+  async setRestrictions(
+    @CurrentUser() user: AuthUser,
+    @Body() body: SetOperatorRestrictionsDto,
+  ): Promise<OperatorRestrictionsResponseDto> {
+    return {
+      restrictions: await this.operators.setRestrictions(
+        user,
+        body.restrictions,
+      ),
+    };
   }
 
   @Post('profile/submit')

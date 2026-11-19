@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Aircraft } from '../../generated/prisma/client.js';
 import type { AircraftCategory } from '../../generated/prisma/enums.js';
 import { RoutingProvider } from '../../integrations/routing/routing.provider.js';
+import { parseRestrictions } from '../aircraft/aircraft-json.js';
 import { searchBlockers } from '../aircraft/aircraft-search.js';
 import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AvailabilityService } from '../availability/availability.service.js';
@@ -15,16 +16,23 @@ import {
   type RuleRow,
 } from '../pricing/rules.js';
 import {
+  combineRestrictions,
+  limitsFor,
+  routeChecks,
   staticChecks,
+  timeChecks,
   windowFree,
   type AircraftWindows,
+  type CombinedRestrictions,
   type ExclusionReason,
+  type MatchingLimits,
+  type MatchPoint,
 } from './criteria.js';
 
 export interface MatchRoute {
   categories: AircraftCategory[];
-  origin: PricePoint;
-  destination: PricePoint;
+  origin: PricePoint & MatchPoint;
+  destination: PricePoint & MatchPoint;
   passengerCount: number;
   rules: RuleRow[];
 }
@@ -37,6 +45,8 @@ export interface Candidate {
   /** The leg and the positioning to it, for this aircraft. */
   legMinutes: number | null;
   positioningMinutes: number;
+  /** For the customer: what the operator still has to confirm. */
+  warnings: string[];
 }
 
 export interface MatchResult {
@@ -52,6 +62,8 @@ export interface PreparedRoute {
     windows: AircraftWindows | undefined;
     rangeKm: number | null;
     distanceKm: number;
+    limits: MatchingLimits;
+    restrictions: CombinedRestrictions;
   })[];
   /** Left out whatever the date. */
   excluded: MatchResult['exclusions'];
@@ -60,8 +72,9 @@ export interface PreparedRoute {
 /**
  * Which aircraft can fly this trip (pricing-engine.md, step 3). Only
  * approved inventory (business rule 4): listing and operator approved, in
- * service, required documents current. Then seats, range, positioning and
- * the operator's offered time. `prepare` does every database read once;
+ * service, required documents current. Then seats, range, positioning,
+ * the operator's offered time, the locations at both ends, Flyviman's
+ * limits and the operator's and aircraft's restrictions (stricter wins). `prepare` does every database read once;
  * `evaluate` applies a departure time, so a month of days costs one load.
  */
 @Injectable()
@@ -96,7 +109,7 @@ export class MatchingService {
       minPassengers: route.passengerCount,
       minRangeKm: distance(route.origin, route.destination),
     });
-    const operatorNames = await this.operators.approvedNames([
+    const operators = await this.operators.approvedForMatching([
       ...new Set(rows.map((row) => row.operatorId)),
     ]);
     const baseIds = rows.flatMap((row) => {
@@ -108,20 +121,16 @@ export class MatchingService {
     const ready: PreparedRoute['ready'] = [];
     const excluded: PreparedRoute['excluded'] = [];
     for (const row of rows) {
-      const operatorName = operatorNames.get(row.operatorId);
+      const operator = operators.get(row.operatorId);
       const reasons: ExclusionReason[] = searchBlockers({
         listingStatus: row.listingStatus,
         availabilityStatus: row.availabilityStatus,
-        operatorStatus: operatorName ? 'APPROVED' : 'SUSPENDED',
+        operatorStatus: operator ? 'APPROVED' : 'SUSPENDED',
         missing: row.missing,
       });
       const baseId = row.currentLocationId ?? row.homeBaseId;
       const base = (baseId && bases.get(baseId)) || null;
       if (!base) reasons.push('location');
-      if (reasons.length > 0) {
-        excluded.push({ aircraftId: row.id, reasons });
-        continue;
-      }
       const rules = resolveRules(route.rules, {
         aircraftId: row.id,
         operatorId: row.operatorId,
@@ -132,13 +141,31 @@ export class MatchingService {
         distance(route.origin, route.destination),
         row.cruiseSpeedKmh,
       );
+      const limits = limitsFor(route.rules, row.category);
+      const restrictions = combineRestrictions(
+        parseRestrictions(operator?.restrictions),
+        parseRestrictions(row.restrictions),
+      );
+      const fit = routeChecks({
+        wingType: row.wingType,
+        distanceKm: leg.distanceKm,
+        origin: route.origin,
+        destination: route.destination,
+        limits,
+        restrictions,
+      });
+      reasons.push(...fit.reasons);
+      if (reasons.length > 0) {
+        excluded.push({ aircraftId: row.id, reasons });
+        continue;
+      }
       const out =
         base && base.id !== route.origin.id
           ? legMetrics(rules, distance(base, route.origin), row.cruiseSpeedKmh)
           : { minutes: 0 };
       ready.push({
         aircraft: row,
-        operatorName: operatorName!,
+        operatorName: operator!.name,
         base,
         rules,
         legMinutes: leg.minutes,
@@ -146,6 +173,9 @@ export class MatchingService {
         rangeKm: row.rangeKm,
         distanceKm: leg.distanceKm,
         windows: undefined,
+        warnings: fit.warnings,
+        limits,
+        restrictions,
       });
     }
 
@@ -180,15 +210,28 @@ export class MatchingService {
         departureAt,
         now,
       });
+      // Landing at the destination; an hour when the leg time is unknown.
+      const arrivalAt = new Date(
+        departureAt.getTime() + (entry.legMinutes ?? 60) * 60_000,
+      );
+      const timing = timeChecks({
+        departureAt,
+        arrivalAt,
+        now,
+        origin: prepared.route.origin,
+        destination: prepared.route.destination,
+        limits: entry.limits,
+        restrictions: entry.restrictions,
+      });
+      reasons.push(...timing.reasons);
       if (reasons.length === 0) {
         // Busy from leaving base to landing at the destination.
         const from = new Date(
           departureAt.getTime() - entry.positioningMinutes * 60_000,
         );
-        const to = new Date(
-          departureAt.getTime() + (entry.legMinutes ?? 60) * 60_000,
-        );
-        if (!windowFree(entry.windows, from, to, prepared.route.origin.id)) {
+        if (
+          !windowFree(entry.windows, from, arrivalAt, prepared.route.origin.id)
+        ) {
           reasons.push('availability');
         }
       }
@@ -199,9 +242,14 @@ export class MatchingService {
           windows: _w,
           rangeKm: _r,
           distanceKm: _d,
+          limits: _l,
+          restrictions: _s,
           ...candidate
         } = entry;
-        candidates.push(candidate);
+        candidates.push({
+          ...candidate,
+          warnings: [...candidate.warnings, ...timing.warnings],
+        });
       }
     }
     return { candidates, exclusions };

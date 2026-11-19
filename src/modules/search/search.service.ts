@@ -28,7 +28,10 @@ import {
   type SearchResultDto,
 } from './dto/search.dto.js';
 
-/** How soon a trip may depart. Per-category notice comes with operator restrictions. */
+/**
+ * How soon any trip may depart. Longer notice per category, operator or
+ * aircraft is a matching check (`notice`).
+ */
 const MIN_NOTICE_MINUTES = 60;
 
 const CANCELLATION_NOTE =
@@ -181,8 +184,13 @@ export class SearchService {
             : null,
           validUntil: result.validUntil.toISOString(),
           // The engine's reasons (no rate, no cruise speed) are operator
-          // matters; they stay in the logs of pricing, not in front of customers.
-          warnings: result.priced ? [] : [PRICE_ON_REQUEST],
+          // matters; they stay in the logs of pricing, not in front of
+          // customers. Matching's (landing-site permission, night operations
+          // not confirmed) are for the customer.
+          warnings: [
+            ...candidate.warnings,
+            ...(result.priced ? [] : [PRICE_ON_REQUEST]),
+          ],
         });
       }
       // Priced first, cheapest first.

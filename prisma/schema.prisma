@@ -224,6 +224,10 @@ model Operator {
   reviewNote         String?
   bookingMode        Json?
   paymentModel       Json?
+  /// Operator-wide operating hours, excluded locations and minimum notice,
+  /// in the shape of `Aircraft.restrictions`. Matching applies both; the
+  /// stricter wins.
+  restrictions       Json?
   createdAt          DateTime          @default(now()) @db.Timestamptz
   updatedAt          DateTime          @updatedAt @db.Timestamptz
 
@@ -726,6 +730,9 @@ enum PricingRuleType {
   /// Minutes added to each leg for taxi, departure and arrival.
   TIME_ALLOWANCE
   VALIDITY
+  /// Matching limits for all aircraft or one category: leg distance,
+  /// runway, landing sites, notice. Not a price; read by matching.
+  MATCHING_LIMITS
 }
 
 /// Every price carries one (business rule 1).

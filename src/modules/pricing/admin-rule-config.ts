@@ -12,7 +12,8 @@ import { hasHiddenCharacter } from '../../common/validation/text.js';
  * silently ignored, so they arrive with the engine change that applies them.
  * `MIN_BILLABLE_HOURS` and `POSITIONING` are defaults here, for all aircraft
  * or one category; operators override them for their own organisation and
- * aircraft.
+ * aircraft. `MATCHING_LIMITS` is not a price: matching reads it, and the
+ * platform and category rules both apply (stricter wins).
  */
 export const ADMIN_RULE_TYPES = [
   'COMMISSION',
@@ -23,6 +24,7 @@ export const ADMIN_RULE_TYPES = [
   'VALIDITY',
   'MIN_BILLABLE_HOURS',
   'POSITIONING',
+  'MATCHING_LIMITS',
 ] as const satisfies readonly PricingRuleType[];
 
 export type AdminRuleType = (typeof ADMIN_RULE_TYPES)[number];
@@ -53,8 +55,16 @@ type Field =
 
 interface Shape {
   required: Record<string, Field>;
-  optional?: Record<string, Field & { default: unknown }>;
+  /** A field left out takes `default`, or stays out when it has none. */
+  optional?: Record<string, Field & { default?: unknown }>;
 }
+
+const whole = (max: number): Field => ({
+  kind: 'number',
+  min: 0,
+  max,
+  decimals: 0,
+});
 
 const percent = (max: number): Field => ({
   kind: 'number',
@@ -110,6 +120,16 @@ const SHAPES: Record<AdminRuleType, Shape> = {
       },
     },
   },
+  MATCHING_LIMITS: {
+    required: {},
+    optional: {
+      minLegKm: whole(20_000),
+      maxLegKm: whole(20_000),
+      minRunwayM: whole(5_000),
+      minimumNoticeMinutes: whole(10_080),
+      landingSites: { kind: 'enum', values: ['ALLOWED', 'NOT_ALLOWED'] },
+    },
+  },
 };
 
 /**
@@ -145,8 +165,9 @@ export function checkRuleConfig(
     const value = source[key];
     if (value === undefined || value === null) {
       const optional = shape.optional?.[key];
-      if (optional) out[key] = optional.default;
-      else
+      if (optional) {
+        if (optional.default !== undefined) out[key] = optional.default;
+      } else
         errors.push({ field: `config.${key}`, message: `${key} is required.` });
       continue;
     }
@@ -154,7 +175,28 @@ export function checkRuleConfig(
     if (problem) errors.push({ field: `config.${key}`, message: problem });
     else out[key] = typeof value === 'string' ? value.trim() : value;
   }
+  if (errors.length === 0 && type === 'MATCHING_LIMITS') {
+    errors.push(...matchingLimitErrors(out));
+  }
   return errors.length > 0 ? { ok: false, errors } : { ok: true, config: out };
+}
+
+function matchingLimitErrors(
+  config: Record<string, unknown>,
+): { field: string; message: string }[] {
+  // `{}` sets no limit: a platform rule cannot be ended, only changed.
+  const { minLegKm, maxLegKm } = config as {
+    minLegKm?: number;
+    maxLegKm?: number;
+  };
+  return minLegKm !== undefined && maxLegKm !== undefined && minLegKm > maxLegKm
+    ? [
+        {
+          field: 'config.maxLegKm',
+          message: 'maxLegKm must be at least minLegKm.',
+        },
+      ]
+    : [];
 }
 
 function checkField(field: Field, value: unknown): string | null {
