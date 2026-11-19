@@ -54,6 +54,7 @@ const REVALIDATION: Revalidation = {
     returnAt: null,
     roundTripStrategy: null,
     price: { priceType: 'ESTIMATE', amountMinor: 52_179_600, currency: 'INR' },
+    incomplete: false,
     validUntil: '2026-11-19T10:30:00.000Z',
     warnings: ['Landing-site permission to be confirmed'],
   },

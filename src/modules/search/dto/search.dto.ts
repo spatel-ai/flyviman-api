@@ -174,6 +174,12 @@ export class SearchResultDto {
   })
   price: SearchPriceDto | null;
 
+  @ApiProperty({
+    description:
+      'True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request.',
+  })
+  incomplete: boolean;
+
   @ApiProperty({ format: 'date-time' })
   validUntil: string;
 

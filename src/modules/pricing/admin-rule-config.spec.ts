@@ -171,6 +171,30 @@ describe('markup, service fee and discount config (M5 4c)', () => {
       checkRuleConfig('MIN_BILLABLE_HOURS', { hours: 2, per: 'WEEK' }).ok,
     ).toBe(false);
   });
+
+  it('takes an optional turnaround in whole minutes, left out when not sent', () => {
+    expect(checkRuleConfig('TIME_ALLOWANCE', { minutes: 10 })).toEqual({
+      ok: true,
+      config: { minutes: 10 },
+    });
+    expect(
+      checkRuleConfig('TIME_ALLOWANCE', { minutes: 10, turnaroundMinutes: 60 }),
+    ).toEqual({ ok: true, config: { minutes: 10, turnaroundMinutes: 60 } });
+    // Null, like leaving it out, means the engine's default.
+    expect(
+      checkRuleConfig('TIME_ALLOWANCE', {
+        minutes: 10,
+        turnaroundMinutes: null,
+      }),
+    ).toEqual({ ok: true, config: { minutes: 10 } });
+    for (const turnaroundMinutes of [-1, 721, 30.5, '45']) {
+      expect(
+        checkRuleConfig('TIME_ALLOWANCE', { minutes: 10, turnaroundMinutes })
+          .ok,
+        String(turnaroundMinutes),
+      ).toBe(false);
+    }
+  });
 });
 
 describe('checkScopeRef', () => {

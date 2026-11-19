@@ -230,6 +230,9 @@ export class SearchService {
                 currency: result.currency,
               }
             : null,
+          // A list price that leaves things out is marked (pricing-engine.md,
+          // principle 4); the detail says what.
+          incomplete: result.priced && result.exclusions.length > 0,
           validUntil: result.validUntil.toISOString(),
           // The engine's reasons (no rate, no cruise speed) are operator
           // matters; they stay in the logs of pricing, not in front of
@@ -649,6 +652,8 @@ function publicResult(stored: StoredResult): ResultFields {
     tripType: result.tripType ?? 'ONE_WAY',
     returnAt: result.returnAt ?? null,
     roundTripStrategy: result.roundTripStrategy ?? null,
+    // Searches stored before the flag: the detail still lists exclusions.
+    incomplete: result.incomplete ?? false,
   };
 }
 

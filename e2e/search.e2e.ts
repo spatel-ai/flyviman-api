@@ -149,6 +149,9 @@ test.describe('charter search', () => {
         .filter((line) => ['OPERATING', 'REPOSITIONING'].includes(line.code))
         .reduce((total, line) => total + line.amountMinor, 0),
     );
+    // A list price that leaves something out says so; the detail says what.
+    expect(ours.incomplete).toBe(detail.exclusions.length > 0);
+    expect(detail.incomplete).toBe(ours.incomplete);
     expect(detail.bookingMode).toBe('REQUEST');
     expect(detail.cancellationNote).toBeTruthy();
     // Operator costs and Flyviman's revenue are never in a customer answer.

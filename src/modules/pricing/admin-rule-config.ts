@@ -108,6 +108,9 @@ const SHAPES: Record<AdminRuleType, Shape> = {
   },
   TIME_ALLOWANCE: {
     required: { minutes: { kind: 'number', min: 0, max: 120, decimals: 0 } },
+    // Left out is the engine's default (45 minutes); not defaulted, so an
+    // unchanged rule stays equal.
+    optional: { turnaroundMinutes: whole(720) },
   },
   VALIDITY: {
     required: {

@@ -43,8 +43,40 @@ export interface EngineInput {
   rawDistanceKm: (from: PricePoint, to: PricePoint) => number;
 }
 
+/**
+ * Every breakdown line code the engine writes. `search/breakdown.ts`
+ * classifies each as folded into the customer's "Flying" line or shown as
+ * is; its spec fails when a code here is not classified.
+ */
+export const LINE_CODES = [
+  'OPERATING',
+  'OPERATING_RETURN',
+  'MIN_BILLABLE',
+  'POSITIONING',
+  'REPOSITIONING',
+  'INTERIM_REPOSITIONING',
+  'INTERIM_POSITIONING',
+  'WAITING',
+  'OVERNIGHT',
+  'CREW',
+  'PARKING',
+  'FUEL_SURCHARGE',
+  'PERMIT',
+  'NAVIGATION',
+  'OTHER',
+  'LANDING_HANDLING',
+  'MIN_CHARGE',
+  'PLATFORM_FEE',
+  'MARKUP',
+  'SERVICE_FEE',
+  'DISCOUNT',
+  'TAX',
+] as const;
+
+export type LineCode = (typeof LINE_CODES)[number];
+
 export interface LineItem {
-  code: string;
+  code: LineCode;
   label: string;
   amountMinor: number;
   basis?: string;
@@ -103,6 +135,25 @@ export interface EngineResult {
 }
 
 const DEFAULT_VALIDITY_MINUTES = 60;
+/**
+ * Minimum time on the ground at each end of a return to base between the
+ * flights (at the destination and at the base), unless the `TIME_ALLOWANCE`
+ * rule sets `turnaroundMinutes`.
+ */
+export const DEFAULT_TURNAROUND_MINUTES = 45;
+
+/**
+ * The one rounding rule for percentages (commission, markup, discount, tax):
+ * `amountMinor × percent / 100`, with the percent taken as whole basis
+ * points (it has at most two decimals) and the product in exact integers,
+ * rounded half up to whole paise. So 12,345,000 × 0.57% = 70,366.5 gives
+ * 70,367 every time, with no floating-point error.
+ */
+export function percentOf(amountMinor: number, percent: number): number {
+  const product = BigInt(amountMinor) * BigInt(Math.round(percent * 100));
+  // Half up for the non-negative amounts the engine passes.
+  return Number((product * 2n + 10_000n) / 20_000n);
+}
 
 export function legMetrics(
   rules: ResolvedRules,
@@ -143,8 +194,10 @@ function chargeAt(
 /**
  * Prices a trip. A round trip is priced both ways where both are possible:
  * the aircraft waits at the destination, or it returns to base between the
- * flights and comes back. The cheaper of those whose inputs are all on
- * record is kept (WAIT on a tie), and the choice is stated as an assumption.
+ * flights and comes back, when that fits with a turnaround at each end. A
+ * complete option beats an incomplete one, the cheaper of two complete ones
+ * is kept (WAIT on a tie, and when neither is complete), and the choice is
+ * stated as an assumption.
  */
 export function calculatePrice(input: EngineInput): EngineResult {
   const { returnAt } = input;
@@ -183,7 +236,14 @@ export function calculatePrice(input: EngineInput): EngineResult {
         input.rawDistanceKm(base, destination),
         aircraft.cruiseSpeedKmh,
       );
-      ferryFits = (there.minutes ?? 0) + (back.minutes ?? 0) <= groundMinutes;
+      // A turnaround on the ground at each end: at the destination before
+      // the flight to base, and at the base before the flight back.
+      const turnaround =
+        rules.TIME_ALLOWANCE?.config.turnaroundMinutes ??
+        DEFAULT_TURNAROUND_MINUTES;
+      ferryFits =
+        (there.minutes ?? 0) + (back.minutes ?? 0) + 2 * turnaround <=
+        groundMinutes;
       if (ferryFits) strategies.push('RETURN_TO_BASE');
     }
   }
@@ -191,11 +251,28 @@ export function calculatePrice(input: EngineInput): EngineResult {
   const priced = strategies.map((strategy) =>
     priceTrip(input, { strategy, groundMinutes, nights }),
   );
-  const complete = priced.filter((entry) => entry.missing.length === 0);
-  const pool = complete.length > 0 ? complete : priced;
-  const chosen = pool.reduce((best, entry) =>
-    entry.result.totalMinor < best.result.totalMinor ? entry : best,
-  );
+  // A complete option (every input on record) beats an incomplete one; two
+  // complete options go to the cheaper, WAIT on a tie; two incomplete ones
+  // cannot be compared, so WAIT is kept.
+  let chosen = priced[0];
+  let outcome: Outcome = 'ONLY';
+  if (priced.length === 2) {
+    const [wait, ferry] = priced;
+    const waitComplete = wait.missing.length === 0;
+    const ferryComplete = ferry.missing.length === 0;
+    if (waitComplete && ferryComplete) {
+      const ferryTotal = ferry.result.totalMinor;
+      const waitTotal = wait.result.totalMinor;
+      chosen = ferryTotal < waitTotal ? ferry : wait;
+      outcome = ferryTotal === waitTotal ? 'TIE' : 'CHEAPER';
+    } else if (waitComplete || ferryComplete) {
+      chosen = waitComplete ? wait : ferry;
+      outcome = 'OTHER_INCOMPLETE';
+    } else {
+      chosen = wait;
+      outcome = 'BOTH_INCOMPLETE';
+    }
+  }
   const { result } = chosen;
   const strategy = result.priced ? chosen.strategy : null;
   result.roundTrip = {
@@ -212,7 +289,7 @@ export function calculatePrice(input: EngineInput): EngineResult {
   };
   if (strategy) {
     result.assumptions.push(
-      strategyAssumption(strategy, priced.length, ferryFits, {
+      strategyAssumption(strategy, outcome, ferryFits, {
         base: base?.name ?? null,
         destination: destination.name,
         nights,
@@ -222,29 +299,54 @@ export function calculatePrice(input: EngineInput): EngineResult {
   return result;
 }
 
+/** How the round trip's strategy was chosen. */
+type Outcome =
+  /** The only option. */
+  | 'ONLY'
+  /** Both complete, and the chosen one strictly cheaper. */
+  | 'CHEAPER'
+  /** Both complete and the same price: WAIT kept. */
+  | 'TIE'
+  /** The chosen one complete, the other not. */
+  | 'OTHER_INCOMPLETE'
+  /** Neither complete: WAIT kept. */
+  | 'BOTH_INCOMPLETE';
+
 function strategyAssumption(
   strategy: RoundTripStrategy,
-  options: number,
+  outcome: Outcome,
   ferryFits: boolean,
   names: { base: string | null; destination: string; nights: number },
 ): string {
   const { base, destination, nights } = names;
-  if (strategy === 'RETURN_TO_BASE' && options === 1) {
-    return `Round trip: the aircraft stays at its base, ${destination}, between the flights`;
-  }
   if (strategy === 'RETURN_TO_BASE') {
-    return `Round trip: the aircraft returns to ${base} between the flights and comes back for the return, priced below waiting at ${destination}`;
+    if (outcome === 'ONLY') {
+      return `Round trip: the aircraft stays at its base, ${destination}, between the flights`;
+    }
+    const ferry = `Round trip: the aircraft returns to ${base} between the flights and comes back for the return`;
+    return outcome === 'CHEAPER'
+      ? `${ferry}, priced below waiting at ${destination}`
+      : `${ferry}; waiting at ${destination} could not be fully priced`;
   }
   const stay =
     nights > 0
       ? `${nights} night${nights === 1 ? '' : 's'} at ${destination}`
       : `at ${destination}`;
-  if (options > 1) {
-    return `Round trip: the aircraft waits ${stay} until the return flight, priced below returning to ${base} between the flights`;
+  const wait = `Round trip: the aircraft waits ${stay} until the return flight`;
+  switch (outcome) {
+    case 'CHEAPER':
+      return `${wait}, priced below returning to ${base} between the flights`;
+    case 'TIE':
+      return `${wait}; returning to ${base} between the flights costs the same, so waiting was kept`;
+    case 'OTHER_INCOMPLETE':
+      return `${wait}; returning to ${base} between the flights could not be fully priced`;
+    case 'BOTH_INCOMPLETE':
+      return `${wait}; neither waiting nor returning to ${base} between the flights could be fully priced, so waiting was kept`;
+    default:
+      return base && !ferryFits
+        ? `${wait}; there is not time to return to ${base} between the flights`
+        : wait;
   }
-  return base && !ferryFits
-    ? `Round trip: the aircraft waits ${stay} until the return flight; there is not time to return to ${base} between the flights`
-    : `Round trip: the aircraft waits ${stay} until the return flight`;
 }
 
 /** One date formatter per time zone: building one is costly. */
@@ -465,11 +567,15 @@ function priceTrip(
         : 1;
       const flown = hours * legs;
       const floor = minimum * days;
-      if (floor > flown) {
+      // Rounded once: the flights plus the shortfall bill exactly the
+      // minimum hours × rate, whatever the flights' own rounding.
+      const shortfallMinor =
+        Math.round(floor * rate) - operating.amountMinor * legs;
+      if (shortfallMinor > 0) {
         shortfall = {
           code: 'MIN_BILLABLE',
           label: 'Minimum billable hours',
-          amountMinor: Math.round((floor - flown) * rate),
+          amountMinor: shortfallMinor,
           basis: `${minimum} h a day × ${days} day${days === 1 ? '' : 's'}, ${flown.toFixed(2)} h flown; the difference × hourly rate`,
         };
       }
@@ -566,8 +672,40 @@ function priceTrip(
     });
   }
 
-  // Landing at each arrival; handling at both ends of each leg.
-  const arrivals = turn ? [destination, origin] : [destination];
+  // Landing at each arrival; handling at both ends of each leg. Returning
+  // to base between the flights adds two legs: to the base and back to the
+  // destination. The base is named in warnings, never in exclusions, which
+  // customers see.
+  const ferryBase =
+    turn?.strategy === 'RETURN_TO_BASE' &&
+    aircraft.base &&
+    aircraft.base.id !== destination.id
+      ? aircraft.base
+      : null;
+  const arrivals = !turn
+    ? [destination]
+    : ferryBase
+      ? [destination, ferryBase, destination, origin]
+      : [destination, origin];
+  const stops = !turn
+    ? [origin, destination]
+    : ferryBase
+      ? // Out, to base, back to the destination, and the return.
+        [
+          origin,
+          destination,
+          destination,
+          ferryBase,
+          ferryBase,
+          destination,
+          destination,
+          origin,
+        ]
+      : [origin, destination, destination, origin];
+  const placeName = (point: PricePoint) =>
+    point.id === ferryBase?.id && point.id !== origin.id
+      ? "the aircraft's base"
+      : point.name;
   let landing = 0;
   for (const point of arrivals) {
     const landingAt = chargeAt(point, aircraft.category);
@@ -575,24 +713,22 @@ function priceTrip(
     const amount = landingAt?.landingMinor ?? fallbackLanding?.amountMinor;
     if (landingAt == null && fallbackLanding) used.push(rules.LANDING!.rule);
     if (amount == null) {
-      warnings.push(`Landing charges at ${point.name} are not on record.`);
-      exclusions.push(`Landing charges at ${point.name}`);
+      const warning = `Landing charges at ${point.name} are not on record.`;
+      const exclusion = `Landing charges at ${placeName(point)}`;
+      if (!warnings.includes(warning)) warnings.push(warning);
+      if (!exclusions.includes(exclusion)) exclusions.push(exclusion);
     } else landing += amount;
   }
   let handling = 0;
   let handlingKnown = true;
-  const stops = turn
-    ? [origin, destination, destination, origin]
-    : [origin, destination];
   for (const point of stops) {
     const at = chargeAt(point, aircraft.category);
     const amount = at?.handlingMinor ?? rules.HANDLING?.config.amountMinor;
     if (at == null && rules.HANDLING) used.push(rules.HANDLING.rule);
     if (amount == null) {
       handlingKnown = false;
-      if (!exclusions.includes(`Handling at ${point.name}`)) {
-        exclusions.push(`Handling at ${point.name}`);
-      }
+      const exclusion = `Handling at ${placeName(point)}`;
+      if (!exclusions.includes(exclusion)) exclusions.push(exclusion);
     } else handling += amount;
   }
   if (!handlingKnown) warnings.push('Some handling charges are not on record.');
@@ -622,7 +758,7 @@ function priceTrip(
   let feesMinor = 0;
   let commissionMinor = 0;
   if (commission) {
-    commissionMinor = Math.round((baseMinor * commission.percent) / 100);
+    commissionMinor = percentOf(baseMinor, commission.percent);
     if (commission.mode === 'ADD_ON') {
       feesMinor = commissionMinor;
       breakdown.push({
@@ -636,9 +772,7 @@ function priceTrip(
   }
 
   const markup = use(rules.MARKUP);
-  const markupMinor = markup
-    ? Math.round((baseMinor * markup.percent) / 100)
-    : 0;
+  const markupMinor = markup ? percentOf(baseMinor, markup.percent) : 0;
   if (markupMinor > 0) {
     breakdown.push({
       code: 'MARKUP',
@@ -663,10 +797,11 @@ function priceTrip(
   const discount = use(rules.DISCOUNT);
   const platformMinor = commissionMinor + markupMinor + serviceFeeMinor;
   const offeredMinor = discount
-    ? Math.round(((baseMinor + feesMinor) * discount.percent) / 100)
+    ? percentOf(baseMinor + feesMinor, discount.percent)
     : 0;
   const discountMinor = Math.min(offeredMinor, platformMinor);
-  const capped = discountMinor < offeredMinor;
+  // Capped only when some of it applied: nothing applied is no discount.
+  const capped = discountMinor > 0 && discountMinor < offeredMinor;
   if (capped) {
     // Customers see only that a limit applied; the stored line's basis
     // keeps the detail.
@@ -685,9 +820,7 @@ function priceTrip(
 
   let taxMinor = 0;
   if (tax) {
-    taxMinor = Math.round(
-      ((baseMinor + feesMinor - discountMinor) * tax.percent) / 100,
-    );
+    taxMinor = percentOf(baseMinor + feesMinor - discountMinor, tax.percent);
     breakdown.push({ code: 'TAX', label: tax.name, amountMinor: taxMinor });
   } else {
     warnings.push('No tax rule is in force; tax is not included.');
@@ -757,7 +890,7 @@ function turnaroundLines(
     const free = rules.POSITIONING?.config.freeWithinKm ?? 0;
     const ferries = [
       {
-        code: 'INTERIM_REPOSITIONING',
+        code: 'INTERIM_REPOSITIONING' as const,
         label: `Return to ${base.name} between the flights`,
         leg: legMetrics(
           rules,
@@ -766,7 +899,7 @@ function turnaroundLines(
         ),
       },
       {
-        code: 'INTERIM_POSITIONING',
+        code: 'INTERIM_POSITIONING' as const,
         label: `Positioning from ${base.name} for the return`,
         leg: legMetrics(
           rules,
