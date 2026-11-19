@@ -1,7 +1,16 @@
-import { expect, test } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test';
 import { uniqueEmail } from './support/data.js';
 import { ACCOUNTS } from './support/accounts.js';
 import { cookie, csrfHeaders, signIn } from './support/session.js';
+
+/** REFRESH_ROTATION_GRACE_SECONDS of the main test server. */
+const GRACE_MS = 2_000;
 
 test.describe('POST /auth/login', () => {
   test('signs in and sets the three session cookies', async ({ request }) => {
@@ -241,6 +250,8 @@ test.describe('POST /auth/refresh', () => {
     const csrf = await cookie(request, 'csrf_token');
     await request.post('auth/refresh', { headers: await csrfHeaders(request) });
     expect((await request.get('me')).status()).toBe(200);
+    // Past the grace period, when it can no longer be a race.
+    await new Promise((resolve) => setTimeout(resolve, GRACE_MS + 500));
 
     // Someone replays the token that was already exchanged.
     const thief = await playwright.request.newContext({
@@ -256,5 +267,109 @@ test.describe('POST /auth/refresh', () => {
 
     // The legitimate holder is signed out too.
     expect((await request.get('me')).status()).toBe(401);
+  });
+});
+
+test.describe('POST /auth/refresh, racing requests (D-111)', () => {
+  /** A caller holding only the refresh cookie, as after 15 idle minutes. */
+  async function holder(
+    playwright: PlaywrightWorkerArgs['playwright'],
+    baseURL: string | undefined,
+    refresh: string | undefined,
+    csrf: string | undefined,
+  ): Promise<APIRequestContext> {
+    return playwright.request.newContext({
+      baseURL,
+      extraHTTPHeaders: {
+        Cookie: `refresh_token=${refresh}; csrf_token=${csrf}`,
+        'X-CSRF-Token': csrf ?? '',
+      },
+    });
+  }
+
+  /** The refresh token a response sets. */
+  function issued(response: APIResponse): string | undefined {
+    return response
+      .headersArray()
+      .filter((header) => header.name.toLowerCase() === 'set-cookie')
+      .map((header) => /^refresh_token=([^;]*)/.exec(header.value)?.[1])
+      .find(Boolean);
+  }
+
+  test('concurrent refreshes of one token all receive the same new pair', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    await signIn(request, 'customer');
+    const refresh = await cookie(request, 'refresh_token');
+    const csrf = await cookie(request, 'csrf_token');
+    const callers = await Promise.all(
+      [1, 2, 3, 4].map(() => holder(playwright, baseURL, refresh, csrf)),
+    );
+
+    const responses = await Promise.all(
+      callers.map((caller) => caller.post('auth/refresh')),
+    );
+
+    expect(responses.map((response) => response.status())).toEqual([
+      204, 204, 204, 204,
+    ]);
+    const tokens = new Set(responses.map(issued));
+    expect(tokens.size).toBe(1);
+    const [successor] = tokens;
+    expect(successor).toBeTruthy();
+    expect(successor).not.toBe(refresh);
+
+    // The pair works, and the sign-in was not treated as stolen.
+    const renewed = await holder(playwright, baseURL, successor, csrf);
+    expect((await renewed.post('auth/refresh')).status()).toBe(204);
+    await Promise.all([...callers, renewed].map((caller) => caller.dispose()));
+  });
+
+  test('hands out the same pair a limited number of times, then refuses without ending the sign-in', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    await signIn(request, 'customer');
+    const old = await cookie(request, 'refresh_token');
+    const csrf = await cookie(request, 'csrf_token');
+    const late = await holder(playwright, baseURL, old, csrf);
+
+    const winner = await request.post('auth/refresh', {
+      headers: await csrfHeaders(request),
+    });
+    expect(winner.status()).toBe(204);
+    const successor = issued(winner);
+
+    for (let replay = 1; replay <= 5; replay += 1) {
+      const response = await late.post('auth/refresh');
+      expect(response.status(), `replay ${replay}`).toBe(204);
+      expect(issued(response)).toBe(successor);
+    }
+    const sixth = await late.post('auth/refresh');
+    expect(sixth.status()).toBe(401);
+    expect((await sixth.json()).error.code).toBe('UNAUTHENTICATED');
+
+    expect((await request.get('me')).status()).toBe(200);
+    await late.dispose();
+  });
+
+  test('never replays a pair once the sign-in has ended', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    await signIn(request, 'customer');
+    const old = await cookie(request, 'refresh_token');
+    const csrf = await cookie(request, 'csrf_token');
+    const late = await holder(playwright, baseURL, old, csrf);
+
+    await request.post('auth/refresh', { headers: await csrfHeaders(request) });
+    await request.post('auth/logout', { headers: await csrfHeaders(request) });
+
+    expect((await late.post('auth/refresh')).status()).toBe(401);
+    await late.dispose();
   });
 });

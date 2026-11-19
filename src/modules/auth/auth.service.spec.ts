@@ -5,6 +5,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
 import type { LoginFailures } from './login-failures.js';
+import type { RefreshSuccessors } from './refresh-successors.js';
 import { hashPassword } from '../../common/crypto/password.js';
 import type { TokenService } from './token.service.js';
 
@@ -36,6 +37,11 @@ function setup() {
     hashToken: (token: string) => `hash:${token}`,
   };
   const config = { getOrThrow: () => GRACE_SECONDS };
+  const successors = {
+    keep: vi.fn().mockResolvedValue(undefined),
+    take: vi.fn().mockResolvedValue(null),
+    forget: vi.fn().mockResolvedValue(undefined),
+  };
   const service = new AuthService(
     {
       session,
@@ -46,8 +52,9 @@ function setup() {
     audit as unknown as AuditService,
     config as unknown as ConfigService,
     failures as unknown as LoginFailures,
+    successors as unknown as RefreshSuccessors,
   );
-  return { service, session, users, audit, failures };
+  return { service, session, users, audit, failures, successors };
 }
 
 const ACTIVE = {
@@ -163,15 +170,20 @@ describe('AuthService.refresh', () => {
     });
   });
 
-  it('refuses a just-rotated token without ending the sign-in', async () => {
-    const { service, session, audit } = setup();
+  it('refuses a just-rotated token with nothing to replay, without ending the sign-in', async () => {
+    const { service, session, audit, successors } = setup();
     session.findUnique.mockResolvedValue(
       storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
     );
+    session.findFirst.mockResolvedValue({ id: 'session-2' });
+    // Expired, used up, or never kept: the store answers nothing.
+    successors.take.mockResolvedValue(null);
     await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
       code: 'UNAUTHENTICATED',
     });
+    expect(successors.take).toHaveBeenCalledWith('hash:old');
     expect(session.updateMany).not.toHaveBeenCalled();
+    expect(session.create).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 
@@ -221,5 +233,131 @@ describe('AuthService.refresh', () => {
         where: { familyId: 'family-1', revokedAt: null },
       }),
     );
+  });
+});
+
+describe('AuthService.refresh, racing requests (D-111)', () => {
+  const PAIR = {
+    accessToken: 'winner-access',
+    refreshToken: 'winner-refresh',
+    csrfToken: 'winner-csrf',
+  };
+
+  it('keeps the new pair for the grace period, under the old token', async () => {
+    const { service, session, users, successors } = setup();
+    session.findUnique.mockResolvedValue(storedSession());
+    users.findAccount.mockResolvedValue(ACTIVE);
+
+    const tokens = await service.refresh('old', CLIENT);
+
+    expect(successors.keep).toHaveBeenCalledWith(
+      'hash:old',
+      tokens,
+      GRACE_SECONDS * 1000,
+    );
+  });
+
+  it('hands a request within the grace period the same pair, and audits it', async () => {
+    const { service, session, audit, successors } = setup();
+    session.findUnique.mockResolvedValue(
+      storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
+    );
+    session.findFirst.mockResolvedValue({ id: 'session-2' });
+    successors.take.mockResolvedValue(PAIR);
+
+    await expect(service.refresh('old', CLIENT)).resolves.toEqual(PAIR);
+    // Never a new pair, and the sign-in is not ended.
+    expect(session.create).not.toHaveBeenCalled();
+    expect(session.updateMany).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith({
+      action: 'auth.refresh_replayed',
+      entityType: 'User',
+      entityId: 'user-1',
+      actor: null,
+    });
+  });
+
+  it("hands the loser of a concurrent claim the winner's pair", async () => {
+    const { service, session, users, successors } = setup();
+    session.findUnique.mockResolvedValue(storedSession());
+    users.findAccount.mockResolvedValue(ACTIVE);
+    session.updateMany.mockResolvedValue({ count: 0 });
+    session.findFirst.mockResolvedValue({ id: 'session-2' });
+    successors.take.mockResolvedValue(PAIR);
+
+    await expect(service.refresh('old', CLIENT)).resolves.toEqual(PAIR);
+    expect(session.create).not.toHaveBeenCalled();
+    expect(successors.keep).not.toHaveBeenCalled();
+  });
+
+  it('never replays after the grace period: the sign-in is ended as before', async () => {
+    const { service, session, successors } = setup();
+    session.findUnique.mockResolvedValue(
+      storedSession({
+        revokedAt: new Date(Date.now() - GRACE_SECONDS * 1000),
+      }),
+    );
+    successors.take.mockResolvedValue(PAIR);
+
+    await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(successors.take).not.toHaveBeenCalled();
+    expect(session.updateMany).toHaveBeenCalledWith({
+      where: { familyId: 'family-1', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it('refuses once the sign-in has ended, without using a replay', async () => {
+    const { service, session, successors } = setup();
+    session.findUnique.mockResolvedValue(
+      storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
+    );
+    session.findFirst.mockResolvedValue(null);
+    successors.take.mockResolvedValue(PAIR);
+
+    await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(successors.take).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown token without looking for a replay', async () => {
+    const { service, session, successors } = setup();
+    session.findUnique.mockResolvedValue(null);
+
+    await expect(service.refresh('made-up', CLIENT)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(successors.take).not.toHaveBeenCalled();
+  });
+
+  describe('with Redis down', () => {
+    it('still renews the winner', async () => {
+      const { service, session, users, successors } = setup();
+      session.findUnique.mockResolvedValue(storedSession());
+      users.findAccount.mockResolvedValue(ACTIVE);
+      successors.keep.mockRejectedValue(new Error('connection refused'));
+
+      await expect(service.refresh('old', CLIENT)).resolves.toMatchObject({
+        refreshToken: 'random',
+      });
+    });
+
+    it('refuses a racing request, without ending the sign-in', async () => {
+      const { service, session, audit, successors } = setup();
+      session.findUnique.mockResolvedValue(
+        storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
+      );
+      session.findFirst.mockResolvedValue({ id: 'session-2' });
+      successors.take.mockRejectedValue(new Error('connection refused'));
+
+      await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+      });
+      expect(session.updateMany).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 });

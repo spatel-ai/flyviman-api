@@ -143,7 +143,8 @@ export class EnvironmentVariables {
   OPERATIONS_INBOX_EMAIL: string = 'operations@flyviman.test';
 
   /**
-   * Encrypts sensitive columns (identity document numbers). 32 random bytes,
+   * Encrypts sensitive columns (identity document numbers) and the session
+   * pairs briefly kept in Redis for racing refreshes. 32 random bytes,
    * base64 encoded. Changing it makes existing values unreadable.
    */
   @IsString()

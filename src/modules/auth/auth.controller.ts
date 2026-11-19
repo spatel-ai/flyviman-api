@@ -187,7 +187,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Rotate the session tokens',
     description:
-      'Reads the refresh cookie and replaces all three session cookies. Each refresh token works once.',
+      'Reads the refresh cookie and replaces all three session cookies. Each refresh token works once; a request racing with the refresh that used it, within the grace period, receives the same new cookies.',
   })
   @ApiNoContentResponse()
   async refresh(

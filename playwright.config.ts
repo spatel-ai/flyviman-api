@@ -41,7 +41,8 @@ export default defineConfig({
         RATE_LIMIT_DEFAULT_PER_MINUTE: '100000',
         RATE_LIMIT_ENQUIRY_PER_WINDOW: '100000',
         RATE_LIMIT_SEARCH_PER_MINUTE: '100000',
-        REFRESH_ROTATION_GRACE_SECONDS: '0',
+        // Short, so the reuse test can wait it out (e2e/auth.e2e.ts).
+        REFRESH_ROTATION_GRACE_SECONDS: '2',
         OTP_RESEND_COOLDOWN_SECONDS: '0',
         OTP_MAX_PER_HOUR: '100000',
       },

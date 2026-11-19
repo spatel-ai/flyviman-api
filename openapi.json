@@ -243,7 +243,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "Reads the refresh cookie and replaces all three session cookies. Each refresh token works once.",
+        "description": "Reads the refresh cookie and replaces all three session cookies. Each refresh token works once; a request racing with the refresh that used it, within the grace period, receives the same new cookies.",
         "operationId": "AuthController_refresh",
         "parameters": [],
         "responses": {

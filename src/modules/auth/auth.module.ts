@@ -10,7 +10,9 @@ import { AuthController } from './auth.controller.js';
 import { ACCESS_COOKIE, REFRESH_COOKIE } from './auth.cookies.js';
 import { CsrfGuard, JwtAuthGuard, RolesGuard } from './auth.guards.js';
 import { AuthService } from './auth.service.js';
+import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { LoginFailures } from './login-failures.js';
+import { RefreshSuccessors } from './refresh-successors.js';
 import { RegistrationService } from './registration.service.js';
 import { TokenService } from './token.service.js';
 import { VerificationService } from './verification.service.js';
@@ -37,6 +39,8 @@ import { VerificationService } from './verification.service.js';
     AuthService,
     TokenService,
     LoginFailures,
+    RefreshSuccessors,
+    FieldCipher,
     VerificationService,
     RegistrationService,
     // Global guards run in this order on every request.
