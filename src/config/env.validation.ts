@@ -91,6 +91,15 @@ export class EnvironmentVariables {
   @Min(0)
   REFRESH_ROTATION_GRACE_SECONDS: number = 10;
 
+  /**
+   * Successful refreshes (rotations) one sign-in may make a minute; more are
+   * refused with 429 and the token stays usable. Bounds a stolen live token.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  REFRESH_ROTATIONS_PER_MINUTE: number = 30;
+
   /** Seconds before another one-time code can be sent to the same address. */
   @Type(() => Number)
   @IsInt()
@@ -157,6 +166,15 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   RATE_LIMIT_ENQUIRY_WINDOW_SECONDS: number = 600;
+
+  /**
+   * Payment gateway notifications (`POST /webhooks/payments/:provider`) per
+   * minute, per address. Generous: the gateway retries and bursts.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RATE_LIMIT_WEBHOOK_PER_MINUTE: number = 120;
 
   /**
    * Where a new enquiry from the contact page is emailed: the operations

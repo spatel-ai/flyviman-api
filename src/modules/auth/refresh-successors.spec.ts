@@ -51,9 +51,12 @@ describe('RefreshSuccessors', () => {
   it('hands the kept pair back, counted against the replay limit', async () => {
     const { successors, redis, stored } = setup();
     await successors.keep('old-hash', PAIR, 10_000);
-    redis.eval.mockResolvedValue(stored.get('refresh-successor:old-hash'));
+    redis.eval.mockResolvedValue([stored.get('refresh-successor:old-hash'), 1]);
 
-    await expect(successors.take('old-hash')).resolves.toEqual(PAIR);
+    await expect(successors.take('old-hash')).resolves.toEqual({
+      tokens: PAIR,
+      first: true,
+    });
     expect(redis.eval).toHaveBeenCalledWith(
       expect.any(String),
       1,
@@ -70,7 +73,7 @@ describe('RefreshSuccessors', () => {
 
   it('refuses a value that was tampered with', async () => {
     const { successors, redis } = setup();
-    redis.eval.mockResolvedValue('v1.AAAA.BBBB.CCCC');
+    redis.eval.mockResolvedValue(['v1.AAAA.BBBB.CCCC', 1]);
     await expect(successors.take('old-hash')).rejects.toThrow();
   });
 });
@@ -85,7 +88,7 @@ describe('RefreshSuccessors replay limit', () => {
       async (_script: string, _keys: number, key: string, max: number) => {
         if (!stored.has(key)) return null;
         served += 1;
-        return served > max ? null : stored.get(key);
+        return served > max ? null : [stored.get(key), served === 1 ? 1 : 0];
       },
     );
 
@@ -94,9 +97,32 @@ describe('RefreshSuccessors replay limit', () => {
       results.push(await successors.take('old-hash'));
     }
     expect(REFRESH_REPLAY_MAX).toBe(20);
-    expect(results.slice(0, REFRESH_REPLAY_MAX)).toEqual(
-      Array(REFRESH_REPLAY_MAX).fill(PAIR),
-    );
+    expect(results.map((result) => result?.tokens)).toEqual([
+      ...Array(REFRESH_REPLAY_MAX).fill(PAIR),
+      undefined,
+    ]);
+    // Only the first hand-out of the rotation is marked for the audit.
+    expect(results.filter((result) => result?.first)).toHaveLength(1);
     expect(results[REFRESH_REPLAY_MAX]).toBeNull();
+  });
+});
+
+describe('RefreshSuccessors first hand-out', () => {
+  it('marks a later hand-out of the same rotation as not the first', async () => {
+    const { successors, redis, stored } = setup();
+    await successors.keep('old-hash', PAIR, 10_000);
+    redis.eval.mockResolvedValue([stored.get('refresh-successor:old-hash'), 0]);
+    await expect(successors.take('old-hash')).resolves.toEqual({
+      tokens: PAIR,
+      first: false,
+    });
+  });
+
+  it('sets the flag in the same script that counts the hand-out', async () => {
+    const { successors, redis } = setup();
+    redis.eval.mockResolvedValue(null);
+    await successors.take('old-hash');
+    const [script] = redis.eval.mock.calls[0] as [string];
+    expect(script).toContain("HSETNX', KEYS[1], 'audited'");
   });
 });

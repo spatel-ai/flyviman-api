@@ -1,6 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { uniqueEmail } from './support/data.js';
 import { ACCOUNTS, STRICT_BASE_URL } from './support/accounts.js';
+import { asVisitor, visitorAddress } from './support/visitor.js';
 
 // Every test here signs in from the same address on the strict server, and
 // the last one uses up that address's sign-in allowance, so they run in order.
@@ -77,6 +79,31 @@ test('keeping a session alive is counted per session, not per address', async ({
     ).status(),
   ).toBe(204);
   for (const session of sessions) await session.dispose();
+});
+
+test('refreshes with made-up tokens are counted by address, not per token', async ({
+  playwright,
+}) => {
+  // A fresh visitor address, so earlier tests' counts do not matter.
+  const request = await playwright.request.newContext({
+    baseURL: STRICT_BASE_URL,
+    extraHTTPHeaders: asVisitor(visitorAddress()),
+  });
+  const statuses: number[] = [];
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    // A new invented token every time: each would once have had its own
+    // allowance.
+    const token = randomBytes(32).toString('base64url');
+    const response = await request.post('auth/refresh', {
+      headers: {
+        Cookie: `refresh_token=${token}; csrf_token=csrf-${attempt}`,
+        'X-CSRF-Token': `csrf-${attempt}`,
+      },
+    });
+    statuses.push(response.status());
+  }
+  expect(statuses).toEqual([401, 401, 401, 401, 401, 429]);
+  await request.dispose();
 });
 
 test('sign-in attempts are rate limited per address', async ({

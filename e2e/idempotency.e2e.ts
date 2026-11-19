@@ -193,4 +193,54 @@ test.describe('Idempotency-Key', () => {
     expect(reused.headers()['idempotent-replayed']).toBeUndefined();
     expect(await enquiriesWith(other.message)).toHaveLength(1);
   });
+
+  test('another spelling of the same URL is the same scope', async ({
+    request,
+  }) => {
+    const body = enquiry();
+    const key = randomUUID();
+    expect((await send(request, body, key)).status()).toBe(201);
+
+    const respelled = await request.post('Enquiries/', {
+      headers: { 'Idempotency-Key': key },
+      data: body,
+    });
+    expect(respelled.status()).toBe(201);
+    expect(respelled.headers()['idempotent-replayed']).toBe('true');
+    expect(await enquiriesWith(body.message)).toHaveLength(1);
+    const rows = await keyRow(key);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].scope).toBe('anonymous:POST:/api/v1/enquiries');
+  });
+});
+
+test.describe('Idempotency key purge (daily job)', () => {
+  test('deletes keys past their window and keeps the rest', async ({
+    request,
+  }) => {
+    const expired = randomUUID();
+    const current = randomUUID();
+    await withPrisma((prisma) =>
+      prisma.idempotencyKey.createMany({
+        data: [expired, current].map((key) => ({
+          scope: 'anonymous:POST:/api/v1/enquiries',
+          key,
+          requestHash: 'e2e',
+          status: 'COMPLETED' as const,
+          ownerToken: randomUUID(),
+          lockedUntil: new Date(Date.now() - HOUR),
+          expiresAt: new Date(
+            Date.now() + (key === expired ? -HOUR : 24 * HOUR),
+          ),
+        })),
+      }),
+    );
+
+    const run = await request.post('dev/jobs/idempotency-purge');
+    expect(run.status()).toBe(200);
+    expect((await run.json()).data.skipped).toBe(false);
+
+    expect(await keyRow(expired)).toHaveLength(0);
+    expect(await keyRow(current)).toHaveLength(1);
+  });
 });

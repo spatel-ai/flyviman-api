@@ -70,6 +70,9 @@ export abstract class IdempotencyStore {
     claim: IdempotencyClaim,
     clientError: boolean,
   ): Promise<void>;
+
+  /** Deletes keys whose window ended before `now`; returns how many. */
+  abstract purgeExpired(now: Date): Promise<number>;
 }
 
 @Injectable()
@@ -166,6 +169,13 @@ export class PrismaIdempotencyStore extends IdempotencyStore {
       },
       data: { status: IdempotencyKeyStatus.FAILED },
     });
+  }
+
+  async purgeExpired(now: Date) {
+    const { count } = await this.prisma.idempotencyKey.deleteMany({
+      where: { expiresAt: { lt: now } },
+    });
+    return count;
   }
 }
 

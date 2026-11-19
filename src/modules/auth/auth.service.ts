@@ -9,6 +9,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { UserAccount, UsersService } from '../users/users.service.js';
 import type { SessionTokens } from './auth.cookies.js';
 import { LoginFailures } from './login-failures.js';
+import { RefreshRotations } from './refresh-rotations.js';
 import { RefreshSuccessors } from './refresh-successors.js';
 import { hashPassword, verifyPassword } from '../../common/crypto/password.js';
 import { TokenService } from './token.service.js';
@@ -64,6 +65,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly failures: LoginFailures,
     private readonly successors: RefreshSuccessors,
+    private readonly rotations: RefreshRotations,
   ) {}
 
   async login(
@@ -176,6 +178,7 @@ export class AuthService {
       await this.revokeFamily(session.familyId);
       throw unauthenticated();
     }
+    await this.assertRotationAllowed(session.familyId);
 
     // Retiring the old token and creating the new one happen together, so
     // the sign-in is never without a live token. Only one of two concurrent
@@ -253,6 +256,19 @@ export class AuthService {
     return Date.now() - session.revokedAt.getTime() < graceMs;
   }
 
+  /**
+   * True for a refresh token that belongs to a session, live or not. An
+   * unknown (invented) token is counted against the caller's address by the
+   * rate limiter, so making up a new one each time gains nothing.
+   */
+  async isRefreshKnown(refreshToken: string): Promise<boolean> {
+    const session = await this.prisma.session.findUnique({
+      where: { refreshTokenHash: this.tokens.hashToken(refreshToken) },
+      select: { id: true },
+    });
+    return session !== null;
+  }
+
   /** True while the sign-in has at least one refresh token still in force. */
   async isFamilyActive(familyId: string): Promise<boolean> {
     const live = await this.prisma.session.findFirst({
@@ -311,6 +327,35 @@ export class AuthService {
     }
   }
 
+  /**
+   * Refuses a rotation beyond `REFRESH_ROTATIONS_PER_MINUTE` for one sign-in,
+   * before the token is claimed, so the refused token stays live and works
+   * once the minute has passed. Redis down or slow: allowed, as replay
+   * degrades, since refusing would sign everyone out.
+   */
+  private async assertRotationAllowed(familyId: string): Promise<void> {
+    const limit = this.config.getOrThrow<number>(
+      'REFRESH_ROTATIONS_PER_MINUTE',
+    );
+    let count: number;
+    try {
+      count = await within(
+        this.rotations.count(familyId),
+        SUCCESSOR_TIMEOUT_MS,
+      );
+    } catch {
+      this.logger.warn('Could not count refresh rotations; allowed');
+      return;
+    }
+    if (count > limit) {
+      throw new AppException(
+        'RATE_LIMITED',
+        'Too many session refreshes. Try again in a minute.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   /** Hands a racing request the winner's pair, or refuses it. */
   private async replay(
     retiredHash: string,
@@ -318,20 +363,28 @@ export class AuthService {
   ): Promise<SessionTokens> {
     // A sign-out or suspension in the meantime ends the sign-in for good.
     if (!(await this.isFamilyActive(session.familyId))) throw unauthenticated();
+    const user = await this.users.findAccount(session.userId);
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      await this.revokeFamily(session.familyId);
+      throw unauthenticated();
+    }
     // Unreadable (Redis down or slow), expired or used up: refused, never
     // minted.
-    const tokens = await within(
+    const replay = await within(
       this.successors.take(retiredHash),
       SUCCESSOR_TIMEOUT_MS,
     ).catch(() => null);
-    if (!tokens) throw unauthenticated();
-    await this.audit.record({
-      action: 'auth.refresh_replayed',
-      entityType: 'User',
-      entityId: session.userId,
-      actor: null,
-    });
-    return tokens;
+    if (!replay) throw unauthenticated();
+    // One record per rotation, however many racing requests it served.
+    if (replay.first) {
+      await this.audit.record({
+        action: 'auth.refresh_replayed',
+        entityType: 'User',
+        entityId: session.userId,
+        actor: null,
+      });
+    }
+    return replay.tokens;
   }
 
   private async revokeFamily(familyId: string): Promise<void> {

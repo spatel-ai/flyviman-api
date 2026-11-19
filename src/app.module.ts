@@ -5,6 +5,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
+import { DevIdempotencyController } from './common/idempotency/dev-idempotency.controller.js';
+import { IdempotencyPurge } from './common/idempotency/idempotency-purge.js';
 import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor.js';
 import {
   IdempotencyStore,
@@ -50,7 +52,8 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
       useFactory: loggerOptions,
     }),
     ThrottlerModule.forRootAsync({ useClass: RateLimitConfig }),
-    // Background work: the notification outbox and daily compliance jobs.
+    // Background work: the notification outbox, daily compliance jobs and
+    // the idempotency key purge.
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
@@ -79,6 +82,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
     ReportsModule,
     AuditModule,
   ],
+  controllers: [DevIdempotencyController],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     // Interceptors wrap in this order: the envelope is outermost.
@@ -86,6 +90,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
     { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: IdempotencyStore, useClass: PrismaIdempotencyStore },
+    IdempotencyPurge,
   ],
 })
 export class AppModule {}

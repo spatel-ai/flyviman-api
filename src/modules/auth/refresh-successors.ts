@@ -13,13 +13,24 @@ import type { SessionTokens } from './auth.cookies.js';
  */
 export const REFRESH_REPLAY_MAX = 20;
 
-/** Counts a hand-out and returns the pair, or nothing once used up or gone. */
+/**
+ * Counts a hand-out and returns the pair with 1 for the first hand-out of
+ * this rotation (0 after), or nothing once used up or gone. The flag is set
+ * in the same script, so exactly one hand-out per rotation is first.
+ */
 const TAKE = `
 if redis.call('EXISTS', KEYS[1]) == 0 then return false end
 local served = redis.call('HINCRBY', KEYS[1], 'served', 1)
 if served > tonumber(ARGV[1]) then return false end
-return redis.call('HGET', KEYS[1], 'pair')
+local first = redis.call('HSETNX', KEYS[1], 'audited', 1)
+return {redis.call('HGET', KEYS[1], 'pair'), first}
 `;
+
+/** A kept pair, and whether this is the rotation's first hand-out. */
+export interface Replay {
+  tokens: SessionTokens;
+  first: boolean;
+}
 
 /**
  * The token pair a refresh issued, kept for the rotation grace period so a
@@ -52,16 +63,19 @@ export class RefreshSuccessors {
   }
 
   /** The kept pair, at most `REFRESH_REPLAY_MAX` times, or `null`. */
-  async take(retiredHash: string): Promise<SessionTokens | null> {
-    const sealed = (await this.redis.eval(
+  async take(retiredHash: string): Promise<Replay | null> {
+    const taken = (await this.redis.eval(
       TAKE,
       1,
       this.key(retiredHash),
       REFRESH_REPLAY_MAX,
-    )) as string | null;
-    return sealed
-      ? (JSON.parse(this.cipher.decrypt(sealed)) as SessionTokens)
-      : null;
+    )) as [string, number] | null;
+    if (!taken) return null;
+    const [sealed, first] = taken;
+    return {
+      tokens: JSON.parse(this.cipher.decrypt(sealed)) as SessionTokens,
+      first: first === 1,
+    };
   }
 
   async forget(retiredHash: string): Promise<void> {

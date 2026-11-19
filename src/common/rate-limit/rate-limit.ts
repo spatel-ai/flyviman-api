@@ -9,7 +9,7 @@ import {
 } from '@nestjs/throttler';
 import { signedClientAddress } from '../middleware/client-address.middleware.js';
 
-export type RateTier = 'auth' | 'search' | 'default';
+export type RateTier = 'auth' | 'search' | 'webhook' | 'default';
 const RATE_TIER = 'rateTier';
 
 /**
@@ -24,6 +24,13 @@ export const StrictRateLimit = () => SetMetadata(RATE_TIER, 'auth' as RateTier);
  */
 export const SearchRateLimit = () =>
   SetMetadata(RATE_TIER, 'search' as RateTier);
+
+/**
+ * Puts a route on the webhook tier (`RATE_LIMIT_WEBHOOK_PER_MINUTE`, per
+ * address): provider callbacks, generous because gateways retry in bursts.
+ */
+export const WebhookRateLimit = () =>
+  SetMetadata(RATE_TIER, 'webhook' as RateTier);
 
 const ENQUIRY_LIMIT = 'enquiryLimit';
 
@@ -46,6 +53,7 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
     const limits: Record<RateTier, number> = {
       auth: this.config.getOrThrow<number>('RATE_LIMIT_AUTH_PER_MINUTE'),
       search: this.config.getOrThrow<number>('RATE_LIMIT_SEARCH_PER_MINUTE'),
+      webhook: this.config.getOrThrow<number>('RATE_LIMIT_WEBHOOK_PER_MINUTE'),
       default: this.config.getOrThrow<number>('RATE_LIMIT_DEFAULT_PER_MINUTE'),
     };
     // Its own number, never tied to the sign-in tier: raising the sign-in

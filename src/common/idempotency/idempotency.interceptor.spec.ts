@@ -3,7 +3,12 @@ import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom, from } from 'rxjs';
 import { AppException } from '../errors/app.exception.js';
-import { IdempotencyInterceptor } from './idempotency.interceptor.js';
+import { createHash } from 'node:crypto';
+import type { Request } from 'express';
+import {
+  IdempotencyInterceptor,
+  idempotencyScope,
+} from './idempotency.interceptor.js';
 import {
   IdempotencyClaim,
   IdempotencyLease,
@@ -67,6 +72,12 @@ class MemoryStore extends IdempotencyStore {
     else if (row?.status === 'IN_PROGRESS' || row?.status === 'COMMITTED')
       row.status = 'FAILED';
   }
+  async purgeExpired(now: Date) {
+    let deleted = 0;
+    for (const row of this.rows.values())
+      if (row.expiresAt < now && this.rows.delete(row.id)) deleted += 1;
+    return deleted;
+  }
   /** What markIdempotencyCommitted does inside the handler's transaction. */
   commit(claim: IdempotencyClaim) {
     const row = this.owned(claim);
@@ -85,15 +96,17 @@ class MemoryStore extends IdempotencyStore {
 
 const KEY = '7b1f4c7e-52f6-4d5c-9d8e-2f6f0a1b3c4d';
 const LOCK_SECONDS = 300;
+const DATA_KEY = Buffer.alloc(32, 7).toString('base64');
 const T0 = new Date('2026-11-19T10:00:00.000Z');
 
-function setup(required = true) {
+function setup(required = true, dataKey = DATA_KEY) {
   const store = new MemoryStore();
   const reflector = {
     getAllAndOverride: () => required,
   } as unknown as Reflector;
   const config = {
-    getOrThrow: () => LOCK_SECONDS,
+    getOrThrow: (name: string) =>
+      name === 'DATA_ENCRYPTION_KEY' ? dataKey : LOCK_SECONDS,
   } as unknown as ConfigService;
   const interceptor = new IdempotencyInterceptor(reflector, store, config);
   const created: string[] = [];
@@ -108,6 +121,7 @@ function setup(required = true) {
       key?: string;
       body?: unknown;
       userId?: string;
+      path?: string;
       gate?: Promise<void>;
     } = {},
     handler: (commit: () => void) => unknown = (commit) => {
@@ -124,8 +138,10 @@ function setup(required = true) {
     };
     const request = {
       method: 'POST',
-      baseUrl: '/api/v1',
-      path: '/bookings',
+      baseUrl: '',
+      path: options.path ?? '/api/v1/bookings',
+      route: { path: '/api/v1/bookings' },
+      params: {},
       body: options.body ?? { seats: 2 },
       user: { id: options.userId ?? 'user-1' },
       header: (name: string) => (name === 'idempotency-key' ? key : undefined),
@@ -363,5 +379,80 @@ describe('IdempotencyInterceptor', () => {
       return insert(scope, key, lease);
     };
     await expect(call().result).resolves.toEqual({ reference: 'FLY-1' });
+  });
+});
+
+describe('idempotencyScope', () => {
+  function request(fields: Record<string, unknown>): Request {
+    return {
+      method: 'POST',
+      baseUrl: '',
+      path: '/api/v1/bookings',
+      params: {},
+      ...fields,
+    } as unknown as Request;
+  }
+
+  it('uses the route template, not the literal URL', () => {
+    const route = { path: '/api/v1/bookings' };
+    const plain = idempotencyScope(
+      request({ route, path: '/api/v1/bookings' }),
+    );
+    const odd = idempotencyScope(request({ route, path: '/api/v1/BOOKINGS/' }));
+    expect(plain).toBe('anonymous:POST:/api/v1/bookings');
+    expect(odd).toBe(plain);
+  });
+
+  it('adds the caller and the path parameters, sorted by name', () => {
+    const scope = idempotencyScope(
+      request({
+        user: { id: 'user-1' },
+        route: { path: '/api/v1/bookings/:id/payments/:kind' },
+        params: { kind: 'full', id: 'b-1' },
+      }),
+    );
+    expect(scope).toBe(
+      'user-1:POST:/api/v1/bookings/:id/payments/:kind:[["id","b-1"],["kind","full"]]',
+    );
+    const other = idempotencyScope(
+      request({
+        user: { id: 'user-1' },
+        route: { path: '/api/v1/bookings/:id/payments/:kind' },
+        params: { id: 'b-2', kind: 'full' },
+      }),
+    );
+    expect(other).not.toBe(scope);
+  });
+
+  it('falls back to the path where no route matched', () => {
+    expect(idempotencyScope(request({ route: undefined }))).toBe(
+      'anonymous:POST:/api/v1/bookings',
+    );
+  });
+});
+
+describe('IdempotencyInterceptor request hash', () => {
+  it('is an HMAC keyed from the server secret, not a plain SHA-256', async () => {
+    const first = setup();
+    await first.call().result;
+    const hash = first.store.only().requestHash;
+    const plain = createHash('sha256')
+      .update(JSON.stringify({ seats: 2 }))
+      .digest('hex');
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hash).not.toBe(plain);
+
+    const otherKey = setup(true, Buffer.alloc(32, 9).toString('base64'));
+    await otherKey.call().result;
+    expect(otherKey.store.only().requestHash).not.toBe(hash);
+  });
+
+  it('a repeat at another spelling of the URL is the same request', async () => {
+    const { call, store, created } = setup();
+    await call({ path: '/api/v1/bookings' }).result;
+    const replay = call({ path: '/api/v1/Bookings/' });
+    await expect(replay.result).resolves.toEqual({ reference: 'FLY-1' });
+    expect(created).toHaveLength(1);
+    expect(store.rows.size).toBe(1);
   });
 });

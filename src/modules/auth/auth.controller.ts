@@ -188,7 +188,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Rotate the session tokens',
     description:
-      'Reads the refresh cookie and replaces all three session cookies. Each refresh token works once; a request racing with the refresh that used it, within the grace period, receives the same new cookies.',
+      'Reads the refresh cookie and replaces all three session cookies. Each refresh token works once; a request racing with the refresh that used it, within the grace period, receives the same new cookies. One sign-in may rotate at most 30 times a minute (`REFRESH_ROTATIONS_PER_MINUTE`); beyond that the answer is 429 `RATE_LIMITED` and the cookie stays usable.',
   })
   @ApiNoContentResponse()
   async refresh(
