@@ -11,7 +11,13 @@ type Trip = Awaited<ReturnType<typeof listedJet>>;
 async function priceJet(
   request: APIRequestContext,
   trip: Trip,
-  charges: { waitingHourlyMinor: number; overnightMinor: number },
+  charges: {
+    waitingHourlyMinor: number;
+    overnightMinor: number;
+    /** Landing and handling where the location has none on record. */
+    landingFallbackMinor?: number;
+    handlingFallbackMinor?: number;
+  },
 ) {
   const rate = await request.put(
     `operator/aircraft/${trip.aircraftId}/pricing`,
@@ -32,8 +38,8 @@ async function priceJet(
       minBillableHours: null,
       positioningRateFactor: 0.8,
       freeWithinKm: 0,
-      landingFallbackMinor: null,
-      handlingFallbackMinor: null,
+      landingFallbackMinor: charges.landingFallbackMinor ?? null,
+      handlingFallbackMinor: charges.handlingFallbackMinor ?? null,
       waitingHourlyMinor: charges.waitingHourlyMinor,
       waitingFreeHours: 1,
       overnightMinor: charges.overnightMinor,
@@ -155,9 +161,13 @@ test.describe('round trips', () => {
     baseURL,
   }) => {
     const trip = await listedJet({ request, playwright, baseURL });
+    // Landing and handling on record: returning to base lands at the base
+    // and again at Goa, and a charge not on record would make it incomplete.
     await priceJet(request, trip, {
       waitingHourlyMinor: 1_000_000,
       overnightMinor: 50_000_000,
+      landingFallbackMinor: 100_000,
+      handlingFallbackMinor: 50_000,
     });
     // 20:00 UTC is 01:30 the next morning in India: one night at Goa.
     const { search, result } = await roundTrip(request, trip, inDays(4, 20));

@@ -676,8 +676,9 @@ function priceTrip(
 
   // Landing at each arrival; handling at both ends of each leg. Returning
   // to base between the flights adds two legs: to the base and back to the
-  // destination. The base is named in warnings, never in exclusions, which
-  // customers see.
+  // destination. A ferry leg's charge not on record makes that strategy
+  // incomplete, so it never undercuts a complete WAIT. The base is named in
+  // warnings, never in exclusions, which customers see.
   const ferryBase =
     turn?.strategy === 'RETURN_TO_BASE' &&
     aircraft.base &&
@@ -708,8 +709,15 @@ function priceTrip(
     point.id === ferryBase?.id && point.id !== origin.id
       ? "the aircraft's base"
       : point.name;
+  // Indexes of the ferry legs' arrivals and ends in the lists above.
+  const ferryArrival = (index: number) =>
+    ferryBase && (index === 1 || index === 2);
+  const ferryStop = (index: number) => ferryBase && index >= 2 && index <= 5;
+  const lackFor = (ferry: unknown, exclusion: string) => {
+    if (ferry && !missing.includes(exclusion)) missing.push(exclusion);
+  };
   let landing = 0;
-  for (const point of arrivals) {
+  for (const [index, point] of arrivals.entries()) {
     const landingAt = chargeAt(point, aircraft.category);
     const fallbackLanding = rules.LANDING?.config;
     const amount = landingAt?.landingMinor ?? fallbackLanding?.amountMinor;
@@ -719,11 +727,12 @@ function priceTrip(
       const exclusion = `Landing charges at ${placeName(point)}`;
       if (!warnings.includes(warning)) warnings.push(warning);
       if (!exclusions.includes(exclusion)) exclusions.push(exclusion);
+      lackFor(ferryArrival(index), exclusion);
     } else landing += amount;
   }
   let handling = 0;
   let handlingKnown = true;
-  for (const point of stops) {
+  for (const [index, point] of stops.entries()) {
     const at = chargeAt(point, aircraft.category);
     const amount = at?.handlingMinor ?? rules.HANDLING?.config.amountMinor;
     if (at == null && rules.HANDLING) used.push(rules.HANDLING.rule);
@@ -731,6 +740,7 @@ function priceTrip(
       handlingKnown = false;
       const exclusion = `Handling at ${placeName(point)}`;
       if (!exclusions.includes(exclusion)) exclusions.push(exclusion);
+      lackFor(ferryStop(index), exclusion);
     } else handling += amount;
   }
   if (!handlingKnown) warnings.push('Some handling charges are not on record.');
