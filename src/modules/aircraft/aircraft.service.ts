@@ -44,10 +44,11 @@ import {
   type AircraftAction,
   type MaterialField,
 } from './aircraft-transitions.js';
-import type {
-  AircraftMedicalEquipment,
-  AircraftRestrictions,
-  AircraftSpecifications,
+import {
+  parseMedicalEquipment,
+  type AircraftMedicalEquipment,
+  type AircraftRestrictions,
+  type AircraftSpecifications,
 } from './aircraft-json.js';
 import {
   HOME_BASE_SELECT,
@@ -799,7 +800,14 @@ export class AircraftService implements OnModuleInit {
     }
     if (changes.medicalEquipment !== undefined) {
       data.medicalEquipment = storedJson(changes.medicalEquipment);
-      if (!jsonEqual(changes.medicalEquipment, aircraft.medicalEquipment)) {
+      // Against what the detail shows, so re-sending a row written before
+      // the shapes (D-104) is not an edit.
+      if (
+        !jsonEqual(
+          changes.medicalEquipment,
+          parseMedicalEquipment(aircraft.medicalEquipment),
+        )
+      ) {
         materialTouched.push('medicalEquipment');
       }
     }

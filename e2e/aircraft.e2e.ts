@@ -429,6 +429,20 @@ test.describe('operator aircraft', () => {
     expect(detail.specifications).toEqual({ cabin: 'Club four' });
     expect(detail.restrictions).toBeNull();
     expect(detail.medicalEquipment).toEqual({ ventilator: true });
+
+    // Sending back what the detail showed is not a material edit.
+    await withPrisma((prisma) =>
+      prisma.aircraft.update({
+        where: { id: aircraft.id },
+        data: { listingStatus: 'APPROVED' },
+      }),
+    );
+    const resent = await request.patch(`operator/aircraft/${aircraft.id}`, {
+      headers,
+      data: { medicalEquipment: detail.medicalEquipment },
+    });
+    expect(resent.status()).toBe(200);
+    expect((await resent.json()).data.listingStatus).toBe('APPROVED');
   });
 
   test('a suspended aircraft cannot be edited back into review', async ({

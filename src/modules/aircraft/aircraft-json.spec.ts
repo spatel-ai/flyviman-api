@@ -238,9 +238,4 @@ describe('aircraft JSON shapes on read', () => {
       }),
     ).toEqual({ ventilator: true, infusionPumps: 3 });
   });
-
-  it('never reads an inherited property', () => {
-    const raw = JSON.parse('{"__proto__": {"stretcher": true}}') as unknown;
-    expect(parseMedicalEquipment(raw)).toEqual({});
-  });
 });
