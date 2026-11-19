@@ -57,3 +57,32 @@ export class AdminEnquiryResponseDto {
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
 }
+
+/**
+ * One row of the list: only what the list shows. Contact details and the
+ * message are personal data and come only with the single enquiry.
+ */
+export class AdminEnquirySummaryDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'FLY-ENQ-7K2M9Q' })
+  reference: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ enum: EnquiryTopic, enumName: 'EnquiryTopic' })
+  topic: EnquiryTopic;
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    type: String,
+    description: 'When operations marked it handled; null while unhandled.',
+  })
+  handledAt: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  createdAt: string;
+}

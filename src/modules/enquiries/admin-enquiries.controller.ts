@@ -20,6 +20,7 @@ import { Role } from '../../generated/prisma/enums.js';
 import { Roles } from '../auth/auth.decorators.js';
 import {
   AdminEnquiryResponseDto,
+  AdminEnquirySummaryDto,
   ListEnquiriesDto,
 } from './dto/admin-enquiries.dto.js';
 import { EnquiriesService } from './enquiries.service.js';
@@ -38,6 +39,17 @@ function toDto(row: Enquiry): AdminEnquiryResponseDto {
   };
 }
 
+function toSummary(row: Enquiry): AdminEnquirySummaryDto {
+  return {
+    id: row.id,
+    reference: row.reference,
+    name: row.name,
+    topic: row.topic,
+    handledAt: row.handledAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 @ApiTags('admin: enquiries')
 @ApiCookieAuth()
 @Controller('admin/enquiries')
@@ -49,15 +61,15 @@ export class AdminEnquiriesController {
   @ApiOperation({
     summary: 'List sales enquiries',
     description:
-      'Newest first. Personal data: contact details and message are never logged.',
+      'Newest first. Summary rows only; contact details and the message come with the single enquiry. Personal data is never logged.',
   })
-  @ApiOkResponse({ type: [AdminEnquiryResponseDto] })
+  @ApiOkResponse({ type: [AdminEnquirySummaryDto] })
   async list(
     @Query() query: ListEnquiriesDto,
-  ): Promise<Paginated<AdminEnquiryResponseDto>> {
+  ): Promise<Paginated<AdminEnquirySummaryDto>> {
     const result = await this.enquiries.list(query);
     return new Paginated(
-      result.items.map(toDto),
+      result.items.map(toSummary),
       result.page,
       result.pageSize,
       result.total,
