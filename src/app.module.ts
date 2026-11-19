@@ -10,6 +10,7 @@ import {
   IdempotencyStore,
   RedisIdempotencyStore,
 } from './common/idempotency/idempotency.store.js';
+import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
 import { loggerOptions } from './common/logging/logger.options.js';
 import { RateLimitConfig } from './common/rate-limit/rate-limit.js';
@@ -80,6 +81,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     // Interceptors wrap in this order: the envelope is outermost.
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: IdempotencyStore, useClass: RedisIdempotencyStore },
   ],

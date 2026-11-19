@@ -336,9 +336,26 @@ test.describe('admin enquiries', () => {
       id: second.id,
       name: 'Asha Rao',
       topic: 'CONSULTANCY',
-      message: second.body.message,
       handledAt: null,
     });
+    // The list is a summary: no contact details, no message.
+    expect(Object.keys(body.data[0]).sort()).toEqual([
+      'createdAt',
+      'handledAt',
+      'id',
+      'name',
+      'reference',
+      'topic',
+    ]);
+    const full = await (
+      await request.get(`admin/enquiries/${second.id}`)
+    ).json();
+    expect(full.data).toMatchObject({
+      email: second.body.email,
+      message: second.body.message,
+    });
+    expect(list.headers()['cache-control']).toBe('private, no-store');
+    expect(full.data.id).toBe(second.id);
     expect(body.meta.pageSize).toBe(1);
     expect(body.meta.total).toBeGreaterThanOrEqual(2);
 
@@ -417,6 +434,18 @@ test.describe('admin enquiries', () => {
     expect(
       (await handled.json()).data.map((row: { id: string }) => row.id),
     ).toContain(id);
+  });
+
+  test('signed-in responses are not cacheable, public ones are left alone', async ({
+    request,
+  }) => {
+    await signIn(request, 'ops');
+    const own = await request.get('admin/enquiries');
+    expect(own.headers()['cache-control']).toBe('private, no-store');
+    const bad = await request.get('admin/enquiries/not-a-uuid');
+    expect(bad.headers()['cache-control']).toBe('private, no-store');
+    const health = await request.get('health');
+    expect(health.headers()['cache-control']).toBeUndefined();
   });
 
   test('an unknown or malformed id is refused', async ({ request }) => {

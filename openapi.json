@@ -4012,7 +4012,7 @@
     },
     "/api/v1/admin/enquiries": {
       "get": {
-        "description": "Newest first. Personal data: contact details and message are never logged.",
+        "description": "Newest first. Summary rows only; contact details and the message come with the single enquiry. Personal data is never logged.",
         "operationId": "AdminEnquiriesController_list",
         "parameters": [
           {
@@ -4063,7 +4063,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AdminEnquiryResponseDto"
+                    "$ref": "#/components/schemas/AdminEnquirySummaryDto"
                   }
                 }
               }
@@ -9009,6 +9009,47 @@
         "required": [
           "reference",
           "receivedAt"
+        ]
+      },
+      "AdminEnquirySummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-ENQ-7K2M9Q"
+          },
+          "name": {
+            "type": "string"
+          },
+          "topic": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnquiryTopic"
+              }
+            ]
+          },
+          "handledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When operations marked it handled; null while unhandled."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "name",
+          "topic",
+          "handledAt",
+          "createdAt"
         ]
       },
       "AdminEnquiryResponseDto": {
