@@ -2,6 +2,10 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppException } from '../../common/errors/app.exception.js';
 import { Paginated } from '../../common/dto/paginated.js';
+import {
+  type IdempotencyClaim,
+  markIdempotencyCommitted,
+} from '../../common/idempotency/idempotency.store.js';
 import type { Enquiry, Prisma } from '../../generated/prisma/client.js';
 import {
   EnquiryTopic,
@@ -50,7 +54,11 @@ export class EnquiriesService {
     private readonly config: ConfigService,
   ) {}
 
-  async create(input: CreateEnquiryDto): Promise<EnquiryResponseDto> {
+  /** `claim` is the request's `Idempotency-Key`, committed with the enquiry. */
+  async create(
+    input: CreateEnquiryDto,
+    claim: IdempotencyClaim,
+  ): Promise<EnquiryResponseDto> {
     if (!input.email && !input.phone) {
       throw new AppException(
         'VALIDATION_ERROR',
@@ -64,6 +72,7 @@ export class EnquiriesService {
       try {
         const { enquiry, notificationId } = await this.prisma.$transaction(
           async (tx) => {
+            await markIdempotencyCommitted(tx, claim);
             const enquiry = await tx.enquiry.create({
               data: {
                 reference: enquiryReference(),

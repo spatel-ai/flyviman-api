@@ -13,10 +13,15 @@ import {
 
 const CREATED_AT = new Date('2026-11-13T09:30:00.000Z');
 
-function setup(options: { clashes?: number } = {}) {
+const CLAIM = { id: 'k-1', ownerToken: 'owner-1' };
+
+function setup(options: { clashes?: number; claimLost?: boolean } = {}) {
   let clashes = options.clashes ?? 0;
   const created: Record<string, unknown>[] = [];
   const tx = {
+    idempotencyKey: {
+      updateMany: vi.fn(async () => ({ count: options.claimLost ? 0 : 1 })),
+    },
     enquiry: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         if (clashes > 0) {
@@ -76,7 +81,7 @@ describe('EnquiriesService.create', () => {
   it('needs an email address or a phone number', async () => {
     const { service, tx } = setup();
     await expect(
-      service.create(enquiry({ email: undefined, phone: undefined })),
+      service.create(enquiry({ email: undefined, phone: undefined }), CLAIM),
     ).rejects.toMatchObject({
       code: 'VALIDATION_ERROR',
       details: [{ field: 'email', issue: expect.any(String) }],
@@ -86,13 +91,16 @@ describe('EnquiriesService.create', () => {
 
   it('accepts a phone number alone', async () => {
     const { service, created } = setup();
-    await service.create(enquiry({ email: undefined, phone: '+919876543210' }));
+    await service.create(
+      enquiry({ email: undefined, phone: '+919876543210' }),
+      CLAIM,
+    );
     expect(created[0]).toMatchObject({ email: null, phone: '+919876543210' });
   });
 
   it('answers with the reference and time only', async () => {
     const { service } = setup();
-    const result = await service.create(enquiry());
+    const result = await service.create(enquiry(), CLAIM);
     expect(result).toEqual({
       reference: expect.stringMatching(ENQUIRY_REFERENCE),
       receivedAt: '2026-11-13T09:30:00.000Z',
@@ -101,7 +109,7 @@ describe('EnquiriesService.create', () => {
 
   it('audits the id and topic only, and queues one email to operations', async () => {
     const { service, audit, notifications, tx } = setup();
-    await service.create(enquiry());
+    await service.create(enquiry(), CLAIM);
     expect(audit.record).toHaveBeenCalledWith(
       {
         action: 'enquiry.create',
@@ -125,13 +133,31 @@ describe('EnquiriesService.create', () => {
 
   it('draws a new reference when one is already taken', async () => {
     const { service, tx } = setup({ clashes: 2 });
-    await service.create(enquiry());
+    await service.create(enquiry(), CLAIM);
     expect(tx.enquiry.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('commits the Idempotency-Key in the enquiry’s transaction', async () => {
+    const { service, tx } = setup();
+    await service.create(enquiry(), CLAIM);
+    expect(tx.idempotencyKey.updateMany).toHaveBeenCalledWith({
+      where: { ...CLAIM, status: 'IN_PROGRESS' },
+      data: { status: 'COMMITTED' },
+    });
+  });
+
+  it('creates nothing when a retry has taken the key over', async () => {
+    const { service, tx, notifications } = setup({ claimLost: true });
+    await expect(service.create(enquiry(), CLAIM)).rejects.toMatchObject({
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+    expect(tx.enquiry.create).not.toHaveBeenCalled();
+    expect(notifications.deliver).not.toHaveBeenCalled();
   });
 
   it('gives up after repeated clashes', async () => {
     const { service } = setup({ clashes: 10 });
-    await expect(service.create(enquiry())).rejects.toMatchObject({
+    await expect(service.create(enquiry(), CLAIM)).rejects.toMatchObject({
       code: 'P2002',
     });
   });

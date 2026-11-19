@@ -101,6 +101,47 @@ model AuditLog {
   @@index([actorId, createdAt])
 }
 
+/// Where an idempotent request has got to (`src/common/idempotency`).
+enum IdempotencyKeyStatus {
+  /// The first request holds the key and is running.
+  IN_PROGRESS
+  /// Its changes committed (in the same transaction as this status), but
+  /// the response is not stored yet.
+  COMMITTED
+  /// Finished; the stored response is replayed to repeats.
+  COMPLETED
+  /// It failed after its changes committed. Never replayed as a success
+  /// and never run again under this key.
+  FAILED
+}
+
+/// One `Idempotency-Key` per caller and route. The unique (scope, key) pair
+/// is what stops a repeat creating a second record; the owner token fences
+/// a request whose lock was taken over after it ran too long.
+model IdempotencyKey {
+  id             String               @id @default(uuid()) @db.Uuid
+  /// The caller (user id, or `anonymous`) and the route, `POST:/api/v1/...`.
+  scope          String
+  key            String               @db.Uuid
+  /// SHA-256 of the request body the key was first used with.
+  requestHash    String
+  status         IdempotencyKeyStatus
+  /// Changes on every claim; writes by a request that lost its claim match nothing.
+  ownerToken     String               @db.Uuid
+  /// A request still IN_PROGRESS after this is presumed dead and may be taken over.
+  lockedUntil    DateTime             @db.Timestamptz
+  responseStatus Int?
+  /// The handler's result (inside the envelope), replayed to repeats.
+  responseBody   Json?
+  /// After this the key may be used again (24 hours, api-design.md).
+  expiresAt      DateTime             @db.Timestamptz
+  createdAt      DateTime             @default(now()) @db.Timestamptz
+  updatedAt      DateTime             @updatedAt @db.Timestamptz
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+}
+
 // ---------------------------------------------------------------------------
 // M1. Identity
 // ---------------------------------------------------------------------------

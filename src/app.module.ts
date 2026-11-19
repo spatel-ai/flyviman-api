@@ -8,7 +8,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor.js';
 import {
   IdempotencyStore,
-  RedisIdempotencyStore,
+  PrismaIdempotencyStore,
 } from './common/idempotency/idempotency.store.js';
 import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor.js';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor.js';
@@ -83,7 +83,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
     { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
-    { provide: IdempotencyStore, useClass: RedisIdempotencyStore },
+    { provide: IdempotencyStore, useClass: PrismaIdempotencyStore },
   ],
 })
 export class AppModule {}

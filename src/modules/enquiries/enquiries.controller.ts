@@ -5,7 +5,11 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { Idempotent } from '../../common/idempotency/idempotency.interceptor.js';
+import {
+  Idempotent,
+  IdempotencyClaimParam,
+} from '../../common/idempotency/idempotency.interceptor.js';
+import type { IdempotencyClaim } from '../../common/idempotency/idempotency.store.js';
 import { EnquiryRateLimit } from '../../common/rate-limit/rate-limit.js';
 import { Public } from '../auth/auth.decorators.js';
 import { CreateEnquiryDto, EnquiryResponseDto } from './dto/enquiry.dto.js';
@@ -32,7 +36,10 @@ export class EnquiriesController {
     schema: { type: 'string', format: 'uuid' },
   })
   @ApiCreatedResponse({ type: EnquiryResponseDto })
-  create(@Body() body: CreateEnquiryDto): Promise<EnquiryResponseDto> {
-    return this.enquiries.create(body);
+  create(
+    @Body() body: CreateEnquiryDto,
+    @IdempotencyClaimParam() claim: IdempotencyClaim,
+  ): Promise<EnquiryResponseDto> {
+    return this.enquiries.create(body, claim);
   }
 }
