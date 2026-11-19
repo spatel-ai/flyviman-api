@@ -289,7 +289,7 @@ test.describe.serial('admin pricing rules', () => {
     await finance.dispose();
   });
 
-  test('finance sets a markup, a service fee and a discount; each reaches the customer as its own line', async ({
+  test('finance sets a markup, a service fee and a discount; the fee and discount reach the customer as their own lines', async ({
     request,
     playwright,
     baseURL,
@@ -348,7 +348,8 @@ test.describe.serial('admin pricing rules', () => {
     ).data;
     const shown = (code: string) =>
       detail.breakdown.find((line: { code: string }) => line.code === code);
-    expect(shown('MARKUP')?.amountMinor).toBeGreaterThan(0);
+    // The markup is part of Flying for customers, never its own line.
+    expect(shown('MARKUP')).toBeUndefined();
     expect(shown('SERVICE_FEE')?.amountMinor).toBe(250_000);
     expect(shown('DISCOUNT')).toMatchObject({ label: 'Turboprop launch' });
     expect(shown('DISCOUNT').amountMinor).toBeLessThan(0);
@@ -365,6 +366,11 @@ test.describe.serial('admin pricing rules', () => {
       await (await finance.get(`admin/price-calculations/${id}`)).json()
     ).data;
     expect(full.discountMinor).toBe(-shown('DISCOUNT').amountMinor);
+    const markup = full.breakdown.find(
+      (line: { code: string }) => line.code === 'MARKUP',
+    );
+    expect(markup.amountMinor).toBeGreaterThan(0);
+    expect(full.finance.platformRevenueMinor).toBeGreaterThanOrEqual(0);
     expect(
       full.finance.operatorPayableMinor +
         full.finance.platformRevenueMinor +

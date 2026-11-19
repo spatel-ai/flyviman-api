@@ -877,6 +877,33 @@ describe('markup, service fee and discount (M5 4c)', () => {
     });
   });
 
+  it('caps the discount at what Flyviman earns on the trip', () => {
+    const result = run([
+      RATE,
+      rule('COMMISSION', { percent: 10, mode: 'DEDUCTED' }),
+      gst,
+      rule('SERVICE_FEE', { amountMinor: 200_000 }),
+      rule('DISCOUNT', { name: 'Big offer', percent: 50 }),
+    ]);
+    // Offered 50% of 1,02,00,000; Flyviman earns 10,00,000 + 2,00,000.
+    expect(result).toMatchObject({
+      discountMinor: 1_200_000,
+      platformRevenueMinor: 0,
+      operatorPayableMinor: 9_000_000,
+      taxMinor: 1_620_000, // 18% of 1,02,00,000 − 12,00,000
+      totalMinor: 10_620_000,
+    });
+    expect(result.totalMinor).toBe(sum(result));
+    expect(result.assumptions.join(' ')).toMatch(/Big offer is limited/);
+    // Uncapped, nothing is said.
+    const small = run([
+      RATE,
+      rule('COMMISSION', { percent: 10, mode: 'ADD_ON' }),
+      ...PLATFORM,
+    ]);
+    expect(small.assumptions.join(' ')).not.toMatch(/limited/);
+  });
+
   it('a zero setting adds no line', () => {
     const result = run([
       RATE,

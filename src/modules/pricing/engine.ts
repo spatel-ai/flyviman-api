@@ -658,10 +658,19 @@ function priceTrip(
   }
   feesMinor += markupMinor + serviceFeeMinor;
 
+  // Never more than Flyviman earns on the trip, so platform revenue never
+  // goes below zero and the operator's payable never moves.
   const discount = use(rules.DISCOUNT);
-  const discountMinor = discount
+  const platformMinor = commissionMinor + markupMinor + serviceFeeMinor;
+  const offeredMinor = discount
     ? Math.round(((baseMinor + feesMinor) * discount.percent) / 100)
     : 0;
+  const discountMinor = Math.min(offeredMinor, platformMinor);
+  if (discountMinor < offeredMinor) {
+    assumptions.push(
+      `${discount!.name} is limited to Flyviman's charges on this trip`,
+    );
+  }
   if (discountMinor > 0) {
     breakdown.push({
       code: 'DISCOUNT',
