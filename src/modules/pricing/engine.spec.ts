@@ -894,14 +894,20 @@ describe('markup, service fee and discount (M5 4c)', () => {
       totalMinor: 10_620_000,
     });
     expect(result.totalMinor).toBe(sum(result));
-    expect(result.assumptions.join(' ')).toMatch(/Big offer is limited/);
+    expect(result.assumptions).toContain(
+      'Big offer applied up to its limit for this trip',
+    );
+    // The detail stays in the stored line, which customers never see.
+    expect(result.breakdown.find((l) => l.code === 'DISCOUNT')?.basis).toMatch(
+      /5100000 offered.*limited to Flyviman's charges/,
+    );
     // Uncapped, nothing is said.
     const small = run([
       RATE,
       rule('COMMISSION', { percent: 10, mode: 'ADD_ON' }),
       ...PLATFORM,
     ]);
-    expect(small.assumptions.join(' ')).not.toMatch(/limited/);
+    expect(small.assumptions.join(' ')).not.toMatch(/its limit/);
   });
 
   it('a zero setting adds no line', () => {

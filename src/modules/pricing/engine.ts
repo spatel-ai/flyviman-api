@@ -666,17 +666,20 @@ function priceTrip(
     ? Math.round(((baseMinor + feesMinor) * discount.percent) / 100)
     : 0;
   const discountMinor = Math.min(offeredMinor, platformMinor);
-  if (discountMinor < offeredMinor) {
-    assumptions.push(
-      `${discount!.name} is limited to Flyviman's charges on this trip`,
-    );
+  const capped = discountMinor < offeredMinor;
+  if (capped) {
+    // Customers see only that a limit applied; the stored line's basis
+    // keeps the detail.
+    assumptions.push(`${discount!.name} applied up to its limit for this trip`);
   }
   if (discountMinor > 0) {
     breakdown.push({
       code: 'DISCOUNT',
       label: discount!.name,
       amountMinor: -discountMinor,
-      basis: `${discount!.percent}% of the price before tax`,
+      basis: capped
+        ? `${discount!.percent}% of the price before tax (${offeredMinor} offered), limited to Flyviman's charges on this trip`
+        : `${discount!.percent}% of the price before tax`,
     });
   }
 
