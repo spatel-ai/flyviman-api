@@ -33,8 +33,10 @@ async function refused(sql: string, reason: RegExp) {
 const APPEND_ONLY = [
   'AuditLog',
   'BookingEvent',
+  'Consent',
   'PaymentEvent',
   'PolicyVersion',
+  'PriceCalculation',
 ];
 
 test.describe('The API database role', () => {
@@ -174,6 +176,7 @@ test.describe('The API database role', () => {
       DATABASE_URL: owner!,
       REQUIRE_RESTRICTED_DB_ROLE: 'true',
       PORT: '1',
+      LOG_LEVEL: 'info',
     });
     expect(code).not.toBe(0);
     expect(output).toContain('Refusing to start (REQUIRE_RESTRICTED_DB_ROLE)');
@@ -185,6 +188,7 @@ test.describe('The API database role', () => {
       REQUIRE_RESTRICTED_DB_ROLE: 'true',
       // A port next to this slot's three test servers.
       PORT: String(Number(process.env.PORT ?? 4000) + 3),
+      LOG_LEVEL: 'info',
     });
     expect(output).not.toContain('Refusing to start');
     expect(output).toContain('API listening');
