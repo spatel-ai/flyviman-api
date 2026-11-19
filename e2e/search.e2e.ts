@@ -5,7 +5,8 @@ import {
   aircraftBody,
   approvedOperator,
 } from './support/fleet.js';
-import { csrfHeaders } from './support/session.js';
+import { listedJet, searchFor } from './support/pricing.js';
+import { csrfHeaders, signIn } from './support/session.js';
 
 /** Charter and helicopter search (M5, slice 1). */
 
@@ -230,6 +231,83 @@ test.describe('charter search', () => {
       'search/00000000-0000-4000-8000-000000000000',
     );
     expect(missing.status()).toBe(404);
+  });
+
+  test('a price above ₹2.15 crore (the old 32-bit ceiling) is offered, stored and shown as an exact integer', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const trip = await listedJet({ request, playwright, baseURL });
+    // ₹3 crore an hour, within the operator input ceiling of ₹10 crore.
+    const rate = await request.put(
+      `operator/aircraft/${trip.aircraftId}/pricing`,
+      {
+        headers: await csrfHeaders(request),
+        data: {
+          hourlyRateMinor: 3_000_000_000,
+          taxInclusive: false,
+          commissionInclusive: false,
+          minBillableHours: null,
+        },
+      },
+    );
+    expect(rate.status()).toBe(200);
+    const { searchId, result } = await searchFor(request, trip);
+    const amount = result.price.amountMinor;
+    expect(Number.isSafeInteger(amount)).toBe(true);
+    expect(amount).toBeGreaterThan(2_147_483_647);
+    expect(result.price.priceType).toBe('ESTIMATE');
+
+    const detail = (
+      await (
+        await request.get(`search/${searchId}/results/${result.resultId}`)
+      ).json()
+    ).data;
+    expect(
+      detail.breakdown.reduce(
+        (total: number, line: { amountMinor: number }) =>
+          total + line.amountMinor,
+        0,
+      ),
+    ).toBe(amount);
+
+    const stored = await withPrisma((prisma) =>
+      prisma.priceCalculation.findFirstOrThrow({
+        where: { searchId, aircraftId: trip.aircraftId },
+      }),
+    );
+    expect(stored.totalMinor).toBe(BigInt(amount));
+
+    // The calculation viewer returns every amount as a JSON integer.
+    const finance = await playwright.request.newContext({ baseURL });
+    await signIn(finance, 'finance');
+    const list = (
+      await (
+        await finance.get('admin/price-calculations', {
+          params: { searchId, aircraftId: trip.aircraftId },
+        })
+      ).json()
+    ).data;
+    expect(list).toHaveLength(1);
+    expect(list[0].totalMinor).toBe(amount);
+    const full = (
+      await (await finance.get(`admin/price-calculations/${stored.id}`)).json()
+    ).data;
+    expect(full.totalMinor).toBe(amount);
+    for (const value of [
+      full.baseMinor,
+      full.feesMinor,
+      full.taxMinor,
+      full.discountMinor,
+      full.finance.operatorPayableMinor,
+      full.finance.platformRevenueMinor,
+    ]) {
+      expect(Number.isSafeInteger(value)).toBe(true);
+    }
+    expect(full.baseMinor).toBe(Number(stored.baseMinor));
+    expect(full.finance.operatorPayableMinor).toBeGreaterThan(2_147_483_647);
+    await finance.dispose();
   });
 });
 

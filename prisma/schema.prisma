@@ -797,13 +797,13 @@ model PriceCalculation {
   inputs                Json
   appliedRules          Json
   breakdown             Json
-  baseMinor             Int
-  feesMinor             Int
-  taxMinor              Int
-  discountMinor         Int
-  totalMinor            Int
-  operatorPayableMinor  Int
-  platformRevenueMinor  Int
+  baseMinor             BigInt
+  feesMinor             BigInt
+  taxMinor              BigInt
+  discountMinor         BigInt
+  totalMinor            BigInt
+  operatorPayableMinor  BigInt
+  platformRevenueMinor  BigInt
   currency              String    @db.Char(3)
   priceType             PriceType
   validUntil            DateTime  @db.Timestamptz

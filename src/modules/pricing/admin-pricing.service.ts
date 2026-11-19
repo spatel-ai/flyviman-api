@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { jsonEqual } from '../../common/json-equal.js';
+import { minorToNumber } from '../../common/money.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import {
@@ -333,10 +334,10 @@ export class AdminPricingService {
         amountMinor: finance || line.code === 'TAX' ? line.amountMinor : null,
         basis: finance ? (line.basis ?? null) : null,
       })),
-      baseMinor: finance ? row.baseMinor : null,
-      feesMinor: finance ? row.feesMinor : null,
-      taxMinor: row.taxMinor,
-      discountMinor: row.discountMinor,
+      baseMinor: finance ? minorToNumber(row.baseMinor) : null,
+      feesMinor: finance ? minorToNumber(row.feesMinor) : null,
+      taxMinor: minorToNumber(row.taxMinor),
+      discountMinor: minorToNumber(row.discountMinor),
       appliedRules: applied.map((rule) => ({
         id: rule.id,
         type: rule.type,
@@ -354,8 +355,8 @@ export class AdminPricingService {
       overrideReason: row.overrideReason,
       finance: finance
         ? {
-            operatorPayableMinor: row.operatorPayableMinor,
-            platformRevenueMinor: row.platformRevenueMinor,
+            operatorPayableMinor: minorToNumber(row.operatorPayableMinor),
+            platformRevenueMinor: minorToNumber(row.platformRevenueMinor),
           }
         : null,
     });
@@ -460,7 +461,7 @@ function toSummary(
     aircraftLabel: labels.aircraft.get(row.aircraftId) ?? null,
     operatorId: row.operatorId,
     operatorName: labels.operators.get(row.operatorId) ?? null,
-    totalMinor: row.totalMinor,
+    totalMinor: minorToNumber(row.totalMinor),
     currency: row.currency,
     priceType: row.priceType,
     validUntil: row.validUntil.toISOString(),
