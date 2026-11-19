@@ -10,5 +10,6 @@ import { SearchService } from './search.service.js';
   imports: [LocationsModule, MatchingModule, PricingModule, RoutingModule],
   controllers: [SearchController],
   providers: [SearchService],
+  exports: [SearchService],
 })
 export class SearchModule {}

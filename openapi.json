@@ -4470,6 +4470,123 @@
         ]
       }
     },
+    "/api/v1/bookings": {
+      "post": {
+        "description": "Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); 422 `BOOKING_PRICE_ON_REQUEST` for a result without a price; 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search, result or passenger that is not found or not the caller’s. Holds the aircraft for 24 hours (or until the trip ends) while the operator answers. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "operationId": "BookingsController_create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each booking request and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingCreatedDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Request a booking from a charter or helicopter search result",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}": {
+      "get": {
+        "description": "Passengers show only the last four characters of a document number.",
+        "operationId": "BookingsController_get",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One of the caller’s bookings: itinerary, price, statuses, terms",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/category-config": {
+      "get": {
+        "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
+        "operationId": "AdminCategoryConfigController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Service category configuration",
+        "tags": [
+          "admin: configuration"
+        ]
+      }
+    },
     "/api/v1/webhooks/payments/{provider}": {
       "post": {
         "description": "For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).",
@@ -4521,37 +4638,6 @@
         "summary": "Gateway notification",
         "tags": [
           "webhooks"
-        ]
-      }
-    },
-    "/api/v1/admin/category-config": {
-      "get": {
-        "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
-        "operationId": "AdminCategoryConfigController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "Service category configuration",
-        "tags": [
-          "admin: configuration"
         ]
       }
     },
@@ -9959,16 +10045,490 @@
           "createdAt"
         ]
       },
-      "WebhookAckResponseDto": {
+      "CreateBookingDto": {
         "type": "object",
         "properties": {
-          "received": {
-            "type": "boolean",
-            "example": true
+          "searchId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "From `POST /search/charter` or `/search/helicopter`."
+          },
+          "resultId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The chosen result."
+          },
+          "expectedTotalMinor": {
+            "type": "number",
+            "description": "Paise: the estimate the customer saw and agrees to. The price is worked out again; if it differs, 409 `BOOKING_PRICE_CHANGED` carries the new estimate, and the customer can agree to it by sending it here with a new `Idempotency-Key`."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "passengerIds": {
+            "description": "Saved passengers (`/me/passengers`) to copy onto the booking, at most the search’s passenger count. May be left out and set later.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "specialRequests": {
+            "type": "string",
+            "maxLength": 1000
           }
         },
         "required": [
-          "received"
+          "searchId",
+          "resultId",
+          "expectedTotalMinor",
+          "currency"
+        ]
+      },
+      "BookingStatus": {
+        "type": "string",
+        "enum": [
+          "REQUESTED",
+          "OPERATOR_PENDING",
+          "CLARIFICATION_REQUESTED",
+          "PRICE_CONFIRMED",
+          "AWAITING_PAYMENT",
+          "CONFIRMED",
+          "SCHEDULED",
+          "COMPLETED",
+          "OPERATOR_UNAVAILABLE",
+          "QUOTE_DECLINED",
+          "EXPIRED",
+          "CANCELLED"
+        ]
+      },
+      "BookingPaymentStatus": {
+        "type": "string",
+        "enum": [
+          "UNPAID",
+          "PARTIALLY_PAID",
+          "PAID",
+          "REFUND_PENDING",
+          "REFUNDED"
+        ]
+      },
+      "BookingPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when an `ESTIMATE` holds. The operator’s quote replaces it."
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency",
+          "validUntil"
+        ]
+      },
+      "BookingCreatedDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "#/components/schemas/BookingPriceDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "paymentStatus",
+          "price",
+          "createdAt"
+        ]
+      },
+      "ItineraryLegDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "originId",
+          "originName",
+          "destinationId",
+          "destinationName",
+          "departureAt"
+        ]
+      },
+      "ItineraryAircraftDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "manufacturer",
+          "model",
+          "category",
+          "passengerCapacity"
+        ]
+      },
+      "ItineraryDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "SEARCH"
+            ]
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "legs": {
+            "description": "One leg, or the outbound and the return.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryLegDto"
+            }
+          },
+          "roundTripStrategy": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoundTripStrategy"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/ItineraryAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "distanceKm": {
+            "type": "number"
+          },
+          "flightMinutes": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "version",
+          "source",
+          "searchId",
+          "resultId",
+          "tripType",
+          "passengerCount",
+          "legs",
+          "roundTripStrategy",
+          "aircraft",
+          "operatorName",
+          "distanceKm",
+          "flightMinutes"
+        ]
+      },
+      "CancellationChargeDto": {
+        "type": "object",
+        "properties": {
+          "minHoursBeforeDeparture": {
+            "type": "number"
+          },
+          "chargePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "minHoursBeforeDeparture",
+          "chargePercent"
+        ]
+      },
+      "CancellationTermsDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "PLATFORM",
+              "OPERATOR_QUOTE"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "description": "The text shown before the customer committed."
+          },
+          "charges": {
+            "description": "Longest notice first. Empty: nothing can be charged yet.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CancellationChargeDto"
+            }
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "source",
+          "summary",
+          "charges",
+          "acceptedAt"
+        ]
+      },
+      "BookingPassengerDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "gender": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Gender"
+              }
+            ]
+          },
+          "nationality": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentType": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdentityDocumentType"
+              }
+            ]
+          },
+          "documentNumberLast4": {
+            "type": "string",
+            "nullable": true,
+            "description": "The document number’s last four characters only."
+          },
+          "documentExpiry": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "specialAssistance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "gender",
+          "nationality",
+          "documentType",
+          "documentNumberLast4",
+          "documentExpiry",
+          "specialAssistance"
+        ]
+      },
+      "BookingResponseDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "description": "Separate from `status`: payment never confirms a booking by itself.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "bookingMode": {
+            "type": "string",
+            "enum": [
+              "INSTANT",
+              "REQUEST"
+            ],
+            "description": "As resolved when the booking was made."
+          },
+          "paymentModel": {
+            "type": "string",
+            "enum": [
+              "A_INSTANT",
+              "B_OPERATOR_CONFIRMED",
+              "C_DEPOSIT"
+            ],
+            "description": "As resolved when the booking was made."
+          },
+          "price": {
+            "$ref": "#/components/schemas/BookingPriceDto"
+          },
+          "itinerary": {
+            "$ref": "#/components/schemas/ItineraryDto"
+          },
+          "cancellationTerms": {
+            "$ref": "#/components/schemas/CancellationTermsDto"
+          },
+          "specialRequests": {
+            "type": "string",
+            "nullable": true
+          },
+          "passengers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingPassengerDto"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "category",
+          "status",
+          "paymentStatus",
+          "bookingMode",
+          "paymentModel",
+          "price",
+          "itinerary",
+          "cancellationTerms",
+          "specialRequests",
+          "passengers",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "BookingMode": {
@@ -10033,6 +10593,18 @@
           "bookingMode",
           "paymentModel",
           "updatedAt"
+        ]
+      },
+      "WebhookAckResponseDto": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "received"
         ]
       },
       "EnquiryTopic": {

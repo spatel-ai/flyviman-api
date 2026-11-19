@@ -451,7 +451,11 @@ export class AvailabilityService {
     if (block.reason === AvailabilityBlockReason.SOFT_HOLD) {
       await this.ownedAircraft(user, aircraftId);
     }
-    if (block.reason === AvailabilityBlockReason.BOOKING) {
+    // A booking's soft hold is the booking's, like a confirmed hold.
+    if (
+      block.reason === AvailabilityBlockReason.BOOKING ||
+      block.bookingId !== null
+    ) {
       throw new AppException(
         'AVAILABILITY_CONFLICT',
         'A booking hold is removed when the booking changes.',
@@ -464,6 +468,7 @@ export class AvailabilityService {
         where: {
           id: block.id,
           reason: { not: AvailabilityBlockReason.BOOKING },
+          bookingId: null,
         },
       });
       if (count !== 1) throw notFound('Block');
@@ -590,6 +595,61 @@ export class AvailabilityService {
     for (const { aircraftId, ...block } of blocks)
       windows.get(aircraftId)?.blocks.push(block);
     return windows;
+  }
+
+  /**
+   * Places a booking's soft hold on the aircraft, in the booking's own
+   * transaction. Matching read the calendar outside it, so this takes a lock
+   * on the aircraft and looks again for anything in the way (the blocks
+   * search counts: every block but a lapsed soft hold). `false` when the
+   * time is no longer free; nothing is written then.
+   */
+  async placeBookingHold(
+    tx: Prisma.TransactionClient,
+    hold: {
+      aircraftId: string;
+      bookingId: string;
+      startsAt: Date;
+      endsAt: Date;
+      expiresAt: Date;
+    },
+  ): Promise<boolean> {
+    const key = `availability_hold:${hold.aircraftId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    const clash = await tx.availabilityBlock.findFirst({
+      where: {
+        aircraftId: hold.aircraftId,
+        startsAt: { lt: hold.endsAt },
+        endsAt: { gt: hold.startsAt },
+        OR: [
+          { reason: { not: AvailabilityBlockReason.SOFT_HOLD } },
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (clash) return false;
+    const row = await tx.availabilityBlock.create({
+      data: {
+        aircraftId: hold.aircraftId,
+        bookingId: hold.bookingId,
+        startsAt: hold.startsAt,
+        endsAt: hold.endsAt,
+        reason: AvailabilityBlockReason.SOFT_HOLD,
+        expiresAt: hold.expiresAt,
+      },
+    });
+    await this.audit.record(
+      {
+        action: 'availability.block.add',
+        entityType: 'AvailabilityBlock',
+        entityId: row.id,
+        after: { ...blockValues(row), bookingId: row.bookingId },
+      },
+      tx,
+    );
+    return true;
   }
 
   /** Used by tests and, later, by bookings. The database constraint is the backstop. */

@@ -674,7 +674,7 @@ model AvailabilityBlock {
   startsAt   DateTime                @db.Timestamptz
   endsAt     DateTime                @db.Timestamptz
   reason     AvailabilityBlockReason
-  /// Set when bookings exist (M8). No foreign key until that table ships.
+  /// The booking this hold belongs to (M8). Set only by bookings.
   bookingId  String?                 @db.Uuid
   expiresAt  DateTime?               @db.Timestamptz
   note       String?
@@ -682,9 +682,11 @@ model AvailabilityBlock {
   updatedAt  DateTime                @updatedAt @db.Timestamptz
 
   aircraft Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  booking  Booking? @relation(fields: [bookingId], references: [id], onDelete: Restrict)
 
   @@index([aircraftId, startsAt, endsAt])
   @@index([reason, expiresAt])
+  @@index([bookingId])
 }
 
 model ContentItem {
@@ -1071,17 +1073,18 @@ model Booking {
   createdAt          DateTime             @default(now()) @db.Timestamptz
   updatedAt          DateTime             @updatedAt @db.Timestamptz
 
-  customer       User               @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  operator       Operator?          @relation(fields: [operatorId], references: [id], onDelete: Restrict)
-  aircraft       Aircraft?          @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
-  calculation    PriceCalculation?  @relation(fields: [calculationId], references: [id], onDelete: Restrict)
-  acceptedQuote  Quote?             @relation("BookingAcceptedQuote", fields: [acceptedQuoteId], references: [id], onDelete: Restrict)
-  quotes         Quote[]            @relation("BookingQuotes")
+  customer       User                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  operator       Operator?           @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  aircraft       Aircraft?           @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  calculation    PriceCalculation?   @relation(fields: [calculationId], references: [id], onDelete: Restrict)
+  acceptedQuote  Quote?              @relation("BookingAcceptedQuote", fields: [acceptedQuoteId], references: [id], onDelete: Restrict)
+  quotes         Quote[]             @relation("BookingQuotes")
   passengers     BookingPassenger[]
   events         BookingEvent[]
   changeRequests ChangeRequest[]
   payments       Payment[]
   settlement     Settlement?
+  holds          AvailabilityBlock[]
 
   @@index([customerId, createdAt])
   @@index([operatorId, status])
