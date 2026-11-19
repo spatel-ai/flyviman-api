@@ -263,10 +263,71 @@ test.describe.serial('matching limits', () => {
     });
     expect(rule.status()).toBe(201);
 
+    // Searching every fixed-wing category: other categories can fly it,
+    // so only this aircraft is left out.
     const limited = await searchFor(request, trip);
     expect(limited.result).toBeUndefined();
     expect(await exclusionsOf(limited.searchId, aircraftId)).toEqual([
       'distance',
     ]);
+
+    // Searching heavy jets only: the trip itself is outside the limit.
+    const heavyOnly = async (departureAt: Date) =>
+      request.post('search/charter', {
+        headers: await csrfHeaders(request),
+        data: {
+          originId: mumbai,
+          destinationId: goa,
+          departureAt: departureAt.toISOString(),
+          passengerCount: 2,
+          category: CATEGORY,
+        },
+      });
+    const tooFar = await heavyOnly(inDays(4));
+    expect(tooFar.status()).toBe(400);
+    expect((await tooFar.json()).error).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: [{ field: 'destinationId' }],
+    });
+
+    const noticeRule = await finance.patch(
+      `admin/pricing-rules/${(await rule.json()).data.id}`,
+      {
+        headers: await csrfHeaders(finance),
+        data: {
+          config: { minimumNoticeMinutes: 10_080 },
+          reason: 'Heavy jets need a week',
+        },
+      },
+    );
+    expect(noticeRule.status()).toBe(200);
+    const tooSoon = await heavyOnly(inDays(4));
+    expect(tooSoon.status()).toBe(400);
+    const error = (await tooSoon.json()).error;
+    expect(error.details).toEqual([
+      {
+        field: 'departureAt',
+        issue: 'must be at least 168 hours from now for this trip',
+      },
+    ]);
+
+    // The fare calendar leaves those days without an estimate, not an error.
+    const calendar = await request.get('search/calendar', {
+      params: {
+        category: 'PRIVATE_CHARTER',
+        originId: mumbai,
+        destinationId: goa,
+        passengerCount: 2,
+        month: inDays(4).toISOString().slice(0, 7),
+        aircraftCategory: CATEGORY,
+      },
+    });
+    expect(calendar.status()).toBe(200);
+    const day = inDays(4).toISOString().slice(0, 10);
+    expect(
+      (await calendar.json()).data.days.find(
+        (entry: { date: string }) => entry.date === day,
+      ),
+    ).toMatchObject({ availableCount: 0, lowest: null });
   });
 });

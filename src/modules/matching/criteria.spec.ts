@@ -9,6 +9,7 @@ import {
   parseCapabilities,
   routeChecks,
   staticChecks,
+  tripLimitIssue,
   timeChecks,
   windowFree,
   type MatchPoint,
@@ -389,5 +390,62 @@ describe('location data', () => {
       690,
     );
     expect(localMinutes(new Date(), 'Nope/Nowhere')).toBeNull();
+  });
+});
+
+describe('tripLimitIssue', () => {
+  const trip = {
+    categories: ['LIGHT_JET' as const],
+    distanceKm: () => 500,
+    departureAt: timing.departureAt,
+    now: timing.now,
+  };
+
+  it('passes a trip within every limit', () => {
+    expect(
+      tripLimitIssue({
+        ...trip,
+        rules: [rule('PLATFORM', null, { maxLegKm: 1000 })],
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses a departure inside the platform or category notice', () => {
+    expect(
+      tripLimitIssue({
+        ...trip,
+        rules: [
+          rule('CATEGORY', 'LIGHT_JET', { minimumNoticeMinutes: 10_080 }),
+        ],
+      }),
+    ).toEqual({
+      field: 'departureAt',
+      issue: 'must be at least 168 hours from now for this trip',
+    });
+  });
+
+  it('refuses a leg outside the distance limits', () => {
+    expect(
+      tripLimitIssue({
+        ...trip,
+        rules: [rule('PLATFORM', null, { maxLegKm: 400 })],
+      })?.field,
+    ).toBe('destinationId');
+    expect(
+      tripLimitIssue({
+        ...trip,
+        rules: [rule('CATEGORY', 'LIGHT_JET', { minLegKm: 600 })],
+      })?.field,
+    ).toBe('destinationId');
+  });
+
+  it('keeps a search where another category can fly the trip', () => {
+    expect(
+      tripLimitIssue({
+        ...trip,
+        categories: ['LIGHT_JET', 'HEAVY_JET'],
+        rules: [rule('CATEGORY', 'HEAVY_JET', { maxLegKm: 100 })],
+      }),
+    ).toBeNull();
   });
 });

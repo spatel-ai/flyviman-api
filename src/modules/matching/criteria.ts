@@ -384,3 +384,59 @@ function toMinutes(time: string): number {
   const [hour, minute] = time.split(':').map(Number);
   return hour * 60 + minute;
 }
+
+/**
+ * Flyviman's notice and leg-distance limits are the same for every aircraft
+ * of a category, so when every searched category fails one, the trip itself
+ * cannot be flown and the search is refused (pricing-engine.md, step 1).
+ * With several categories, one that passes keeps the search; aircraft of
+ * the others are then excluded one by one (`notice`, `distance`).
+ */
+export function tripLimitIssue(input: {
+  rules: RuleRow[];
+  categories: AircraftCategory[];
+  /** The leg in kilometres for a category, after its routing factor. */
+  distanceKm: (category: AircraftCategory) => number;
+  departureAt: Date;
+  now: Date;
+}): { field: 'departureAt' | 'destinationId'; issue: string } | null {
+  const checks = input.categories.map((category) => {
+    const limits = limitsFor(input.rules, category);
+    const notice = limits.minimumNoticeMinutes ?? 0;
+    const distanceKm = input.distanceKm(category);
+    return {
+      limits,
+      notice,
+      distanceKm,
+      tooSoon:
+        input.departureAt.getTime() < input.now.getTime() + notice * 60_000,
+      tooShort: limits.minLegKm !== undefined && distanceKm < limits.minLegKm,
+      tooLong: limits.maxLegKm !== undefined && distanceKm > limits.maxLegKm,
+    };
+  });
+  if (
+    checks.length === 0 ||
+    checks.some((c) => !c.tooSoon && !c.tooShort && !c.tooLong)
+  ) {
+    return null;
+  }
+  if (checks.every((c) => c.tooSoon)) {
+    const minutes = Math.min(...checks.map((c) => c.notice));
+    return {
+      field: 'departureAt',
+      issue: `must be at least ${noticeText(minutes)} from now for this trip`,
+    };
+  }
+  const first = checks.find((c) => c.tooShort || c.tooLong)!;
+  return {
+    field: 'destinationId',
+    issue: first.tooLong
+      ? `this route is ${first.distanceKm} km, longer than the ${first.limits.maxLegKm} km this aircraft flies in one leg`
+      : `this route is ${first.distanceKm} km, shorter than the ${first.limits.minLegKm} km minimum for this aircraft`,
+  };
+}
+
+function noticeText(minutes: number): string {
+  const hours = Math.round((minutes / 60) * 10) / 10;
+  return hours === 1 ? '1 hour' : `${hours} hours`;
+}
