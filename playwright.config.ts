@@ -5,6 +5,11 @@ const ORIGIN = `http://localhost:${PORT}`;
 const STRICT_ORIGIN = `http://localhost:${PORT + 1}`;
 /** A proof-of-concept server: production, no dev tools, sink and local disk. */
 export const POC_ORIGIN = `http://localhost:${PORT + 2}`;
+/**
+ * Shared with the web host on a hosted deployment: it signs the visitor's
+ * address (`e2e/support/visitor.ts`). Set on the main and strict servers.
+ */
+export const WEB_PROXY_SECRET = 'e2e-web-proxy-secret-of-32-characters-or-more';
 
 /**
  * API integration tests. They call the running API over HTTP through
@@ -42,6 +47,7 @@ export default defineConfig({
         RATE_LIMIT_ENQUIRY_PER_WINDOW: '100000',
         RATE_LIMIT_SEARCH_PER_MINUTE: '100000',
         REFRESH_ROTATION_GRACE_SECONDS: '0',
+        WEB_PROXY_SECRET,
         OTP_RESEND_COOLDOWN_SECONDS: '0',
         OTP_MAX_PER_HOUR: '100000',
       },
@@ -56,6 +62,7 @@ export default defineConfig({
         NODE_ENV: 'test',
         ENABLE_DEV_TOOLS: 'true',
         PORT: String(PORT + 1),
+        WEB_PROXY_SECRET,
       },
     },
     {

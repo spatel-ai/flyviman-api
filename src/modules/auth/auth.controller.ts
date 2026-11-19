@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { clientAddress } from '../../common/middleware/client-address.middleware.js';
 import { StrictRateLimit } from '../../common/rate-limit/rate-limit.js';
 import { UserResponseDto } from '../users/dto/user-response.dto.js';
 import {
@@ -32,7 +33,7 @@ import { TokenService } from './token.service.js';
 function clientInfo(request: Request): ClientInfo {
   return {
     userAgent: request.header('user-agent') ?? null,
-    ipAddress: request.ip ?? null,
+    ipAddress: clientAddress(request),
   };
 }
 

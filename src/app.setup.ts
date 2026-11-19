@@ -12,6 +12,7 @@ import * as helmetModule from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ErrorDetail } from './common/errors/app.exception.js';
+import { clientAddressMiddleware } from './common/middleware/client-address.middleware.js';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware.js';
 
 type HelmetFactory = (options?: Record<string, unknown>) => RequestHandler;
@@ -75,6 +76,9 @@ export function configureApp(app: INestApplication): void {
   if (config.get('NODE_ENV') === 'production') {
     (app as NestExpressApplication).set('trust proxy', 1);
   }
+  // Behind the web host's /api/v1 proxy, the visitor's address arrives in a
+  // header signed with WEB_PROXY_SECRET; it is used only when it verifies.
+  app.use(clientAddressMiddleware(config.get<string>('WEB_PROXY_SECRET')));
   app.use(requestIdMiddleware);
   app.use(helmet());
   app.use(cookieParser());

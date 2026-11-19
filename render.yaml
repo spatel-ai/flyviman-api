@@ -65,8 +65,9 @@ services:
       - key: RATE_LIMIT_DEFAULT_PER_MINUTE
         value: "600"
       # Enquiries from every visitor share the web host's address here, so
-      # the contact form's limit is raised too. Until the web proxy passes
-      # the visitor's address on, this is a shared counter (deployment.md).
+      # the contact form's limit is raised too: a shared counter
+      # (deployment.md). Lower it to 5 once WEB_PROXY_SECRET (below) is set
+      # on both hosts, so the web host passes each visitor's address on.
       - key: RATE_LIMIT_ENQUIRY_PER_WINDOW
         value: "60"
       # Searches and fare calendars from every visitor share that address
@@ -96,4 +97,12 @@ services:
       - key: SEED_ADMIN_PASSWORD
         sync: false
       - key: SEED_LOCAL_PASSWORD
+        sync: false
+      # Optional: the same value as WEB_PROXY_SECRET on the web host (openssl
+      # rand -base64 48). Then the web host signs each visitor's address and
+      # rate limits and the sign-in lockout count visitors apart; unset, the
+      # header is ignored, as before. Render prompts for it only when a
+      # Blueprint is first created; on an existing one, add it by hand under
+      # the service's Environment.
+      - key: WEB_PROXY_SECRET
         sync: false
