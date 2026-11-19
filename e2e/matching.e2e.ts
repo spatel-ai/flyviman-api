@@ -28,7 +28,7 @@ const CATEGORY = 'HEAVY_JET';
 async function as(
   playwright: PlaywrightWorkerArgs['playwright'],
   baseURL: string | undefined,
-  account: 'finance' | 'customer',
+  account: 'ops' | 'customer',
 ): Promise<APIRequestContext> {
   const context = await playwright.request.newContext({ baseURL });
   await signIn(context, account);
@@ -200,7 +200,7 @@ test.describe.serial('matching limits', () => {
   test.beforeEach(clearCategory);
   test.afterAll(clearCategory);
 
-  test('a category distance limit set by finance leaves out an otherwise-eligible aircraft', async ({
+  test('a category distance limit set by operations leaves out an otherwise-eligible aircraft', async ({
     request,
     playwright,
     baseURL,
@@ -238,9 +238,9 @@ test.describe.serial('matching limits', () => {
     const trip = { aircraftId, mumbai, goa };
     expect((await searchFor(request, trip)).result).toBeDefined();
 
-    const finance = await as(playwright, baseURL, 'finance');
-    const refused = await finance.post('admin/pricing-rules', {
-      headers: await csrfHeaders(finance),
+    const ops = await as(playwright, baseURL, 'ops');
+    const refused = await ops.post('admin/pricing-rules', {
+      headers: await csrfHeaders(ops),
       data: {
         type: 'MATCHING_LIMITS',
         scope: 'CATEGORY',
@@ -251,8 +251,8 @@ test.describe.serial('matching limits', () => {
     });
     expect(refused.status()).toBe(400);
 
-    const rule = await finance.post('admin/pricing-rules', {
-      headers: await csrfHeaders(finance),
+    const rule = await ops.post('admin/pricing-rules', {
+      headers: await csrfHeaders(ops),
       data: {
         type: 'MATCHING_LIMITS',
         scope: 'CATEGORY',
@@ -290,10 +290,10 @@ test.describe.serial('matching limits', () => {
       details: [{ field: 'destinationId' }],
     });
 
-    const noticeRule = await finance.patch(
+    const noticeRule = await ops.patch(
       `admin/pricing-rules/${(await rule.json()).data.id}`,
       {
-        headers: await csrfHeaders(finance),
+        headers: await csrfHeaders(ops),
         data: {
           config: { minimumNoticeMinutes: 10_080 },
           reason: 'Heavy jets need a week',

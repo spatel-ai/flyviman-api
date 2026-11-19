@@ -34,11 +34,14 @@ import {
 
 /**
  * Flyviman's commercial settings: commission, tax, minimum charge and the
- * engine's platform defaults (M5 slice 3). Finance and super administrators.
+ * engine's platform defaults (M5 slice 3), for finance and super
+ * administrators. `MATCHING_LIMITS` decides bookability, not price:
+ * operations and super administrators change it, finance reads it, and
+ * operations see no other type (checked in the service).
  */
 @ApiTags('admin: pricing')
 @ApiCookieAuth()
-@Roles(Role.FINANCE_ADMIN, Role.SUPER_ADMIN)
+@Roles(Role.OPS, Role.FINANCE_ADMIN, Role.SUPER_ADMIN)
 @Controller('admin/pricing-rules')
 export class AdminPricingRulesController {
   constructor(private readonly pricing: AdminPricingService) {}
@@ -47,13 +50,14 @@ export class AdminPricingRulesController {
   @ApiOperation({
     summary: 'List pricing rules',
     description:
-      'Platform and category rules. `active=true` (default): in force now; `active=false`: every version.',
+      "Platform and category rules. `active=true` (default): in force now; `active=false`: every version. Operations see `MATCHING_LIMITS` only (another `type`: 403). `editable` is for the caller's role.",
   })
   @ApiOkResponse({ type: [PricingRuleResponseDto] })
   async list(
+    @CurrentUser() user: AuthUser,
     @Query() query: ListPricingRulesDto,
   ): Promise<Paginated<PricingRuleResponseDto>> {
-    const { items, total } = await this.pricing.listRules(query);
+    const { items, total } = await this.pricing.listRules(user, query);
     return new Paginated(items, query.page, query.pageSize, total);
   }
 
@@ -61,7 +65,7 @@ export class AdminPricingRulesController {
   @ApiOperation({
     summary: 'Create a pricing rule',
     description:
-      'Takes effect at once. One rule per type and scope: 409 `PRICING_RULE_EXISTS` when one is in force. Audited with the reason.',
+      'Takes effect at once. One rule per type and scope: 409 `PRICING_RULE_EXISTS` when one is in force. `MATCHING_LIMITS`: operations and super administrators; other types: finance and super administrators (else 403). Audited with the reason.',
   })
   @ApiCreatedResponse({ type: PricingRuleResponseDto })
   create(
@@ -95,10 +99,11 @@ export class AdminPricingRulesController {
   })
   @ApiOkResponse({ type: PricingRuleResponseDto })
   deactivate(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DeactivatePricingRuleDto,
   ): Promise<PricingRuleResponseDto> {
-    return this.pricing.deactivateRule(id, dto.reason);
+    return this.pricing.deactivateRule(user, id, dto.reason);
   }
 }
 

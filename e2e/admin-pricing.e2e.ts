@@ -276,28 +276,131 @@ test.describe.serial('admin pricing rules', () => {
     await finance.dispose();
   });
 
-  test('only finance and super administrators manage rules', async ({
+  test('only finance and super administrators manage commercial rules', async ({
     playwright,
     baseURL,
     request,
   }) => {
+    const tax = {
+      type: 'TAX',
+      scope: 'CATEGORY',
+      scopeRef: CATEGORY,
+      config: { name: 'GST', percent: 18 },
+      reason: 'Not allowed',
+    };
     for (const account of ['ops', 'operatorAdmin', 'customer'] as const) {
       const context = await as(playwright, baseURL, account);
-      expect((await context.get('admin/pricing-rules')).status()).toBe(403);
       const write = await context.post('admin/pricing-rules', {
         headers: await csrfHeaders(context),
-        data: {
-          type: 'TAX',
-          scope: 'CATEGORY',
-          scopeRef: CATEGORY,
-          config: { name: 'GST', percent: 18 },
-          reason: 'Not allowed',
-        },
+        data: tax,
       });
       expect(write.status()).toBe(403);
+      if (account !== 'ops') {
+        expect((await context.get('admin/pricing-rules')).status()).toBe(403);
+      }
       await context.dispose();
     }
     expect((await request.get('admin/pricing-rules')).status()).toBe(401);
+  });
+
+  test('matching limits are set by operations, read but not changed by finance', async ({
+    playwright,
+    baseURL,
+  }) => {
+    const ops = await as(playwright, baseURL, 'ops');
+    const finance = await as(playwright, baseURL, 'finance');
+    const limits = {
+      type: 'MATCHING_LIMITS',
+      scope: 'CATEGORY',
+      scopeRef: CATEGORY,
+      config: { minLegKm: 1 },
+      reason: 'Turboprop matching limits',
+    };
+
+    const refused = await finance.post('admin/pricing-rules', {
+      headers: await csrfHeaders(finance),
+      data: limits,
+    });
+    expect(refused.status()).toBe(403);
+    expect((await refused.json()).error.code).toBe('FORBIDDEN');
+
+    const created = await ops.post('admin/pricing-rules', {
+      headers: await csrfHeaders(ops),
+      data: limits,
+    });
+    expect(created.status()).toBe(201);
+    const rule = (await created.json()).data;
+    expect(rule).toMatchObject({ type: 'MATCHING_LIMITS', editable: true });
+
+    // Finance reads it, marked not editable for them, and cannot change or end it.
+    const financeList = await finance.get('admin/pricing-rules', {
+      params: { type: 'MATCHING_LIMITS', scope: 'CATEGORY' },
+    });
+    expect(financeList.status()).toBe(200);
+    const seen = (await financeList.json()).data.find(
+      (row: { id: string }) => row.id === rule.id,
+    );
+    expect(seen).toMatchObject({ editable: false, config: { minLegKm: 1 } });
+    const patch = await finance.patch(`admin/pricing-rules/${rule.id}`, {
+      headers: await csrfHeaders(finance),
+      data: { config: { minLegKm: 2 }, reason: 'Finance tries' },
+    });
+    expect(patch.status()).toBe(403);
+    const end = await finance.post(
+      `admin/pricing-rules/${rule.id}/deactivate`,
+      {
+        headers: await csrfHeaders(finance),
+        data: { reason: 'Finance tries' },
+      },
+    );
+    expect(end.status()).toBe(403);
+
+    // Operations see matching limits only, and change and end them.
+    const opsList = await ops.get('admin/pricing-rules');
+    expect(opsList.status()).toBe(200);
+    const types = new Set(
+      (await opsList.json()).data.map((row: { type: string }) => row.type),
+    );
+    expect([...types]).toEqual(['MATCHING_LIMITS']);
+    expect(
+      (
+        await ops.get('admin/pricing-rules', { params: { type: 'TAX' } })
+      ).status(),
+    ).toBe(403);
+    const changed = await ops.patch(`admin/pricing-rules/${rule.id}`, {
+      headers: await csrfHeaders(ops),
+      data: { config: { minLegKm: 2 }, reason: 'Operations adjust' },
+    });
+    expect(changed.status()).toBe(200);
+    const next = (await changed.json()).data;
+    expect(next.version).toBe(rule.version + 1);
+    const ended = await ops.post(`admin/pricing-rules/${next.id}/deactivate`, {
+      headers: await csrfHeaders(ops),
+      data: { reason: 'Operations end it' },
+    });
+    expect(ended.status()).toBe(200);
+    expect((await ended.json()).data.inForce).toBe(false);
+
+    // A commercial rule stays out of operations' reach even by id.
+    const commission = await finance.post('admin/pricing-rules', {
+      headers: await csrfHeaders(finance),
+      data: {
+        type: 'COMMISSION',
+        scope: 'CATEGORY',
+        scopeRef: CATEGORY,
+        config: { percent: 8, mode: 'ADD_ON' },
+        reason: 'Turboprop launch rate',
+      },
+    });
+    expect(commission.status()).toBe(201);
+    const commissionId = (await commission.json()).data.id;
+    const opsPatch = await ops.patch(`admin/pricing-rules/${commissionId}`, {
+      headers: await csrfHeaders(ops),
+      data: { config: { percent: 1, mode: 'ADD_ON' }, reason: 'Not ours' },
+    });
+    expect(opsPatch.status()).toBe(403);
+    await ops.dispose();
+    await finance.dispose();
   });
 });
 

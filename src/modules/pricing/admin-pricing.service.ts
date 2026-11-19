@@ -34,6 +34,28 @@ import { lockRuleKey } from './rule-lock.js';
 /** Roles that see operator payable, platform revenue, rule settings and line bases. */
 const FINANCE_VIEW = new Set<Role>([Role.FINANCE_ADMIN, Role.SUPER_ADMIN]);
 
+/**
+ * Who may write each rule type. `MATCHING_LIMITS` decides what is bookable,
+ * not what it costs, so operations set it and finance only reads it; every
+ * other type is commercial and finance's.
+ */
+const MATCHING_EDITORS = new Set<Role>([Role.OPS, Role.SUPER_ADMIN]);
+const PRICE_EDITORS = new Set<Role>([Role.FINANCE_ADMIN, Role.SUPER_ADMIN]);
+
+function mayEdit(role: Role, type: string): boolean {
+  return (type === 'MATCHING_LIMITS' ? MATCHING_EDITORS : PRICE_EDITORS).has(
+    role,
+  );
+}
+
+function forbidden(): AppException {
+  return new AppException(
+    'FORBIDDEN',
+    'Your role cannot change rules of this type.',
+    HttpStatus.FORBIDDEN,
+  );
+}
+
 const CATEGORIES = Object.values(AircraftCategory);
 
 type RuleRecord = Prisma.PricingRuleGetPayload<object>;
@@ -68,14 +90,26 @@ export class AdminPricingService {
 
   // --- Rules --------------------------------------------------------------
 
-  async listRules(query: ListPricingRulesDto): Promise<{
+  /** Operations see only `MATCHING_LIMITS`; commercial rules are not theirs. */
+  async listRules(
+    user: AuthUser,
+    query: ListPricingRulesDto,
+  ): Promise<{
     items: PricingRuleResponseDto[];
     total: number;
   }> {
+    const opsOnly = user.role === Role.OPS;
+    if (opsOnly && query.type && query.type !== 'MATCHING_LIMITS') {
+      throw new AppException(
+        'FORBIDDEN',
+        'Your role can read matching limits only.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
     const now = new Date();
     const where: Prisma.PricingRuleWhereInput = {
       scope: query.scope ?? { in: [...ADMIN_RULE_SCOPES] },
-      type: query.type,
+      type: opsOnly ? 'MATCHING_LIMITS' : query.type,
       ...(query.active ? inForceWhere(now) : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
@@ -89,13 +123,17 @@ export class AdminPricingService {
       }),
       this.prisma.pricingRule.count({ where }),
     ]);
-    return { items: rows.map((row) => toRuleDto(row, now)), total };
+    return {
+      items: rows.map((row) => toRuleDto(row, now, user.role)),
+      total,
+    };
   }
 
   async createRule(
     user: AuthUser,
     dto: CreatePricingRuleDto,
   ): Promise<PricingRuleResponseDto> {
+    if (!mayEdit(user.role, dto.type)) throw forbidden();
     const scopeRef = dto.scopeRef ?? null;
     const scopeProblem = checkScopeRef(dto.scope, scopeRef, CATEGORIES);
     if (scopeProblem) throw invalid('scopeRef', scopeProblem);
@@ -147,7 +185,7 @@ export class AdminPricingService {
         },
         tx,
       );
-      return toRuleDto(created, now);
+      return toRuleDto(created, now, user.role);
     });
   }
 
@@ -158,13 +196,16 @@ export class AdminPricingService {
     reason: string,
   ): Promise<PricingRuleResponseDto> {
     const rule = await this.editableRule(id);
+    if (!mayEdit(user.role, rule.type)) throw forbidden();
     const next = configOrThrow(rule.type as AdminRuleType, config);
 
     return this.prisma.$transaction(async (tx) => {
       await lockRuleKey(tx, rule.type, rule.scope, rule.scopeRef);
       const now = new Date();
       const current = await this.currentOrThrow(tx, id, now);
-      if (jsonEqual(current.config, next)) return toRuleDto(current, now);
+      if (jsonEqual(current.config, next)) {
+        return toRuleDto(current, now, user.role);
+      }
 
       await tx.pricingRule.update({
         where: { id },
@@ -193,15 +234,17 @@ export class AdminPricingService {
         },
         tx,
       );
-      return toRuleDto(created, now);
+      return toRuleDto(created, now, user.role);
     });
   }
 
   async deactivateRule(
+    user: AuthUser,
     id: string,
     reason: string,
   ): Promise<PricingRuleResponseDto> {
     const rule = await this.editableRule(id);
+    if (!mayEdit(user.role, rule.type)) throw forbidden();
     if (rule.scope === PricingRuleScope.PLATFORM) {
       throw new AppException(
         'PRICING_RULE_REQUIRED',
@@ -227,7 +270,7 @@ export class AdminPricingService {
         },
         tx,
       );
-      return toRuleDto(ended, now);
+      return toRuleDto(ended, now, user.role);
     });
   }
 
@@ -429,7 +472,11 @@ function snapshot(rule: RuleRecord): Prisma.InputJsonValue {
   } as Prisma.InputJsonValue;
 }
 
-function toRuleDto(rule: RuleRecord, now: Date): PricingRuleResponseDto {
+function toRuleDto(
+  rule: RuleRecord,
+  now: Date,
+  role: Role,
+): PricingRuleResponseDto {
   return {
     id: rule.id,
     type: rule.type,
@@ -444,7 +491,7 @@ function toRuleDto(rule: RuleRecord, now: Date): PricingRuleResponseDto {
       rule.isActive &&
       rule.validFrom <= now &&
       (rule.validTo === null || rule.validTo > now),
-    editable: isEditable(rule),
+    editable: isEditable(rule) && mayEdit(role, rule.type),
     createdById: rule.createdById,
     createdAt: rule.createdAt.toISOString(),
   };
