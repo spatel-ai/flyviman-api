@@ -704,6 +704,22 @@ model ContentItem {
   @@index([kind, publishedAt, sortOrder])
 }
 
+/// Every published version of a policy, kept for good (append-only). A
+/// Consent records a version string; the text it names is never overwritten.
+/// ContentItem holds the current one.
+model PolicyVersion {
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String
+  version     String
+  title       String
+  body        String
+  publishedAt DateTime @db.Timestamptz
+  publishedBy String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  @@unique([slug, version])
+}
+
 // ---------------------------------------------------------------------------
 // Service category configuration (C2): booking mode and payment model
 // ---------------------------------------------------------------------------
