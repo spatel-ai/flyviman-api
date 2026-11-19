@@ -25,6 +25,14 @@ async function refused(sql: string, reason: RegExp) {
   expect(cause?.message, sql).toMatch(reason);
 }
 
+/** Append-only tables known today; any later one is found by its trigger. */
+const APPEND_ONLY = [
+  'AuditLog',
+  'BookingEvent',
+  'PaymentEvent',
+  'PolicyVersion',
+];
+
 test.describe('The API database role', () => {
   test('is the restricted role, not a superuser or the tables owner', async () => {
     const [row] = await withPrisma(
@@ -42,7 +50,51 @@ test.describe('The API database role', () => {
     });
   });
 
-  for (const table of ['AuditLog', 'BookingEvent']) {
+  /**
+   * Every public table with a trigger whose function is named *_append_only,
+   * with that function: the same list `npm run db:grant` revokes from.
+   */
+  async function appendOnlyTables() {
+    return withPrisma(
+      (prisma) =>
+        prisma.$queryRaw<{ table: string; fn: string }[]>`
+        SELECT DISTINCT c.relname::text AS table, p.proname::text AS fn
+        FROM pg_trigger g
+        JOIN pg_proc p ON p.oid = g.tgfoid
+        JOIN pg_class c ON c.oid = g.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT g.tgisinternal
+          AND n.nspname = 'public'
+          AND p.proname LIKE '%\\_append\\_only'
+        ORDER BY 1`,
+    );
+  }
+
+  test('every append-only table is closed to UPDATE, DELETE and TRUNCATE', async () => {
+    const tables = await appendOnlyTables();
+    // A table missing its trigger would drop out of both the grant and this test.
+    expect(tables.map((t) => t.table)).toEqual(
+      expect.arrayContaining(APPEND_ONLY),
+    );
+    for (const { table } of tables) {
+      const [row] = await withPrisma((prisma) =>
+        prisma.$queryRawUnsafe<
+          { update: boolean; delete: boolean; truncate: boolean }[]
+        >(
+          `SELECT has_table_privilege('"${table}"', 'UPDATE') AS update,
+                  has_table_privilege('"${table}"', 'DELETE') AS delete,
+                  has_table_privilege('"${table}"', 'TRUNCATE') AS truncate`,
+        ),
+      );
+      expect(row, table).toEqual({
+        update: false,
+        delete: false,
+        truncate: false,
+      });
+    }
+  });
+
+  for (const table of APPEND_ONLY) {
     test(`may only read and insert ${table}`, async () => {
       await refused(`DELETE FROM "${table}"`, /permission denied/);
       await refused(
@@ -72,10 +124,8 @@ test.describe('The API database role', () => {
         `DROP TRIGGER "${table}_no_truncate" ON "${table}"`,
         /must be owner/,
       );
-      const fn =
-        table === 'AuditLog'
-          ? 'audit_log_append_only'
-          : 'booking_event_append_only';
+      const fn = (await appendOnlyTables()).find((t) => t.table === table)?.fn;
+      expect(fn, table).toBeDefined();
       await refused(
         `CREATE OR REPLACE FUNCTION "${fn}"() RETURNS trigger AS $$ BEGIN RETURN OLD; END; $$ LANGUAGE plpgsql`,
         // No CREATE on the schema is checked first; ownership after it.
