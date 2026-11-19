@@ -21,10 +21,12 @@ Every call to a real provider has a timeout, bounded retries for safe operations
 
 ## Mocks and development tools
 
-The messaging and storage mocks come with development-only routes:
+The messaging, storage and airline mocks come with development-only routes:
 
 - `GET /api/v1/dev/outbox?to=<address>` lists what the messaging mock "sent" to an address, newest first. This is how a developer or a test reads a one-time code or an emailed link. Messages are held in memory, lost when the API restarts, and, with `NODE_ENV=development` only, each one is also printed to the API log (`MockMessaging`, marked `[DEV ONLY, not sent]`, recipient masked) so a code can be read from the terminal.
 - `PUT` and `GET /api/v1/dev/storage/:token` are where the storage mock's signed URLs point. The token is an HMAC-signed, expiring ticket, so the flow matches a real bucket: no session is involved in the transfer. Files are written under `STORAGE_DIR` (`.storage` by default, not committed).
+
+- `PUT /api/v1/dev/airline/behaviour` with `{ origin, destination, behaviour: "NORMAL" | "TIMEOUT" | "ERROR" }` (IATA codes) makes the airline mock never answer, or fail, for searches on that one route, so partial scheduled results can be tested; `NORMAL` restores it. Scoped to the route so parallel tests on other routes are unaffected.
 
 These routes answer 404 unless `ENABLE_DEV_TOOLS=true` (`DevToolsGuard`). The same flag lets the mocks be used at all: without it, and with no real provider, the API refuses to start. The configuration refuses the flag when `NODE_ENV=production`, so production needs real providers.
 

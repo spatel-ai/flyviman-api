@@ -51,6 +51,8 @@ export default defineConfig({
         WEB_PROXY_SECRET,
         OTP_RESEND_COOLDOWN_SECONDS: '0',
         OTP_MAX_PER_HOUR: '100000',
+        // A timed-out airline supplier is tested (scheduled-search.e2e.ts).
+        AIRLINE_TIMEOUT_MS: '1500',
       },
     },
     {

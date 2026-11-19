@@ -8,7 +8,7 @@
  * here is a `LIVE_FARE`: it is the supplier's price now, and must be
  * revalidated before the customer pays (rule 3).
  */
-export type CabinClass = 'ECONOMY';
+export type CabinClass = 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS';
 export type FareFamily = 'SAVER' | 'FLEXI';
 
 export interface FareSearchQuery {
@@ -21,7 +21,19 @@ export interface FareSearchQuery {
   returnDate?: string;
   /** 1 to 9. */
   adults: number;
+  /** Seated, priced like adults by most carriers. Adults plus children at most 9. */
+  children?: number;
+  /** On an adult's lap; at most one per adult. */
+  infants?: number;
+  /** Economy when left out. */
+  cabin?: CabinClass;
 }
+
+/** Who travels, for revalidation. */
+export type PartySize = Pick<
+  FareSearchQuery,
+  'adults' | 'children' | 'infants'
+>;
 
 export interface BaggageAllowance {
   cabinKg: number;
@@ -49,9 +61,9 @@ export interface FareOffer {
   baggage: BaggageAllowance;
   refundable: boolean;
   seatsLeft: number;
-  /** Per adult. */
+  /** Per adult (and per child). */
   fareMinor: number;
-  /** For all adults in the query. */
+  /** For the whole party in the query: adults, children and infants. */
   totalMinor: number;
   currency: 'INR';
   priceType: 'LIVE_FARE';
@@ -85,7 +97,7 @@ export interface FareRules {
   cancellationCutoffHours: number;
   baggage: BaggageAllowance;
   /** Plain-language conditions to show before the customer commits (rule 9). */
-  conditions: string[];
+  conditions: { title: string; text: string }[];
 }
 
 export type AirlineErrorCode = 'INVALID_QUERY' | 'INVALID_OFFER';
@@ -104,13 +116,25 @@ export class AirlineProviderError extends Error {
 export abstract class AirlineInventoryProvider {
   abstract searchFares(query: FareSearchQuery): Promise<FareSearchResult>;
   /**
-   * Rechecks availability and price of an offer for `adults` passengers.
+   * Rechecks availability and price of an offer for the party.
    * `previousTotalMinor` is the total the customer saw.
    */
   abstract revalidate(
     offerId: string,
-    adults: number,
+    party: PartySize,
     previousTotalMinor: number,
   ): Promise<RevalidationResult>;
   abstract getFareRules(offerId: string): Promise<FareRules>;
 }
+
+/** One configured supplier, by the name shown in search results. */
+export interface NamedAirlineProvider {
+  name: string;
+  provider: AirlineInventoryProvider;
+}
+
+/**
+ * Every configured supplier. Scheduled search calls them all in parallel,
+ * each with its own timeout (AIRLINE_TIMEOUT_MS). Today: one.
+ */
+export const AIRLINE_PROVIDERS = Symbol('AIRLINE_PROVIDERS');
