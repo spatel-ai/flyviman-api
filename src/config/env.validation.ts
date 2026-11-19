@@ -222,6 +222,27 @@ export class EnvironmentVariables {
    */
   @IsIn(['mock'])
   AIRLINE_PROVIDER: string = 'mock';
+
+  /**
+   * The payment gateway. Only `mock` exists in this build: it moves no
+   * money, and payments must not go live until the commercial decisions
+   * are settled (docs/open-decisions.md, Hard gate). Razorpay will be added
+   * as another value with its own adapter.
+   */
+  @IsIn(['mock'], {
+    message:
+      'PAYMENT_PROVIDER must be mock: only the mock payment gateway exists in this build',
+  })
+  PAYMENT_PROVIDER: string = 'mock';
+
+  /**
+   * How collected money reaches operators (open decision 8). `manual`:
+   * Flyviman collects and settlements are recorded and paid by hand.
+   * `razorpay_route` (automatic split to operators' linked accounts) is
+   * reserved and refused until it is built.
+   */
+  @IsIn(['manual', 'razorpay_route'])
+  SETTLEMENT_MODE: string = 'manual';
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -270,6 +291,14 @@ export function validateEnv(
   ) {
     throw new Error(
       'Invalid environment configuration: STORAGE_PROVIDER=local needs API_PUBLIC_URL, the public address of this API.',
+    );
+  }
+
+  // Refused rather than quietly settled by hand: an operator expecting an
+  // automatic split would never be paid.
+  if (validated.SETTLEMENT_MODE === 'razorpay_route') {
+    throw new Error(
+      'Invalid environment configuration: SETTLEMENT_MODE=razorpay_route is not built yet; use manual.',
     );
   }
 

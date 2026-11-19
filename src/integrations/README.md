@@ -15,7 +15,7 @@ Each integration is a folder containing:
 | `StorageProvider`          | Signed upload and download URLs for private documents | S3-compatible (assumed). Local-disk store built (development, proof of concept)      | M1        |
 | `RoutingProvider`          | Distance between two locations                        | Built-in great-circle with routing factor                                            | M5        |
 | `AirlineInventoryProvider` | Scheduled search, fare rules, revalidation, booking   | Not chosen. Mock built (`AIRLINE_PROVIDER=mock`, deterministic Indian domestic data) | M6        |
-| `PaymentGatewayProvider`   | Orders, signature verification, webhooks, refunds     | Razorpay                                                                             | M9        |
+| `PaymentGatewayProvider`   | Orders, signature verification, webhooks, refunds     | Razorpay (not built). Mock built; the only value of `PAYMENT_PROVIDER`               | M9        |
 
 Every call to a real provider has a timeout, bounded retries for safe operations, and a defined fallback. Provider errors are mapped to our error codes and never passed through to clients.
 
@@ -42,3 +42,13 @@ A shared server with no real providers yet can start without development tools:
 `ENABLE_DEV_TOOLS` stays off there, so the outbox answers 404. This is for a proof of concept, not production: production needs a real messaging provider and object storage.
 
 When adding a real provider: bind it in the integration's module by configuration, keep the mock for development and tests, and move any check the mock does at upload time (content type by leading bytes, size) to where a real bucket can enforce it.
+
+## Payments (mock only)
+
+`PAYMENT_PROVIDER=mock` is the only accepted value: real payments are impossible in this build, and must stay so until decisions 6, 7, 8 and 13 in `docs/open-decisions.md` are settled (Hard gate). Razorpay will be one more adapter bound in `payment/payment.module.ts`.
+
+- `MockPaymentGatewayProvider` mirrors Razorpay: the same webhook headers (`x-razorpay-signature`, `x-razorpay-event-id`) and payload shape, and real HMAC-SHA256 signatures (webhook: over the raw body with the webhook secret; checkout: over `order_id|payment_id` with the key secret). Its secrets are constants in the repository, so anyone can sign a mock webhook; it moves no money. Unlike the messaging and storage mocks it does not need `ENABLE_DEV_TOOLS`.
+- It is deterministic (counter IDs, no clock) and in memory. `simulatePayment(orderId, 'success' | 'failure')` changes what `fetchPayment` reports at once and returns the signed webhook instead of sending it: post it later for a delayed webhook, or twice for a duplicate (same event ID).
+- Parsed webhooks keep references and amounts only; card and contact fields are dropped.
+- `POST /api/v1/webhooks/payments/:provider` receives its body unparsed (a `Buffer`, `app.setup.ts`); every other route is parsed as JSON as before. The handler is a stub: it verifies the signature and answers 200, or 400 `WEBHOOK_SIGNATURE_INVALID`, and records nothing.
+- `SETTLEMENT_MODE=manual` (default): settlements to operators are recorded and paid by hand. `razorpay_route` is reserved and refused at start-up until built (decision 8).

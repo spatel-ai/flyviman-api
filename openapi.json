@@ -4031,6 +4031,60 @@
         ]
       }
     },
+    "/api/v1/webhooks/payments/{provider}": {
+      "post": {
+        "description": "For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet.",
+        "operationId": "PaymentWebhooksController_receive",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-razorpay-event-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-razorpay-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAckResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`WEBHOOK_SIGNATURE_INVALID`, or `VALIDATION_ERROR` for a signed body that is not a well-formed event"
+          },
+          "404": {
+            "description": "Not the configured gateway"
+          }
+        },
+        "summary": "Gateway notification",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/api/v1/admin/category-config": {
       "get": {
         "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
@@ -9219,6 +9273,18 @@
           "ipAddress",
           "requestId",
           "createdAt"
+        ]
+      },
+      "WebhookAckResponseDto": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "received"
         ]
       },
       "BookingMode": {
