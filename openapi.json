@@ -505,6 +505,445 @@
         ]
       }
     },
+    "/api/v1/admin/content/banners": {
+      "get": {
+        "description": "Drafts and published, in display order.",
+        "operationId": "AdminBannersController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentItemResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List banners",
+        "tags": [
+          "admin: content"
+        ]
+      },
+      "post": {
+        "description": "A draft unless `published` is true. Audited.",
+        "operationId": "AdminBannersController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContentItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItemResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a banner",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/banners/{id}": {
+      "patch": {
+        "description": "Audited with the values before and after.",
+        "operationId": "AdminBannersController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContentItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItemResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change, publish or unpublish a banner",
+        "tags": [
+          "admin: content"
+        ]
+      },
+      "delete": {
+        "description": "Audited.",
+        "operationId": "AdminBannersController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete a banner",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/faqs": {
+      "get": {
+        "description": "Drafts and published, in display order.",
+        "operationId": "AdminFaqsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentItemResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List questions and answers",
+        "tags": [
+          "admin: content"
+        ]
+      },
+      "post": {
+        "description": "`title` is the question, `body` the answer. Audited.",
+        "operationId": "AdminFaqsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContentItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItemResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a question and answer",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/faqs/{id}": {
+      "patch": {
+        "description": "Audited with the values before and after.",
+        "operationId": "AdminFaqsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContentItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItemResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change, publish or unpublish an entry",
+        "tags": [
+          "admin: content"
+        ]
+      },
+      "delete": {
+        "description": "Audited.",
+        "operationId": "AdminFaqsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Delete an entry",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/policies": {
+      "get": {
+        "operationId": "AdminPoliciesController_policies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminPolicyResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List policies and terms",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/policies/{slug}": {
+      "put": {
+        "description": "Always a new version: the text customers accepted is kept and never overwritten. The version is the UTC date, with `.2`, `.3` for further versions that day. Sending the current text again changes nothing. Audited.",
+        "operationId": "AdminPoliciesController_publishPolicy",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishPolicyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPolicyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Publish a new version of a policy",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/notification-templates": {
+      "get": {
+        "description": "Every built-in template with the wording now in use and the placeholders it needs.",
+        "operationId": "AdminPoliciesController_templates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationTemplateResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List notification templates",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
+    "/api/v1/admin/content/notification-templates/{key}": {
+      "put": {
+        "description": "The channel is in the body. The text must keep every placeholder the built-in wording uses and add none (400 `VALIDATION_ERROR` otherwise). Audited with the wording before and after.",
+        "operationId": "AdminPoliciesController_updateTemplate",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTemplateResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update a notification template",
+        "tags": [
+          "admin: content"
+        ]
+      }
+    },
     "/api/v1/me/notifications": {
       "get": {
         "operationId": "MeNotificationsController_list",
@@ -4695,6 +5134,250 @@
           "body",
           "version",
           "publishedAt"
+        ]
+      },
+      "ContentItemResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "example": "summer-sale-1a2b3c"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string",
+            "nullable": true,
+            "example": "IN"
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Null while unpublished (a draft)."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "body",
+          "region",
+          "sortOrder",
+          "publishedAt",
+          "updatedAt"
+        ]
+      },
+      "CreateContentItemDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 8,
+            "example": "IN"
+          },
+          "sortOrder": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "published": {
+            "type": "boolean",
+            "description": "Publish now. Default false: saved as a draft."
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ]
+      },
+      "UpdateContentItemDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "region": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 8
+          },
+          "sortOrder": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "published": {
+            "type": "boolean",
+            "description": "true publishes (or keeps it published); false unpublishes."
+          }
+        }
+      },
+      "AdminPolicyResponseDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "example": "terms"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "example": "2026-11-19",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "versionCount": {
+            "type": "number",
+            "description": "Versions published so far, the current one included."
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "body",
+          "version",
+          "publishedAt",
+          "versionCount"
+        ]
+      },
+      "PublishPolicyDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 50000,
+            "description": "Plain text with blank lines between paragraphs."
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ]
+      },
+      "NotificationChannel": {
+        "type": "string",
+        "enum": [
+          "EMAIL",
+          "SMS",
+          "WHATSAPP",
+          "IN_APP"
+        ]
+      },
+      "NotificationTemplateResponseDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "customer.welcome"
+          },
+          "channel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationChannel"
+              }
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "body": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "placeholders": {
+            "description": "Placeholders the built-in wording uses. A change must keep every one and may add none.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stored": {
+            "type": "boolean",
+            "description": "False while no row is stored and the built-in text applies."
+          }
+        },
+        "required": [
+          "key",
+          "channel",
+          "subject",
+          "body",
+          "isActive",
+          "placeholders",
+          "stored"
+        ]
+      },
+      "UpdateNotificationTemplateDto": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationChannel"
+              }
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "body",
+          "isActive"
         ]
       },
       "NotificationResponseDto": {

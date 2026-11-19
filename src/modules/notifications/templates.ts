@@ -210,3 +210,10 @@ export function render(
     name in variables ? String(variables[name]) : '',
   );
 }
+
+/** The distinct `{{name}}` placeholders in a text. */
+export function placeholdersOf(text: string | null | undefined): Set<string> {
+  return new Set(
+    [...(text ?? '').matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]),
+  );
+}
