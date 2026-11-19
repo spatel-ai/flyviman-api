@@ -56,6 +56,7 @@ model User {
   operatorMember  OperatorMember?
   notifications   Notification[]
   storedFiles     StoredFile[]
+  bookings        Booking[]
 
   @@index([role, status])
 }
@@ -221,7 +222,8 @@ model Passenger {
   createdAt         DateTime              @default(now()) @db.Timestamptz
   updatedAt         DateTime              @updatedAt @db.Timestamptz
 
-  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer          CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  bookingPassengers BookingPassenger[]
 
   @@index([customerId, deletedAt])
 }
@@ -277,6 +279,8 @@ model Operator {
   members   OperatorMember[]
   documents OperatorDocument[]
   aircraft  Aircraft[]
+  quotes    Quote[]
+  bookings  Booking[]
 
   @@index([status, submittedAt])
 }
@@ -583,6 +587,7 @@ model Aircraft {
   documents       AircraftDocument[]
   slots           AvailabilitySlot[]
   blocks          AvailabilityBlock[]
+  bookings        Booking[]
 
   @@index([operatorId, listingStatus])
   @@index([listingStatus, category, passengerCapacity])
@@ -898,10 +903,235 @@ model PriceCalculation {
   overrideReason        String?
   createdAt             DateTime  @default(now()) @db.Timestamptz
 
-  search Search? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  search   Search?   @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  quotes   Quote[]
+  bookings Booking[]
 
   @@index([searchId])
   @@index([aircraftId, createdAt])
   @@index([operatorId, createdAt])
   @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// M8. Quotes and bookings
+// ---------------------------------------------------------------------------
+
+/// Values and transitions: docs/architecture/state-machines.md (Booking).
+enum BookingStatus {
+  REQUESTED
+  OPERATOR_PENDING
+  CLARIFICATION_REQUESTED
+  PRICE_CONFIRMED
+  AWAITING_PAYMENT
+  CONFIRMED
+  SCHEDULED
+  COMPLETED
+  OPERATOR_UNAVAILABLE
+  QUOTE_DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+/// A summary of a booking's payments, derived from them (M9). Never the
+/// booking status: a paid booking is not confirmed by payment alone (rule 2).
+enum BookingPaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUND_PENDING
+  REFUNDED
+}
+
+/// Values and transitions: docs/architecture/state-machines.md (Quote).
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  SUPERSEDED
+}
+
+enum BookingEventType {
+  STATUS_CHANGED
+  OPERATOR_RESPONSE
+  QUOTE_ISSUED
+  PAYMENT_UPDATE
+  NOTE
+  MESSAGE
+  CHANGE_REQUESTED
+  CANCELLATION_REQUESTED
+}
+
+enum ChangeRequestKind {
+  CHANGE
+  CANCELLATION
+}
+
+enum ChangeRequestStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+/// An operator's (or operations') price for a booking request. Never edited
+/// once sent: a revision is a new quote that supersedes the last. At most
+/// one ACCEPTED quote per booking (partial unique index in the migration).
+model Quote {
+  id            String      @id @default(uuid()) @db.Uuid
+  /// `FLY-QT-7K2M9Q` (common/reference.ts).
+  reference     String      @unique
+  /// Null until the quote is attached to a booking.
+  bookingId     String?     @db.Uuid
+  calculationId String?     @db.Uuid
+  operatorId    String      @db.Uuid
+  totalMinor    BigInt
+  currency      String      @db.Char(3)
+  /// QUOTE until accepted (rule 1).
+  priceType     PriceType   @default(QUOTE)
+  /// Price inclusions, exclusions and cancellation conditions (jsonb).
+  conditions    Json
+  validUntil    DateTime    @db.Timestamptz
+  status        QuoteStatus @default(DRAFT)
+  createdById   String?     @db.Uuid
+  createdAt     DateTime    @default(now()) @db.Timestamptz
+  updatedAt     DateTime    @updatedAt @db.Timestamptz
+
+  booking     Booking?          @relation("BookingQuotes", fields: [bookingId], references: [id], onDelete: Restrict)
+  calculation PriceCalculation? @relation(fields: [calculationId], references: [id], onDelete: Restrict)
+  operator    Operator          @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  acceptedBy  Booking?          @relation("BookingAcceptedQuote")
+
+  @@index([bookingId, status])
+  @@index([operatorId, status])
+  @@index([calculationId])
+}
+
+/// A booking. `bookingMode`, `paymentModel`, `priceType` and
+/// `cancellationTerms` are snapshots taken when it is created and do not
+/// follow later configuration changes. `status` and `paymentStatus` are
+/// separate (rule 2); status changes go through the bookings transition
+/// function, which writes a BookingEvent.
+model Booking {
+  id                 String               @id @default(uuid()) @db.Uuid
+  /// `FLY-BK-7K2M9Q` (common/reference.ts).
+  reference          String               @unique
+  /// The customer's User account (ownership is checked against the session).
+  customerId         String               @db.Uuid
+  category           ServiceCategory
+  status             BookingStatus        @default(REQUESTED)
+  bookingMode        BookingMode
+  paymentModel       PaymentModel
+  /// Null for scheduled airline bookings.
+  operatorId         String?              @db.Uuid
+  aircraftId         String?              @db.Uuid
+  /// No foreign key until EmptyLeg exists (M7).
+  emptyLegId         String?              @db.Uuid
+  /// Scheduled airline supplier and its booking reference.
+  supplier           String?
+  supplierReference  String?
+  itinerary          Json
+  calculationId      String?              @db.Uuid
+  acceptedQuoteId    String?              @unique @db.Uuid
+  totalMinor         BigInt
+  currency           String               @db.Char(3)
+  priceType          PriceType
+  paymentStatus      BookingPaymentStatus @default(UNPAID)
+  /// The cancellation conditions shown before the customer committed (rule 9).
+  cancellationTerms  Json
+  specialRequests    String?
+  /// The operations owner.
+  assignedToId       String?              @db.Uuid
+  operatorAcceptedAt DateTime?            @db.Timestamptz
+  confirmedAt        DateTime?            @db.Timestamptz
+  cancelledAt        DateTime?            @db.Timestamptz
+  cancellationReason String?
+  createdAt          DateTime             @default(now()) @db.Timestamptz
+  updatedAt          DateTime             @updatedAt @db.Timestamptz
+
+  customer       User               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  operator       Operator?          @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  aircraft       Aircraft?          @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  calculation    PriceCalculation?  @relation(fields: [calculationId], references: [id], onDelete: Restrict)
+  acceptedQuote  Quote?             @relation("BookingAcceptedQuote", fields: [acceptedQuoteId], references: [id], onDelete: Restrict)
+  quotes         Quote[]            @relation("BookingQuotes")
+  passengers     BookingPassenger[]
+  events         BookingEvent[]
+  changeRequests ChangeRequest[]
+
+  @@index([customerId, createdAt])
+  @@index([operatorId, status])
+  @@index([status, createdAt])
+  @@index([aircraftId])
+  @@index([calculationId])
+  @@index([assignedToId])
+}
+
+/// A traveller as they were when the booking was made. `documentNumber` and
+/// `specialAssistance` hold FieldCipher ciphertext
+/// (docs/architecture/security-rbac.md).
+model BookingPassenger {
+  id                String                @id @default(uuid()) @db.Uuid
+  bookingId         String                @db.Uuid
+  /// The saved passenger copied from, if any.
+  passengerId       String?               @db.Uuid
+  firstName         String
+  lastName          String
+  dateOfBirth       DateTime?             @db.Date
+  gender            Gender                @default(UNSPECIFIED)
+  nationality       String?               @db.Char(2)
+  documentType      IdentityDocumentType?
+  documentNumber    String?
+  documentExpiry    DateTime?             @db.Date
+  specialAssistance String?
+  createdAt         DateTime              @default(now()) @db.Timestamptz
+  updatedAt         DateTime              @updatedAt @db.Timestamptz
+
+  booking   Booking    @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  passenger Passenger? @relation(fields: [passengerId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([passengerId])
+}
+
+/// The booking timeline. Append-only: a trigger refuses every update, delete
+/// and truncate, so `actorId` is deliberately not a foreign key.
+model BookingEvent {
+  id         String           @id @default(uuid()) @db.Uuid
+  bookingId  String           @db.Uuid
+  type       BookingEventType
+  fromStatus BookingStatus?
+  toStatus   BookingStatus?
+  actorId    String?          @db.Uuid
+  actorRole  Role?
+  payload    Json?
+  createdAt  DateTime         @default(now()) @db.Timestamptz
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
+}
+
+/// A customer's request to change or cancel a booking. At most one open
+/// (REQUESTED) request per booking and kind (partial unique index).
+model ChangeRequest {
+  id          String              @id @default(uuid()) @db.Uuid
+  bookingId   String              @db.Uuid
+  kind        ChangeRequestKind
+  details     String
+  chargeMinor BigInt?
+  refundMinor BigInt?
+  currency    String              @db.Char(3)
+  status      ChangeRequestStatus @default(REQUESTED)
+  decidedById String?             @db.Uuid
+  decidedAt   DateTime?           @db.Timestamptz
+  createdAt   DateTime            @default(now()) @db.Timestamptz
+  updatedAt   DateTime            @updatedAt @db.Timestamptz
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId, createdAt])
+  @@index([status, createdAt])
 }
