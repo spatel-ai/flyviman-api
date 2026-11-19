@@ -61,7 +61,9 @@ async function bootstrap() {
     const reason =
       'DATABASE_URL connects as a role that owns the tables or may delete audit records. Connect as the restricted role and give migrations MIGRATION_DATABASE_URL (docs/deployment.md).';
     if (config.get<boolean>('REQUIRE_RESTRICTED_DB_ROLE')) {
-      throw new Error(`${reason} Refusing to start (REQUIRE_RESTRICTED_DB_ROLE).`);
+      throw new Error(
+        `${reason} Refusing to start (REQUIRE_RESTRICTED_DB_ROLE).`,
+      );
     }
     logger.warn(reason);
   }
