@@ -17,7 +17,9 @@ import {
 } from '../pricing/rules.js';
 import {
   combineRestrictions,
+  legTimeChecks,
   limitsFor,
+  localMinutes,
   routeChecks,
   staticChecks,
   timeChecks,
@@ -25,6 +27,7 @@ import {
   type AircraftWindows,
   type CombinedRestrictions,
   type ExclusionReason,
+  type LocalTime,
   type MatchingLimits,
   type MatchPoint,
 } from './criteria.js';
@@ -202,7 +205,12 @@ export class MatchingService {
     return { route, ready, excluded };
   }
 
-  /** The aircraft that can fly at this departure time. No database access. */
+  /**
+   * The aircraft that can fly at this departure time. No database access.
+   * A round trip's return is checked for operating hours and night
+   * operations as well (leaving the destination at `returnAt`); notice
+   * applies to the outbound only.
+   */
   evaluate(
     prepared: PreparedRoute,
     departureAt: Date,
@@ -211,6 +219,15 @@ export class MatchingService {
   ): MatchResult {
     const candidates: Candidate[] = [];
     const exclusions = [...prepared.excluded];
+    const { origin, destination } = prepared.route;
+    // Local times are shared by every aircraft with the same leg time, and
+    // the origin's at departure by all of them: work each out once.
+    const cache = new Map<string, number | null>();
+    const local: LocalTime = (at, timeZone) => {
+      const key = `${timeZone}|${at.getTime()}`;
+      if (!cache.has(key)) cache.set(key, localMinutes(at, timeZone));
+      return cache.get(key)!;
+    };
     for (const entry of prepared.ready) {
       const reasons = staticChecks({
         passengerCapacity: entry.aircraft.passengerCapacity,
@@ -228,15 +245,32 @@ export class MatchingService {
         departureAt,
         arrivalAt,
         now,
-        origin: prepared.route.origin,
-        destination: prepared.route.destination,
+        origin,
+        destination,
         limits: entry.limits,
         restrictions: entry.restrictions,
+        local,
       });
+      const warnings = [...timing.warnings];
       reasons.push(...timing.reasons);
-      // A round trip's return cannot leave before the outbound lands.
-      if (returnAt && arrivalAt.getTime() > returnAt.getTime()) {
-        reasons.push('returnTime');
+      if (returnAt) {
+        // A round trip's return cannot leave before the outbound lands.
+        if (arrivalAt.getTime() > returnAt.getTime())
+          reasons.push('returnTime');
+        const back = legTimeChecks({
+          departureAt: returnAt,
+          arrivalAt: new Date(returnAt.getTime() + legMs),
+          origin: destination,
+          destination: origin,
+          restrictions: entry.restrictions,
+          local,
+        });
+        for (const reason of back.reasons) {
+          if (!reasons.includes(reason)) reasons.push(reason);
+        }
+        for (const warning of back.warnings) {
+          if (!warnings.includes(warning)) warnings.push(warning);
+        }
       }
       if (reasons.length === 0) {
         // Busy from leaving base to landing at the destination, or back at
@@ -245,7 +279,7 @@ export class MatchingService {
           departureAt.getTime() - entry.positioningMinutes * 60_000,
         );
         const to = returnAt ? new Date(returnAt.getTime() + legMs) : arrivalAt;
-        if (!windowFree(entry.windows, from, to, prepared.route.origin.id)) {
+        if (!windowFree(entry.windows, from, to, origin.id)) {
           reasons.push('availability');
         }
       }
@@ -262,7 +296,7 @@ export class MatchingService {
         } = entry;
         candidates.push({
           ...candidate,
-          warnings: [...candidate.warnings, ...timing.warnings],
+          warnings: [...candidate.warnings, ...warnings],
         });
       }
     }

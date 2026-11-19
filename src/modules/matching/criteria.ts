@@ -295,9 +295,8 @@ export function routeChecks(input: {
 export const NIGHT = { start: '19:00', end: '06:00' } as const;
 
 /**
- * Checks at a departure time: minimum notice (7, and per category), the
- * operator's and aircraft's operating hours at departure from the origin
- * and arrival at the destination (9), and night operations at both ends (5).
+ * Checks at a departure time: minimum notice (7, and per category), then
+ * `legTimeChecks` for the outbound.
  */
 export function timeChecks(input: {
   departureAt: Date;
@@ -307,9 +306,9 @@ export function timeChecks(input: {
   destination: MatchPoint;
   limits: MatchingLimits;
   restrictions: CombinedRestrictions;
+  local?: LocalTime;
 }): { reasons: ExclusionReason[]; warnings: string[] } {
   const reasons: ExclusionReason[] = [];
-  const warnings: string[] = [];
   const notice = Math.max(
     input.restrictions.minimumNoticeMinutes,
     input.limits.minimumNoticeMinutes ?? 0,
@@ -317,11 +316,34 @@ export function timeChecks(input: {
   if (input.departureAt.getTime() < input.now.getTime() + notice * 60_000) {
     reasons.push('notice');
   }
+  const leg = legTimeChecks(input);
+  return { reasons: [...reasons, ...leg.reasons], warnings: leg.warnings };
+}
+
+/** Minutes since local midnight at a time and zone; `localMinutes` or a cache of it. */
+export type LocalTime = (at: Date, timeZone: string) => number | null;
+
+/**
+ * One leg's times: the operator's and aircraft's operating hours at
+ * departure and arrival (9), and night operations at both ends (5). Used
+ * for the outbound and, swapped, for a round trip's return.
+ */
+export function legTimeChecks(input: {
+  departureAt: Date;
+  arrivalAt: Date;
+  origin: MatchPoint;
+  destination: MatchPoint;
+  restrictions: CombinedRestrictions;
+  local?: LocalTime;
+}): { reasons: ExclusionReason[]; warnings: string[] } {
+  const reasons: ExclusionReason[] = [];
+  const warnings: string[] = [];
+  const toLocal = input.local ?? localMinutes;
   const ends = [
     { point: input.origin, at: input.departureAt },
     { point: input.destination, at: input.arrivalAt },
   ];
-  const local = ends.map((end) => localMinutes(end.at, end.point.timeZone));
+  const local = ends.map((end) => toLocal(end.at, end.point.timeZone));
   // An unknown time zone cannot be shown to be within hours.
   if (
     input.restrictions.operatingHours.length > 0 &&
@@ -349,15 +371,33 @@ export function timeChecks(input: {
   return { reasons, warnings };
 }
 
+/** One formatter per time zone (building one is costly); null for an unknown zone. */
+const minuteFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+function minuteFormat(timeZone: string): Intl.DateTimeFormat | null {
+  let format = minuteFormats.get(timeZone);
+  if (format === undefined) {
+    try {
+      format = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      });
+    } catch {
+      format = null;
+    }
+    minuteFormats.set(timeZone, format);
+  }
+  return format;
+}
+
 /** Minutes since local midnight, or null for an unknown time zone. */
 export function localMinutes(at: Date, timeZone: string): number | null {
+  const format = minuteFormat(timeZone);
+  if (!format) return null;
   try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(at);
+    const parts = format.formatToParts(at);
     const hour = Number(parts.find((part) => part.type === 'hour')?.value);
     const minute = Number(parts.find((part) => part.type === 'minute')?.value);
     return Number.isInteger(hour) && Number.isInteger(minute)

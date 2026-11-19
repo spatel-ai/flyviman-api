@@ -97,6 +97,31 @@ const ROTARY: AircraftCategory[] = [
 /** Internal roles that may open aircraft files. Finance has no aircraft access. */
 const INTERNAL_READERS: Role[] = [Role.OPS, Role.SUPER_ADMIN];
 
+/**
+ * What an aircraft still lacks, from its non-rejected documents. Today is
+ * India's: a document is expired from the day after its date there, as the
+ * expiry job and the web count it (D-072).
+ */
+function gapsOf(
+  aircraft: Pick<Aircraft, 'homeBaseId' | 'rangeKm'>,
+  held: { type: AircraftDocumentType; expiresAt: Date | null }[],
+  today: Date,
+): string[] {
+  const gaps: string[] = [];
+  if (!aircraft.homeBaseId) gaps.push('homeBaseId');
+  if (aircraft.rangeKm == null) gaps.push('rangeKm');
+  // A renewed document counts even while the expired one is still attached.
+  for (const type of REQUIRED_AIRCRAFT_DOCUMENTS) {
+    const current = held.some(
+      (document) =>
+        document.type === type &&
+        (!document.expiresAt || document.expiresAt >= today),
+    );
+    if (!current) gaps.push(`document:${type}`);
+  }
+  return gaps;
+}
+
 function notFound(what = 'Aircraft'): AppException {
   return new AppException(
     'NOT_FOUND',
@@ -465,9 +490,25 @@ export class AircraftService implements OnModuleInit {
       },
       orderBy: { createdAt: 'asc' },
     });
-    return Promise.all(
-      rows.map(async (row) => ({ ...row, missing: await this.missing(row) })),
-    );
+    // Every aircraft's documents in one read, not one per aircraft.
+    const held = await this.prisma.aircraftDocument.findMany({
+      where: {
+        aircraftId: { in: rows.map((row) => row.id) },
+        verificationStatus: { not: DocumentVerificationStatus.REJECTED },
+      },
+      select: { aircraftId: true, type: true, expiresAt: true },
+    });
+    const byAircraft = new Map<string, typeof held>();
+    for (const document of held) {
+      const list = byAircraft.get(document.aircraftId) ?? [];
+      list.push(document);
+      byAircraft.set(document.aircraftId, list);
+    }
+    const today = indiaTodayAsDate();
+    return rows.map((row) => ({
+      ...row,
+      missing: gapsOf(row, byAircraft.get(row.id) ?? [], today),
+    }));
   }
 
   // --- Completeness -------------------------------------------------------
@@ -476,12 +517,6 @@ export class AircraftService implements OnModuleInit {
     aircraft: Aircraft,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<string[]> {
-    const gaps: string[] = [];
-    if (!aircraft.homeBaseId) gaps.push('homeBaseId');
-    if (aircraft.rangeKm == null) gaps.push('rangeKm');
-    // Today in India: a document is expired from the day after its date
-    // there, as the expiry job and the web count it (D-072).
-    const today = indiaTodayAsDate();
     const held = await db.aircraftDocument.findMany({
       where: {
         aircraftId: aircraft.id,
@@ -489,16 +524,7 @@ export class AircraftService implements OnModuleInit {
       },
       select: { type: true, expiresAt: true },
     });
-    // A renewed document counts even while the expired one is still attached.
-    for (const type of REQUIRED_AIRCRAFT_DOCUMENTS) {
-      const current = held.some(
-        (document) =>
-          document.type === type &&
-          (!document.expiresAt || document.expiresAt >= today),
-      );
-      if (!current) gaps.push(`document:${type}`);
-    }
-    return gaps;
+    return gapsOf(aircraft, held, indiaTodayAsDate());
   }
 
   private async withDetail(aircraft: Aircraft): Promise<AircraftDetail> {

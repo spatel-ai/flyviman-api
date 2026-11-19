@@ -242,14 +242,22 @@ function strategyAssumption(
     : `Round trip: the aircraft waits ${stay} until the return flight`;
 }
 
+/** One date formatter per time zone: building one is costly. */
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
 /** Local dates passed at `timeZone` from `from` to `to`: nights away. */
 export function localNights(timeZone: string, from: Date, to: Date): number {
-  const format = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+  let format = dateFormats.get(timeZone);
+  if (!format) {
+    // Throws for an unknown zone, as before; only a valid one is kept.
+    format = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    dateFormats.set(timeZone, format);
+  }
   const day = (date: Date) =>
     Date.parse(`${format.format(date)}T00:00:00Z`) / 86_400_000;
   return Math.max(0, day(to) - day(from));
