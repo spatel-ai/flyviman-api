@@ -215,6 +215,13 @@ export class EnvironmentVariables {
    */
   @IsIn(['mock', 'local'])
   STORAGE_PROVIDER: string = 'mock';
+
+  /**
+   * Where scheduled airline fares come from. Only `mock` (realistic Indian
+   * domestic data, no network) until a supplier is chosen (decision 2).
+   */
+  @IsIn(['mock'])
+  AIRLINE_PROVIDER: string = 'mock';
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
