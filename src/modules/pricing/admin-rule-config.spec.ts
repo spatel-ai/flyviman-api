@@ -91,6 +91,35 @@ describe('checkRuleConfig', () => {
   });
 });
 
+describe('MATCHING_LIMITS config', () => {
+  it('accepts any subset of limits and leaves the rest out', () => {
+    expect(
+      checkRuleConfig('MATCHING_LIMITS', {
+        maxLegKm: 600,
+        landingSites: 'NOT_ALLOWED',
+      }),
+    ).toEqual({
+      ok: true,
+      config: { maxLegKm: 600, landingSites: 'NOT_ALLOWED' },
+    });
+    expect(checkRuleConfig('MATCHING_LIMITS', {})).toEqual({
+      ok: true,
+      config: {},
+    });
+  });
+
+  it('refuses a minimum above the maximum, decimals and unknown keys', () => {
+    for (const config of [
+      { minLegKm: 500, maxLegKm: 100 },
+      { minRunwayM: 1200.5 },
+      { landingSites: 'MAYBE' },
+      { regions: ['Goa'] },
+    ]) {
+      expect(checkRuleConfig('MATCHING_LIMITS', config).ok).toBe(false);
+    }
+  });
+});
+
 describe('admin rule types', () => {
   it('leaves out the types the engine does not apply yet', () => {
     for (const type of ['MARKUP', 'SERVICE_FEE', 'DISCOUNT', 'HOURLY_RATE']) {

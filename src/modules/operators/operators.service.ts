@@ -38,6 +38,10 @@ import {
   staffAccess,
 } from './operator-access.js';
 import type { ExpiryCandidate } from '../compliance/expiry.js';
+import {
+  parseRestrictions,
+  type AircraftRestrictions,
+} from '../aircraft/aircraft-json.js';
 import { nextOperatorStatus, OperatorAction } from './operator-transitions.js';
 
 export type OperatorRecord = Prisma.OperatorGetPayload<object>;
@@ -103,6 +107,14 @@ const NOTIFICATION: Record<OperatorAction, string> = {
   suspend: 'operator.suspended',
   reinstate: 'operator.reinstated',
 };
+
+function notApproved(): AppException {
+  return new AppException(
+    'OPERATOR_NOT_APPROVED',
+    'Only an approved operator can manage restrictions.',
+    HttpStatus.CONFLICT,
+  );
+}
 
 function notFound(what = 'Operator'): AppException {
   return new AppException(
@@ -289,17 +301,30 @@ export class OperatorsService implements OnModuleInit {
   }
 
   /**
-   * Customer-facing names of the operators among `ids` that are approved
-   * (business rule 4). Search uses it: an operator missing from the map is
-   * not offered.
+   * Approved operators among `ids` (business rule 4) with their
+   * customer-facing name and operator-wide restrictions (raw; matching
+   * parses them). An operator missing from the map is not offered.
    */
-  async approvedNames(ids: string[]): Promise<Map<string, string>> {
+  async approvedForMatching(
+    ids: string[],
+  ): Promise<Map<string, { name: string; restrictions: unknown }>> {
     const rows = await this.prisma.operator.findMany({
       where: { id: { in: ids }, status: OperatorStatus.APPROVED },
-      select: { id: true, legalName: true, tradingName: true },
+      select: {
+        id: true,
+        legalName: true,
+        tradingName: true,
+        restrictions: true,
+      },
     });
     return new Map(
-      rows.map((row) => [row.id, row.tradingName ?? row.legalName]),
+      rows.map((row) => [
+        row.id,
+        {
+          name: row.tradingName ?? row.legalName,
+          restrictions: row.restrictions,
+        },
+      ]),
     );
   }
 
@@ -460,6 +485,58 @@ export class OperatorsService implements OnModuleInit {
       );
       return tx.operator.findUniqueOrThrow({ where: { id: operator.id } });
     });
+  }
+
+  /**
+   * The caller's operator-wide restrictions (OPERATOR_ADMIN of an approved
+   * operator; the controller checks the role).
+   */
+  async restrictionsFor(user: AuthUser): Promise<AircraftRestrictions | null> {
+    const operator = await this.approvedOperatorOf(user);
+    return parseRestrictions(operator.restrictions);
+  }
+
+  /**
+   * Replaces the caller's operator-wide restrictions; `null` clears them.
+   * The row is locked so the audited `before` is what this write replaced.
+   */
+  async setRestrictions(
+    user: AuthUser,
+    restrictions: AircraftRestrictions | null,
+  ): Promise<AircraftRestrictions | null> {
+    const operator = await this.approvedOperatorOf(user);
+    // Plain, deduplicated and limited, as matching reads it.
+    const next = restrictions ? parseRestrictions(restrictions) : null;
+    return this.prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<
+        { status: OperatorStatus; restrictions: unknown }[]
+      >`SELECT "status", "restrictions" FROM "Operator" WHERE "id" = ${operator.id}::uuid FOR UPDATE`;
+      if (row?.status !== OperatorStatus.APPROVED) throw notApproved();
+      const before = parseRestrictions(row.restrictions);
+      await tx.operator.update({
+        where: { id: operator.id },
+        data: {
+          restrictions: next ? (next as Prisma.InputJsonObject) : Prisma.DbNull,
+        },
+      });
+      await this.audit.record(
+        {
+          action: 'operator.restrictions.update',
+          entityType: 'Operator',
+          entityId: operator.id,
+          before: { restrictions: before } as Prisma.InputJsonObject,
+          after: { restrictions: next } as Prisma.InputJsonObject,
+        },
+        tx,
+      );
+      return next;
+    });
+  }
+
+  private async approvedOperatorOf(user: AuthUser): Promise<OperatorRecord> {
+    const { operator } = await this.accessFor(user);
+    if (operator.status !== OperatorStatus.APPROVED) throw notApproved();
+    return operator;
   }
 
   /** What the application still needs before it can be submitted. */

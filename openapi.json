@@ -963,6 +963,70 @@
         ]
       }
     },
+    "/api/v1/operator/restrictions": {
+      "get": {
+        "description": "Operating hours, excluded locations and minimum notice for every aircraft, in the shape of an aircraft's restrictions. Approved operator only (`OPERATOR_NOT_APPROVED`).",
+        "operationId": "OperatorController_restrictions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorRestrictionsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Operator-wide restrictions",
+        "tags": [
+          "operator"
+        ]
+      },
+      "put": {
+        "description": "Replaces the whole object; `{ \"restrictions\": null }` clears it. Matching applies these and each aircraft's own; the stricter wins. Approved operator only (`OPERATOR_NOT_APPROVED`).",
+        "operationId": "OperatorController_setRestrictions",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetOperatorRestrictionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorRestrictionsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Replace the operator-wide restrictions (audited)",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
     "/api/v1/operator/profile/submit": {
       "post": {
         "description": "Needs company details, at least one service category, and the required compliance documents.",
@@ -3549,7 +3613,8 @@
                 "TIME_ALLOWANCE",
                 "VALIDITY",
                 "MIN_BILLABLE_HOURS",
-                "POSITIONING"
+                "POSITIONING",
+                "MATCHING_LIMITS"
               ]
             }
           },
@@ -5298,6 +5363,88 @@
           }
         }
       },
+      "OperatingHoursDto": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "example": "06:00",
+            "description": "Local time, HH:MM (24 h)."
+          },
+          "end": {
+            "type": "string",
+            "example": "20:00",
+            "description": "Local time, HH:MM (24 h). Before `start` spans midnight."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "AircraftRestrictionsDto": {
+        "type": "object",
+        "properties": {
+          "operatingHours": {
+            "description": "When the aircraft may depart and arrive, in the local time of each location.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatingHoursDto"
+              }
+            ]
+          },
+          "excludedLocationIds": {
+            "maxItems": 100,
+            "description": "Locations the aircraft does not fly to or from.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "minimumNoticeMinutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10080,
+            "description": "Notice needed before departure, in minutes."
+          }
+        }
+      },
+      "OperatorRestrictionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "restrictions": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftRestrictionsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "restrictions"
+        ]
+      },
+      "SetOperatorRestrictionsDto": {
+        "type": "object",
+        "properties": {
+          "restrictions": {
+            "nullable": true,
+            "description": "Replaces the whole object; `null` clears it. Required: leaving it out is refused.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftRestrictionsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "restrictions"
+        ]
+      },
       "OperatorDocumentType": {
         "type": "string",
         "enum": [
@@ -6020,53 +6167,6 @@
           "FIXED_WING",
           "HELICOPTER"
         ]
-      },
-      "OperatingHoursDto": {
-        "type": "object",
-        "properties": {
-          "start": {
-            "type": "string",
-            "example": "06:00",
-            "description": "Local time, HH:MM (24 h)."
-          },
-          "end": {
-            "type": "string",
-            "example": "20:00",
-            "description": "Local time, HH:MM (24 h). Before `start` spans midnight."
-          }
-        },
-        "required": [
-          "start",
-          "end"
-        ]
-      },
-      "AircraftRestrictionsDto": {
-        "type": "object",
-        "properties": {
-          "operatingHours": {
-            "description": "When the aircraft may depart and arrive, in the local time of each location.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OperatingHoursDto"
-              }
-            ]
-          },
-          "excludedLocationIds": {
-            "maxItems": 100,
-            "description": "Locations the aircraft does not fly to or from.",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "minimumNoticeMinutes": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 10080,
-            "description": "Notice needed before departure, in minutes."
-          }
-        }
       },
       "AircraftPricingModel": {
         "type": "string",
@@ -8543,7 +8643,8 @@
               "TIME_ALLOWANCE",
               "VALIDITY",
               "MIN_BILLABLE_HOURS",
-              "POSITIONING"
+              "POSITIONING",
+              "MATCHING_LIMITS"
             ]
           },
           "scope": {
