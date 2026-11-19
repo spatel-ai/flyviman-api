@@ -18,7 +18,12 @@ import {
   CSRF_HEADER,
   REFRESH_COOKIE,
 } from './auth.cookies.js';
-import { IS_PUBLIC, ROLES, SKIP_CSRF } from './auth.decorators.js';
+import {
+  IS_PUBLIC,
+  OPTIONAL_USER,
+  ROLES,
+  SKIP_CSRF,
+} from './auth.decorators.js';
 import { AuthService } from './auth.service.js';
 import { TokenService } from './token.service.js';
 
@@ -52,9 +57,31 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (isPublic(this.reflector, context)) return true;
-
     const request = context.switchToHttp().getRequest<Request>();
+    if (isPublic(this.reflector, context)) {
+      // `@PublicOptionalUser()`: recognise a valid session, never refuse.
+      if (
+        this.reflector.getAllAndOverride<boolean | undefined>(OPTIONAL_USER, [
+          context.getHandler(),
+          context.getClass(),
+        ]) === true
+      ) {
+        await this.authenticate(request);
+      }
+      return true;
+    }
+    if (!(await this.authenticate(request))) {
+      throw new AppException(
+        'UNAUTHENTICATED',
+        'Sign in to continue.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    return true;
+  }
+
+  /** Sets `request.user` from a valid session; false when there is none. */
+  private async authenticate(request: Request): Promise<boolean> {
     const token = cookies(request)[ACCESS_COOKIE];
     const claims = token ? await this.tokens.verifyAccessToken(token) : null;
     const account = claims ? await this.users.findAccount(claims.sub) : null;
@@ -65,11 +92,7 @@ export class JwtAuthGuard implements CanActivate {
       account.status !== UserStatus.ACTIVE ||
       !(await this.auth.isFamilyActive(claims.sid))
     ) {
-      throw new AppException(
-        'UNAUTHENTICATED',
-        'Sign in to continue.',
-        HttpStatus.UNAUTHORIZED,
-      );
+      return false;
     }
 
     request.user = {

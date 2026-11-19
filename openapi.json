@@ -3642,6 +3642,651 @@
         ]
       }
     },
+    "/api/v1/empty-legs": {
+      "get": {
+        "description": "Published offers still valid, on an approved, available aircraft with current documents, of an approved operator. Soonest departure first. `from` and `to` are India dates matched against the departure window; `maxPrice` is in paise.",
+        "operationId": "EmptyLegsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "origin",
+            "required": false,
+            "in": "query",
+            "description": "Origin location id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "destination",
+            "required": false,
+            "in": "query",
+            "description": "Destination location id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "YYYY-MM-DD, India time. Offers whose departure window ends on or after the start of this day.",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "YYYY-MM-DD, India time. Offers whose departure window starts on or before the end of this day.",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "name": "passengers",
+            "required": false,
+            "in": "query",
+            "description": "At least this many seats available.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Highest price, in paise.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EmptyLegResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Listed empty-leg offers",
+        "tags": [
+          "empty-legs"
+        ]
+      }
+    },
+    "/api/v1/empty-legs/{id}": {
+      "get": {
+        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
+        "operationId": "EmptyLegsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyLegDetailResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Empty-leg offer detail",
+        "tags": [
+          "empty-legs"
+        ]
+      }
+    },
+    "/api/v1/empty-legs/{id}/interest": {
+      "post": {
+        "description": "Listed offers only (404 or 410 otherwise). Repeating it changes nothing. Alerts go in the app and by email when the offer changes, is withdrawn or expires.",
+        "operationId": "EmptyLegsController_register",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyLegInterestResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Follow an offer for change alerts",
+        "tags": [
+          "empty-legs"
+        ]
+      },
+      "delete": {
+        "description": "Succeeds whether or not the caller was following it.",
+        "operationId": "EmptyLegsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Stop alerts for an offer",
+        "tags": [
+          "empty-legs"
+        ]
+      }
+    },
+    "/api/v1/operator/empty-legs": {
+      "get": {
+        "operationId": "OperatorEmptyLegsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EmptyLegStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorEmptyLegResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List own offers, newest first",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      },
+      "post": {
+        "description": "Created as a draft. Approved operators only. The price is returned as a `QUOTE`. Audited.",
+        "operationId": "OperatorEmptyLegsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEmptyLegDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create an offer",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/operator/empty-legs/aircraft": {
+      "get": {
+        "description": "Approved aircraft within your reach, by registration. Read only; for staff with \"manage empty legs\" who have no fleet access.",
+        "operationId": "OperatorEmptyLegsController_aircraft",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorEmptyLegAircraftDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Aircraft an offer can be made on",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/operator/empty-legs/{id}": {
+      "get": {
+        "operationId": "OperatorEmptyLegsController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Offer detail",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      },
+      "patch": {
+        "description": "Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); a change notifies customers following it, or, when review is required, returns it to review. Audited.",
+        "operationId": "OperatorEmptyLegsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEmptyLegDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Update an offer",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/operator/empty-legs/{id}/publish": {
+      "post": {
+        "description": "From draft. Needs an approved operator and aircraft and validity still ahead. Goes to `PUBLISHED`, or `PENDING_REVIEW` when review is required. Audited.",
+        "operationId": "OperatorEmptyLegsController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Publish, or submit for review if required",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/operator/empty-legs/{id}/withdraw": {
+      "post": {
+        "description": "From draft, review or published; final. Customers following a published offer are told. Audited.",
+        "operationId": "OperatorEmptyLegsController_withdraw",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Withdraw",
+        "tags": [
+          "operator-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/admin/empty-legs": {
+      "get": {
+        "description": "Every status; filter with `status=PENDING_REVIEW` for the review queue. Oldest submission first.",
+        "operationId": "AdminEmptyLegsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EmptyLegStatus"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminEmptyLegResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Offers, including those awaiting review",
+        "tags": [
+          "admin-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/admin/empty-legs/{id}/approve": {
+      "post": {
+        "description": "From `PENDING_REVIEW` to `PUBLISHED`. Needs an approved operator and aircraft and validity still ahead. Audited; the operator is told.",
+        "operationId": "AdminEmptyLegsController_approve",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Approve for publication",
+        "tags": [
+          "admin-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/admin/empty-legs/{id}/reject": {
+      "post": {
+        "description": "From `PENDING_REVIEW` back to `DRAFT`, with the reason as `reviewNote`. Audited; the operator is told.",
+        "operationId": "AdminEmptyLegsController_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyLegReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEmptyLegResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reject with reason",
+        "tags": [
+          "admin-empty-legs"
+        ]
+      }
+    },
     "/api/v1/search/scheduled": {
       "post": {
         "description": "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned.",
@@ -6031,7 +6676,8 @@
         "type": "string",
         "enum": [
           "MANAGE_AIRCRAFT",
-          "MANAGE_AVAILABILITY"
+          "MANAGE_AVAILABILITY",
+          "MANAGE_EMPTY_LEGS"
         ]
       },
       "OperatorAccessDto": {
@@ -8877,6 +9523,674 @@
           "registration"
         ]
       },
+      "EmptyLegStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "PENDING_REVIEW",
+          "PUBLISHED",
+          "BOOKED",
+          "WITHDRAWN",
+          "EXPIRED"
+        ]
+      },
+      "EmptyLegAircraftDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Manufacturer and model.",
+            "example": "Cessna Citation CJ3+"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "seats": {
+            "type": "number",
+            "description": "The aircraft's passenger capacity."
+          }
+        },
+        "required": [
+          "type",
+          "category",
+          "seats"
+        ]
+      },
+      "EmptyLegLocationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "iata": {
+            "type": "string",
+            "nullable": true
+          },
+          "icao": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "city",
+          "iata",
+          "icao",
+          "timeZone"
+        ]
+      },
+      "PriceType": {
+        "type": "string",
+        "enum": [
+          "ESTIMATE",
+          "LIVE_FARE",
+          "QUOTE",
+          "CONFIRMED"
+        ],
+        "description": "`QUOTE` for an operator's price. Never `CONFIRMED`."
+      },
+      "EmptyLegPriceDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "priceType": {
+            "description": "`QUOTE` for an operator's price. Never `CONFIRMED`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "priceType"
+        ]
+      },
+      "EmptyLegResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-EL-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmptyLegStatus"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/EmptyLegAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "departureFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsAvailable": {
+            "type": "number"
+          },
+          "price": {
+            "$ref": "#/components/schemas/EmptyLegPriceDto"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Not bookable from this time."
+          },
+          "conditions": {
+            "type": "string",
+            "description": "Booking conditions."
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "status",
+          "aircraft",
+          "operatorName",
+          "origin",
+          "destination",
+          "departureFrom",
+          "departureTo",
+          "seatsAvailable",
+          "price",
+          "validUntil",
+          "conditions"
+        ]
+      },
+      "EmptyLegDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-EL-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmptyLegStatus"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/EmptyLegAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "departureFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsAvailable": {
+            "type": "number"
+          },
+          "price": {
+            "$ref": "#/components/schemas/EmptyLegPriceDto"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Not bookable from this time."
+          },
+          "conditions": {
+            "type": "string",
+            "description": "Booking conditions."
+          },
+          "interested": {
+            "type": "boolean",
+            "description": "Whether the signed-in customer follows this offer for change alerts. False when not signed in as a customer."
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "status",
+          "aircraft",
+          "operatorName",
+          "origin",
+          "destination",
+          "departureFrom",
+          "departureTo",
+          "seatsAvailable",
+          "price",
+          "validUntil",
+          "conditions",
+          "interested"
+        ]
+      },
+      "EmptyLegInterestResponseDto": {
+        "type": "object",
+        "properties": {
+          "emptyLegId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "interested": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "emptyLegId",
+          "interested"
+        ]
+      },
+      "OperatorEmptyLegAircraftDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Manufacturer and model.",
+            "example": "Cessna Citation CJ3+"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "seats": {
+            "type": "number",
+            "description": "The aircraft's passenger capacity."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "category",
+          "seats",
+          "id",
+          "registration"
+        ]
+      },
+      "OperatorEmptyLegResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-EL-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmptyLegStatus"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/OperatorEmptyLegAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "departureFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsAvailable": {
+            "type": "number"
+          },
+          "price": {
+            "$ref": "#/components/schemas/EmptyLegPriceDto"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Not bookable from this time."
+          },
+          "conditions": {
+            "type": "string",
+            "description": "Booking conditions."
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why operations last rejected it; cleared on publishing again."
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "interestCount": {
+            "type": "number",
+            "description": "Customers following it."
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Whether PATCH is allowed (draft or published)."
+          },
+          "publishable": {
+            "type": "boolean",
+            "description": "Whether publish is allowed (draft)."
+          },
+          "withdrawable": {
+            "type": "boolean",
+            "description": "Whether withdraw is allowed (draft, under review or published)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "status",
+          "aircraft",
+          "operatorName",
+          "origin",
+          "destination",
+          "departureFrom",
+          "departureTo",
+          "seatsAvailable",
+          "price",
+          "validUntil",
+          "conditions",
+          "reviewNote",
+          "submittedAt",
+          "publishedAt",
+          "interestCount",
+          "editable",
+          "publishable",
+          "withdrawable",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateEmptyLegDto": {
+        "type": "object",
+        "properties": {
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An aircraft of your operator, within your reach."
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active location."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active location, other than the origin."
+          },
+          "departureFrom": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Earliest departure. ISO 8601 with offset, within 365 days.",
+            "example": "2026-12-05T08:00:00+05:30"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest departure. After `departureFrom`, in the future, at most 14 days after it.",
+            "example": "2026-12-05T18:00:00+05:30"
+          },
+          "seatsAvailable": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Seats offered; at most the aircraft's passenger capacity."
+          },
+          "priceMinor": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 1000000000,
+            "description": "The whole offer, in paise (INR). What the customer pays; returned as a `QUOTE`."
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the offer stops being bookable: in the future and not after `departureTo`."
+          },
+          "conditions": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 2000,
+            "description": "Booking conditions shown before the customer commits."
+          }
+        },
+        "required": [
+          "aircraftId",
+          "originId",
+          "destinationId",
+          "departureFrom",
+          "departureTo",
+          "seatsAvailable",
+          "priceMinor",
+          "validUntil",
+          "conditions"
+        ]
+      },
+      "UpdateEmptyLegDto": {
+        "type": "object",
+        "properties": {
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsAvailable": {
+            "type": "number",
+            "minimum": 1
+          },
+          "priceMinor": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 1000000000
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "conditions": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 2000
+          }
+        }
+      },
+      "AdminEmptyLegResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-EL-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmptyLegStatus"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/OperatorEmptyLegAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/EmptyLegLocationDto"
+          },
+          "departureFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsAvailable": {
+            "type": "number"
+          },
+          "price": {
+            "$ref": "#/components/schemas/EmptyLegPriceDto"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Not bookable from this time."
+          },
+          "conditions": {
+            "type": "string",
+            "description": "Booking conditions."
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why operations last rejected it; cleared on publishing again."
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "interestCount": {
+            "type": "number",
+            "description": "Customers following it."
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Whether PATCH is allowed (draft or published)."
+          },
+          "publishable": {
+            "type": "boolean",
+            "description": "Whether publish is allowed (draft)."
+          },
+          "withdrawable": {
+            "type": "boolean",
+            "description": "Whether withdraw is allowed (draft, under review or published)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "status",
+          "aircraft",
+          "operatorName",
+          "origin",
+          "destination",
+          "departureFrom",
+          "departureTo",
+          "seatsAvailable",
+          "price",
+          "validUntil",
+          "conditions",
+          "reviewNote",
+          "submittedAt",
+          "publishedAt",
+          "interestCount",
+          "editable",
+          "publishable",
+          "withdrawable",
+          "createdAt",
+          "updatedAt",
+          "operatorId"
+        ]
+      },
+      "EmptyLegReasonDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
       "ScheduledPassengersDto": {
         "type": "object",
         "properties": {
@@ -9473,15 +10787,6 @@
           "RETURN_TO_BASE"
         ],
         "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request."
-      },
-      "PriceType": {
-        "type": "string",
-        "enum": [
-          "ESTIMATE",
-          "LIVE_FARE",
-          "QUOTE",
-          "CONFIRMED"
-        ]
       },
       "SearchPriceDto": {
         "type": "object",

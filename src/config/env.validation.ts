@@ -196,6 +196,14 @@ export class EnvironmentVariables {
   OPERATIONS_INBOX_EMAIL: string = 'operations@flyviman.test';
 
   /**
+   * Whether an operator's empty-leg offer waits for operations to approve it
+   * before it is listed (M7). Off by default: publishing lists it at once.
+   */
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  EMPTY_LEG_REVIEW_REQUIRED: boolean = false;
+
+  /**
    * Encrypts sensitive columns (identity document numbers) and the session
    * pairs briefly kept in Redis for racing refreshes. 32 random bytes,
    * base64 encoded. Changing it makes existing values unreadable.
