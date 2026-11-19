@@ -49,6 +49,7 @@ interface SearchBody {
   searchId: string;
   partial: boolean;
   providers: { name: string; status: string }[];
+  passengers: { adults: number; children: number; infants: number };
   results: Offer[];
 }
 
@@ -87,6 +88,8 @@ test.describe('scheduled search', () => {
     });
     expect(body.partial).toBe(false);
     expect(body.providers).toEqual([{ name: 'mock', status: 'OK' }]);
+    // The party comes back, so a page reading the search by id knows it.
+    expect(body.passengers).toEqual(party);
     expect(body.results.length).toBeGreaterThan(0);
     for (const offer of body.results) {
       expect(offer.direction).toBe('OUTBOUND');
