@@ -1,7 +1,12 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Reflector } from '@nestjs/core';
-import { RateLimitConfig, RateLimitGuard } from './rate-limit.js';
+import type { ThrottlerStorage } from '@nestjs/throttler';
+import {
+  RateLimitConfig,
+  RateLimitGuard,
+  RateLimitIdentity,
+} from './rate-limit.js';
 
 function context(request: object): ExecutionContext {
   return {
@@ -9,30 +14,58 @@ function context(request: object): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+/** The guard alone, with a stand-in for the identity the auth module provides. */
+function guard(identity: Partial<RateLimitIdentity> = {}) {
+  const fake = {
+    identify: vi.fn().mockResolvedValue(null),
+    exempt: vi.fn().mockResolvedValue(false),
+    ...identity,
+  };
+  const instance = new RateLimitGuard(
+    [],
+    {} as ThrottlerStorage,
+    {} as Reflector,
+    fake as RateLimitIdentity,
+  ) as unknown as {
+    shouldSkip(context: ExecutionContext): Promise<boolean>;
+    getTracker(request: Record<string, unknown>): Promise<string>;
+  };
+  return { instance, fake };
+}
+
 describe('RateLimitGuard exemptions', () => {
-  const original = RateLimitGuard.exempt;
-  afterEach(() => {
-    RateLimitGuard.exempt = original;
-  });
-
-  // `shouldSkip` is protected; called on the prototype with a bare receiver.
-  const shouldSkip = (request: object) =>
-    (
-      RateLimitGuard.prototype as unknown as {
-        shouldSkip(context: ExecutionContext): Promise<boolean>;
-      }
-    ).shouldSkip.call({}, context(request));
-
-  it('does not count a request the auth module exempts (a racing refresh)', async () => {
+  it('does not count a request the identity exempts (a racing refresh)', async () => {
     const request = { path: '/api/v1/auth/refresh' };
-    RateLimitGuard.exempt = vi.fn().mockResolvedValue(true);
-    await expect(shouldSkip(request)).resolves.toBe(true);
-    expect(RateLimitGuard.exempt).toHaveBeenCalledWith(request);
+    const { instance, fake } = guard({
+      exempt: vi.fn().mockResolvedValue(true),
+    });
+    await expect(instance.shouldSkip(context(request))).resolves.toBe(true);
+    expect(fake.exempt).toHaveBeenCalledWith(request);
   });
 
   it('counts every other request', async () => {
-    RateLimitGuard.exempt = vi.fn().mockResolvedValue(false);
-    await expect(shouldSkip({ path: '/api/v1/me' })).resolves.toBe(false);
+    const { instance } = guard();
+    await expect(
+      instance.shouldSkip(context({ path: '/api/v1/me' })),
+    ).resolves.toBe(false);
+  });
+});
+
+describe('RateLimitGuard tracker', () => {
+  it('counts a recognised session against that session', async () => {
+    const request = { path: '/api/v1/me', ip: '203.0.113.7' };
+    const { instance, fake } = guard({
+      identify: vi.fn().mockResolvedValue('user:user-1'),
+    });
+    await expect(instance.getTracker(request)).resolves.toBe('user:user-1');
+    expect(fake.identify).toHaveBeenCalledWith(request);
+  });
+
+  it('counts by address when the identity recognises none', async () => {
+    const { instance } = guard();
+    await expect(
+      instance.getTracker({ path: '/api/v1/me', ip: '203.0.113.7' }),
+    ).resolves.toBe('203.0.113.7');
   });
 });
 

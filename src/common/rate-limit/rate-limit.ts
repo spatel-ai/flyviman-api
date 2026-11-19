@@ -2,10 +2,13 @@ import { ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import {
+  InjectThrottlerOptions,
+  InjectThrottlerStorage,
   ThrottlerGuard,
   type ThrottlerLimitDetail,
-  ThrottlerModuleOptions,
+  type ThrottlerModuleOptions,
   ThrottlerOptionsFactory,
+  type ThrottlerStorage,
 } from '@nestjs/throttler';
 import { signedClientAddress } from '../middleware/client-address.middleware.js';
 
@@ -92,12 +95,15 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
 }
 
 /**
- * Who a request is counted against. Returns `null` to count by address.
- * Set by the auth module, which knows how to recognise a session.
+ * How the rate limiter recognises a session. Provided by the auth module,
+ * which knows what a session is; the guard depends only on this.
  */
-export type RateLimitIdentity = (
-  request: Record<string, any>,
-) => Promise<string | null>;
+export abstract class RateLimitIdentity {
+  /** Who a request is counted against; `null` counts it by address. */
+  abstract identify(request: Record<string, any>): Promise<string | null>;
+  /** Requests not counted at all. */
+  abstract exempt(request: Record<string, any>): Promise<boolean>;
+}
 
 /**
  * Counts each caller separately and sends the standard `RateLimit-*`
@@ -111,20 +117,25 @@ export type RateLimitIdentity = (
 @Injectable()
 export class RateLimitGuard extends ThrottlerGuard {
   protected headerPrefix = 'RateLimit';
-  static identify: RateLimitIdentity = async () => null;
-  /** Requests not counted at all. Set by the auth module. */
-  static exempt: (request: Record<string, any>) => Promise<boolean> =
-    async () => false;
+
+  constructor(
+    @InjectThrottlerOptions() options: ThrottlerModuleOptions,
+    @InjectThrottlerStorage() storage: ThrottlerStorage,
+    reflector: Reflector,
+    private readonly identity: RateLimitIdentity,
+  ) {
+    super(options, storage, reflector);
+  }
 
   protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
     return (
       (await super.shouldSkip(context)) ||
-      RateLimitGuard.exempt(context.switchToHttp().getRequest())
+      this.identity.exempt(context.switchToHttp().getRequest())
     );
   }
 
   protected async getTracker(request: Record<string, any>): Promise<string> {
-    const identity = await RateLimitGuard.identify(request);
+    const identity = await this.identity.identify(request);
     if (identity) return identity;
     // Behind the web host's proxy, the visitor's verified address; normalised
     // (IPv6 to its subnet) exactly as the connection's address would be.
