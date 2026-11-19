@@ -106,6 +106,14 @@ Strategy and conventions: `../docs/testing-strategy.md`.
 - Everything that crosses HTTP, the database or a provider adapter: Playwright API tests in `e2e/`, written with the `/playwright-test` skill.
 - A change is done when `npm run lint`, `npm run typecheck`, the unit specs it touches (`npm test -- <name>`) and its Playwright file (`npx playwright test <name>`) pass. Full suites only when asked: CI (`.github/workflows/ci.yml`) runs everything on every pull request and push to `main`, and fails when `openapi.json` is out of date (`../docs/testing-strategy.md`).
 
+## Working in a worktree
+
+Concurrent tasks run in worktree slots (`../docs/development-workflow.md`), created by `../scripts/worktree.sh`:
+- **Location:** `.worktrees/<task>/flyviman-api` at the workspace root, on branch `wt/<slot>-<task>`. Its `.env` points at slot n's database `flyviman_wt<n>` and Redis db n.
+- **Ports:** Playwright runs with `PORT=40n0` (the suite also uses 40n1 and 40n2). Never 4000–4002, which belong to the main checkout; `reuseExistingServer` would quietly test someone else's server.
+- **Documents:** from a worktree, `../docs/` and `../CLAUDE.md` resolve to nothing, because the worktree sits two levels deeper. Read them at the workspace root, and never edit them from a task; list document changes in the report.
+- **Contract:** `openapi.json` is regenerated (`npm run openapi:export`), never merged as text. Only one task changes `prisma/schema.prisma` at a time.
+
 ## Skills and agents
 
-`/nest-module`, `/api-endpoint`, `/db-migration`, `/pricing-rule`, `/playwright-test`; agents `code-reviewer`, `security-reviewer`, `test-runner`. They live in `../.claude/`, so start Claude Code from the workspace root to have them available.
+`/nest-module`, `/api-endpoint`, `/db-migration`, `/pricing-rule`, `/playwright-test`; agents `scout`, `builder`, `merger`, `code-reviewer`, `security-reviewer`, `test-runner`. They live in `../.claude/`, so start Claude Code from the workspace root to have them available.
