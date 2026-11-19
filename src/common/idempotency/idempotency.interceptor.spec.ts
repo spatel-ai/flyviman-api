@@ -2,6 +2,7 @@ import { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom, from } from 'rxjs';
+import { IS_PUBLIC } from '../../modules/auth/auth.decorators.js';
 import { AppException } from '../errors/app.exception.js';
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
@@ -99,10 +100,11 @@ const LOCK_SECONDS = 300;
 const DATA_KEY = Buffer.alloc(32, 7).toString('base64');
 const T0 = new Date('2026-11-19T10:00:00.000Z');
 
-function setup(required = true, dataKey = DATA_KEY) {
+function setup(required = true, dataKey = DATA_KEY, isPublic = false) {
   const store = new MemoryStore();
   const reflector = {
-    getAllAndOverride: () => required,
+    getAllAndOverride: (key: string) =>
+      key === IS_PUBLIC ? isPublic : required,
   } as unknown as Reflector;
   const config = {
     getOrThrow: (name: string) =>
@@ -120,7 +122,8 @@ function setup(required = true, dataKey = DATA_KEY) {
     options: {
       key?: string;
       body?: unknown;
-      userId?: string;
+      /** `null`: no signed-in user. */
+      userId?: string | null;
       path?: string;
       gate?: Promise<void>;
     } = {},
@@ -143,7 +146,10 @@ function setup(required = true, dataKey = DATA_KEY) {
       route: { path: '/api/v1/bookings' },
       params: {},
       body: options.body ?? { seats: 2 },
-      user: { id: options.userId ?? 'user-1' },
+      user:
+        options.userId === null
+          ? undefined
+          : { id: options.userId ?? 'user-1' },
       header: (name: string) => (name === 'idempotency-key' ? key : undefined),
     };
     const context = {
@@ -157,7 +163,9 @@ function setup(required = true, dataKey = DATA_KEY) {
     const handle = vi.fn(() => {
       // The claim this request was given, as it stood when its handler began.
       const row = [...store.rows.values()].find(
-        (r) => r.scope.startsWith(`${request.user.id}:`) && r.key === key,
+        (r) =>
+          r.scope.startsWith(`${request.user?.id ?? 'anonymous'}:`) &&
+          r.key === key,
       );
       const claim = row && { id: row.id, ownerToken: row.ownerToken };
       return from(
@@ -364,6 +372,30 @@ describe('IdempotencyInterceptor', () => {
     const other = call({ userId: 'user-2' });
     await expect(other.result).resolves.toEqual({ reference: 'FLY-2' });
     expect(other.handle).toHaveBeenCalled();
+  });
+
+  it('refuses a signed-in route that has no user, rather than share the anonymous scope', async () => {
+    const { call, store } = setup();
+    const { result, handle } = call({ userId: null });
+    await expect(result).rejects.toThrow(
+      /@Idempotent\(\) on a route that is not @Public\(\) needs a signed-in user/,
+    );
+    expect(handle).not.toHaveBeenCalled();
+    expect(store.rows.size).toBe(0);
+  });
+
+  it('lets a public route without a user claim in the anonymous scope', async () => {
+    const { call, store } = setup(true, DATA_KEY, true);
+    await expect(call({ userId: null }).result).resolves.toEqual({
+      reference: 'FLY-1',
+    });
+    expect(store.only().scope).toBe('anonymous:POST:/api/v1/bookings');
+  });
+
+  it('lets a signed-in route with a user claim in that user’s scope', async () => {
+    const { call, store } = setup();
+    await expect(call().result).resolves.toEqual({ reference: 'FLY-1' });
+    expect(store.only().scope).toBe('user-1:POST:/api/v1/bookings');
   });
 
   it('a race lost between insert and read claims again', async () => {

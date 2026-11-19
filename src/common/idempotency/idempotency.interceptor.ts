@@ -14,6 +14,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import { catchError, from, mergeMap, Observable, of, switchMap } from 'rxjs';
 import { IdempotencyKeyStatus } from '../../generated/prisma/enums.js';
+import { IS_PUBLIC } from '../../modules/auth/auth.decorators.js';
 import { AppException } from '../errors/app.exception.js';
 import {
   IdempotencyClaim,
@@ -136,6 +137,19 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const http = context.switchToHttp();
     const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
+
+    // Only a public route may share the "anonymous" scope. A signed-in
+    // route without a user here is a wiring mistake (a guard missing or
+    // reordered): refuse rather than let every caller share one scope.
+    const isPublic = this.reflector.getAllAndOverride<boolean | undefined>(
+      IS_PUBLIC,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isPublic !== true && !request.user?.id) {
+      throw new Error(
+        '@Idempotent() on a route that is not @Public() needs a signed-in user; none was found, so the key would be shared by every caller.',
+      );
+    }
 
     const key = request.header(HEADER);
     if (!key || !UUID.test(key)) {
