@@ -74,3 +74,29 @@ describe('RefreshSuccessors', () => {
     await expect(successors.take('old-hash')).rejects.toThrow();
   });
 });
+
+describe('RefreshSuccessors replay limit', () => {
+  it(`hands the pair out ${REFRESH_REPLAY_MAX} times, then refuses`, async () => {
+    const { successors, redis, stored } = setup();
+    await successors.keep('old-hash', PAIR, 10_000);
+    // The TAKE script's behaviour, over the stored hash.
+    let served = 0;
+    redis.eval.mockImplementation(
+      async (_script: string, _keys: number, key: string, max: number) => {
+        if (!stored.has(key)) return null;
+        served += 1;
+        return served > max ? null : stored.get(key);
+      },
+    );
+
+    const results = [];
+    for (let attempt = 0; attempt <= REFRESH_REPLAY_MAX; attempt += 1) {
+      results.push(await successors.take('old-hash'));
+    }
+    expect(REFRESH_REPLAY_MAX).toBe(20);
+    expect(results.slice(0, REFRESH_REPLAY_MAX)).toEqual(
+      Array(REFRESH_REPLAY_MAX).fill(PAIR),
+    );
+    expect(results[REFRESH_REPLAY_MAX]).toBeNull();
+  });
+});

@@ -4,8 +4,14 @@ import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { REDIS } from '../../redis/redis.module.js';
 import type { SessionTokens } from './auth.cookies.js';
 
-/** How many racing requests may be handed the same successor pair. */
-export const REFRESH_REPLAY_MAX = 5;
+/**
+ * How many racing requests may be handed the same successor pair. A page's
+ * link prefetches each reach the web proxy, so after an idle spell one
+ * refresh token is presented once per portal link in view (eight on the
+ * admin portal) plus the page itself, and again by runtime prefetches. 20
+ * covers that with room, while still bounding a replayed token.
+ */
+export const REFRESH_REPLAY_MAX = 20;
 
 /** Counts a hand-out and returns the pair, or nothing once used up or gone. */
 const TAKE = `

@@ -386,3 +386,24 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
     });
   });
 });
+
+describe('AuthService.isRefreshInPlay (rate limit, D-111)', () => {
+  it.each([
+    ['a live token', null, true],
+    ['a token rotated moments ago', 1_000, true],
+    ['a token retired past the grace period', GRACE_SECONDS * 1000, false],
+  ])('%s', async (_name, revokedAgoMs, expected) => {
+    const { service, session } = setup();
+    session.findUnique.mockResolvedValue({
+      revokedAt:
+        revokedAgoMs === null ? null : new Date(Date.now() - revokedAgoMs),
+    });
+    await expect(service.isRefreshInPlay('old')).resolves.toBe(expected);
+  });
+
+  it('an unknown token', async () => {
+    const { service, session } = setup();
+    session.findUnique.mockResolvedValue(null);
+    await expect(service.isRefreshInPlay('made-up')).resolves.toBe(false);
+  });
+});

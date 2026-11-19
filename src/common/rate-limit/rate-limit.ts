@@ -103,6 +103,16 @@ export type RateLimitIdentity = (
 export class RateLimitGuard extends ThrottlerGuard {
   protected headerPrefix = 'RateLimit';
   static identify: RateLimitIdentity = async () => null;
+  /** Requests not counted at all. Set by the auth module. */
+  static exempt: (request: Record<string, any>) => Promise<boolean> =
+    async () => false;
+
+  protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    return (
+      (await super.shouldSkip(context)) ||
+      RateLimitGuard.exempt(context.switchToHttp().getRequest())
+    );
+  }
 
   protected async getTracker(request: Record<string, any>): Promise<string> {
     return (

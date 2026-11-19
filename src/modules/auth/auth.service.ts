@@ -235,6 +235,24 @@ export class AuthService {
     });
   }
 
+  /**
+   * True for a refresh token that is still live or was rotated within the
+   * grace period: a request presenting it either rotates it (once only) or
+   * receives the winner's pair, so it is not counted against the token's
+   * rate limit. Unknown and long-retired tokens are counted.
+   */
+  async isRefreshInPlay(refreshToken: string): Promise<boolean> {
+    const session = await this.prisma.session.findUnique({
+      where: { refreshTokenHash: this.tokens.hashToken(refreshToken) },
+      select: { revokedAt: true },
+    });
+    if (!session) return false;
+    if (!session.revokedAt) return true;
+    const graceMs =
+      this.config.getOrThrow<number>('REFRESH_ROTATION_GRACE_SECONDS') * 1000;
+    return Date.now() - session.revokedAt.getTime() < graceMs;
+  }
+
   /** True while the sign-in has at least one refresh token still in force. */
   async isFamilyActive(familyId: string): Promise<boolean> {
     const live = await this.prisma.session.findFirst({

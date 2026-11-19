@@ -53,9 +53,25 @@ import { VerificationService } from './verification.service.js';
   exports: [VerificationService, AuthService],
 })
 export class AuthModule implements OnModuleInit {
-  constructor(private readonly tokens: TokenService) {}
+  constructor(
+    private readonly tokens: TokenService,
+    private readonly auth: AuthService,
+  ) {}
 
   onModuleInit(): void {
+    // Racing refreshes of one token (a page's link prefetches after an idle
+    // spell) are not counted: only one can rotate it, and the rest receive
+    // the same pair, at most REFRESH_REPLAY_MAX times (D-111). A refresh
+    // with no cookie is still counted by address.
+    RateLimitGuard.exempt = async (request) => {
+      if (!String(request.path ?? '').endsWith('/auth/refresh')) return false;
+      const refresh = (
+        (request.cookies ?? {}) as Record<string, string | undefined>
+      )[REFRESH_COOKIE];
+      return refresh
+        ? this.auth.isRefreshInPlay(refresh).catch(() => false)
+        : false;
+    };
     // How the rate limiter recognises a session (see RateLimitGuard):
     // - a refresh is counted against the refresh token presented. A made-up
     //   token gets its own counter, which is harmless: it cannot be guessed
