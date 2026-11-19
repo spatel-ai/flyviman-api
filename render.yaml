@@ -40,8 +40,9 @@ services:
     # Migrate, seed (safe to repeat), then start. The API refuses to start
     # if PostgreSQL or Redis cannot be reached.
     # db:grant re-applies the restricted role's privileges (idempotent), for
-    # when the role was created after its migration ran.
-    startCommand: npx prisma migrate deploy && npm run db:grant && node dist/seed.js && node dist/main
+    # when the role was created after its migration ran. A failure only warns:
+    # the API then runs as the owner, as before, and says so at start.
+    startCommand: npx prisma migrate deploy && (npm run db:grant || echo "WARNING db:grant failed; the restricted role has no privileges yet (docs/deployment.md)") && node dist/seed.js && node dist/main
     healthCheckPath: /api/v1/health
     envVars:
       - key: NODE_VERSION
