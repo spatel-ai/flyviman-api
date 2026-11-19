@@ -1250,4 +1250,26 @@ describe('pricing review fixes (S2)', () => {
     ).toBe(120_000_000);
     expect(result.totalMinor).toBe(sum(result));
   });
+
+  it('adds no per-day minimum when the hours flown meet it exactly', () => {
+    // Tax-inclusive: 8,474,576.27 an hour. Two 1 h flights on one day meet
+    // 2 h a day, though the rounded flights fall a paisa short of 2 h × rate.
+    const inclusive = rule(
+      'HOURLY_RATE',
+      { amountMinor: 10_000_000, currency: 'INR', taxInclusive: true },
+      'AIRCRAFT',
+      'ac1',
+    );
+    const result = run(
+      [
+        inclusive,
+        rule('TAX', { name: 'GST', percent: 18 }),
+        rule('MIN_BILLABLE_HOURS', { hours: 2, per: 'DAY' }),
+      ],
+      { returnAt: at('2026-12-05T08:00:00Z') },
+    );
+    expect(codes(result).OPERATING).toBe(8_474_576);
+    expect(codes(result).MIN_BILLABLE).toBeUndefined();
+    expect(result.totalMinor).toBe(sum(result));
+  });
 });

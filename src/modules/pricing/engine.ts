@@ -571,7 +571,9 @@ function priceTrip(
       // minimum hours × rate, whatever the flights' own rounding.
       const shortfallMinor =
         Math.round(floor * rate) - operating.amountMinor * legs;
-      if (shortfallMinor > 0) {
+      // Only when hours are short: a fractional (inclusive) rate can leave a
+      // paisa of rounding when the flights exactly meet the minimum.
+      if (floor > flown && shortfallMinor > 0) {
         shortfall = {
           code: 'MIN_BILLABLE',
           label: 'Minimum billable hours',

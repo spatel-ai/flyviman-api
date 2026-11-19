@@ -149,8 +149,12 @@ test.describe('charter search', () => {
         .filter((line) => ['OPERATING', 'REPOSITIONING'].includes(line.code))
         .reduce((total, line) => total + line.amountMinor, 0),
     );
-    // A list price that leaves something out says so; the detail says what.
-    expect(ours.incomplete).toBe(detail.exclusions.length > 0);
+    // A list price that leaves something out says so; the detail says what
+    // (no landing or handling charges are on record for these airports).
+    expect(detail.exclusions).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^Landing charges at /)]),
+    );
+    expect(ours.incomplete).toBe(true);
     expect(detail.incomplete).toBe(ours.incomplete);
     expect(detail.bookingMode).toBe('REQUEST');
     expect(detail.cancellationNote).toBeTruthy();
