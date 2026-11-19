@@ -25,6 +25,12 @@ export interface RuleConfigs {
   };
   MIN_BILLABLE_HOURS: { hours: number };
   POSITIONING: { rateFactor: number; freeWithinKm?: number };
+  /** Per hour on the ground between a round trip's flights, beyond `freeHours`. */
+  WAITING: { amountMinor: number; freeHours: number };
+  /** Per night the aircraft spends away from base. */
+  OVERNIGHT: { amountMinor: number };
+  /** Crew allowance and accommodation per night away from base. */
+  CREW: { amountMinor: number };
   LANDING: { amountMinor: number };
   HANDLING: { amountMinor: number };
   MIN_CHARGE: { amountMinor: number };

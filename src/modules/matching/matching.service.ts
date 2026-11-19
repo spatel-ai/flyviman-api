@@ -74,13 +74,19 @@ export class MatchingService {
     private readonly routing: RoutingProvider,
   ) {}
 
+  /** `returnAt`: a round trip's return departure from the destination. */
   async match(
     route: MatchRoute,
     departureAt: Date,
     now: Date,
+    returnAt: Date | null = null,
   ): Promise<MatchResult> {
-    const prepared = await this.prepare(route, departureAt, departureAt);
-    return this.evaluate(prepared, departureAt, now);
+    const prepared = await this.prepare(
+      route,
+      departureAt,
+      returnAt ?? departureAt,
+    );
+    return this.evaluate(prepared, departureAt, now, returnAt);
   }
 
   /** Loads the aircraft and their offered time for departures in [from, to]. */
@@ -167,7 +173,12 @@ export class MatchingService {
   }
 
   /** The aircraft that can fly at this departure time. No database access. */
-  evaluate(prepared: PreparedRoute, departureAt: Date, now: Date): MatchResult {
+  evaluate(
+    prepared: PreparedRoute,
+    departureAt: Date,
+    now: Date,
+    returnAt: Date | null = null,
+  ): MatchResult {
     const candidates: Candidate[] = [];
     const exclusions = [...prepared.excluded];
     for (const entry of prepared.ready) {
@@ -180,14 +191,18 @@ export class MatchingService {
         departureAt,
         now,
       });
+      const legMs = (entry.legMinutes ?? 60) * 60_000;
+      // A round trip's return cannot leave before the outbound lands.
+      if (returnAt && departureAt.getTime() + legMs > returnAt.getTime()) {
+        reasons.push('returnTime');
+      }
       if (reasons.length === 0) {
-        // Busy from leaving base to landing at the destination.
+        // Busy from leaving base to landing at the destination, or back at
+        // the origin after a round trip.
         const from = new Date(
           departureAt.getTime() - entry.positioningMinutes * 60_000,
         );
-        const to = new Date(
-          departureAt.getTime() + (entry.legMinutes ?? 60) * 60_000,
-        );
+        const to = new Date((returnAt ?? departureAt).getTime() + legMs);
         if (!windowFree(entry.windows, from, to, prepared.route.origin.id)) {
           reasons.push('availability');
         }

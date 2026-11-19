@@ -26,10 +26,15 @@ import {
   type SearchResponseDto,
   type SearchResultDetailDto,
   type SearchResultDto,
+  type SearchTripType,
 } from './dto/search.dto.js';
 
 /** How soon a trip may depart. Per-category notice comes with operator restrictions. */
 const MIN_NOTICE_MINUTES = 60;
+/** A round trip's return leaves at least this long after the outbound. */
+const MIN_RETURN_GAP_MINUTES = 60;
+/** And within this many days of it. */
+const MAX_RETURN_DAYS = 30;
 
 const CANCELLATION_NOTE =
   'Cancellation conditions are set by the operator and shown with its quote, before you commit to anything.';
@@ -69,6 +74,8 @@ export class SearchService {
     if (departureAt.getTime() < now.getTime() + MIN_NOTICE_MINUTES * 60_000) {
       throw invalid('departureAt', 'must be at least an hour from now');
     }
+    const tripType = dto.tripType ?? 'ONE_WAY';
+    const returnAt = returnTime(tripType, departureAt, dto.returnAt);
     const { origin, destination } = await this.routePoints(
       dto.originId,
       dto.destinationId,
@@ -84,6 +91,7 @@ export class SearchService {
       },
       departureAt,
       now,
+      returnAt,
     );
 
     const searchId = randomUUID();
@@ -94,6 +102,18 @@ export class SearchService {
       destinationName: destination.name,
       departureAt: departureAt.toISOString(),
     };
+    const legs: SearchLegDto[] = returnAt
+      ? [
+          leg,
+          {
+            originId: destination.id,
+            originName: destination.name,
+            destinationId: origin.id,
+            destinationName: origin.name,
+            departureAt: returnAt.toISOString(),
+          },
+        ]
+      : [leg];
     const distance = (a: PricePoint, b: PricePoint) =>
       this.routing.distanceKm(a, b);
 
@@ -103,8 +123,8 @@ export class SearchService {
           id: searchId,
           userId,
           category,
-          tripType: TripType.ONE_WAY,
-          legs: [leg] as unknown as Prisma.InputJsonValue,
+          tripType: returnAt ? TripType.ROUND_TRIP : TripType.ONE_WAY,
+          legs: legs as unknown as Prisma.InputJsonValue,
           passengerCount: dto.passengerCount,
           preferences: dto.category
             ? { category: dto.category }
@@ -123,6 +143,7 @@ export class SearchService {
           origin,
           destination,
           departureAt,
+          returnAt,
           aircraft: {
             id: aircraft.id,
             operatorId: aircraft.operatorId,
@@ -144,6 +165,9 @@ export class SearchService {
                   destinationId: leg.destinationId,
                   departureAt: leg.departureAt,
                 },
+                tripType,
+                returnAt: returnAt?.toISOString() ?? null,
+                roundTrip: result.roundTrip as unknown as Prisma.InputJsonValue,
                 passengerCount: dto.passengerCount,
                 aircraft: {
                   category: aircraft.category,
@@ -172,6 +196,9 @@ export class SearchService {
           operatorName: candidate.operatorName,
           distanceKm: result.distanceKm,
           flightMinutes: result.flightMinutes,
+          tripType,
+          returnAt: returnAt?.toISOString() ?? null,
+          roundTripStrategy: result.roundTrip?.strategy ?? null,
           price: result.priced
             ? {
                 priceType: PriceType.ESTIMATE,
@@ -206,7 +233,7 @@ export class SearchService {
       searchId,
       category,
       aircraftCategory: dto.category ?? null,
-      legs: [leg],
+      legs,
       passengerCount: dto.passengerCount,
       createdAt: now.toISOString(),
       results: results.map(publicResult),
@@ -424,7 +451,42 @@ type ResultFields = { [K in keyof SearchResultDto]: SearchResultDto[K] };
 
 function publicResult(stored: StoredResult): ResultFields {
   const { calculationId: _calculationId, ...result } = stored;
-  return result;
+  // Searches stored before round trips (M5 slice 4b) were all one-way.
+  return {
+    ...result,
+    tripType: result.tripType ?? 'ONE_WAY',
+    returnAt: result.returnAt ?? null,
+    roundTripStrategy: result.roundTripStrategy ?? null,
+  };
+}
+
+/** The round trip's return departure, checked; null for a one-way trip. */
+function returnTime(
+  tripType: SearchTripType,
+  departureAt: Date,
+  returnAt: string | null | undefined,
+): Date | null {
+  if (tripType === 'ONE_WAY') {
+    if (returnAt != null) {
+      throw invalid('returnAt', 'is only for a round trip');
+    }
+    return null;
+  }
+  if (returnAt == null) {
+    throw invalid('returnAt', 'is required for a round trip');
+  }
+  const at = new Date(returnAt);
+  const gap = at.getTime() - departureAt.getTime();
+  if (gap < MIN_RETURN_GAP_MINUTES * 60_000) {
+    throw invalid('returnAt', 'must be at least an hour after departureAt');
+  }
+  if (gap > MAX_RETURN_DAYS * 86_400_000) {
+    throw invalid(
+      'returnAt',
+      `must be within ${MAX_RETURN_DAYS} days of departureAt`,
+    );
+  }
+  return at;
 }
 
 function invalid(field: string, issue: string): AppException {
