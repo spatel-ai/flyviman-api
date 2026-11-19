@@ -183,6 +183,60 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     body: '{{registration}} is active again.',
   },
   {
+    key: 'empty_leg.changed',
+    channel: 'EMAIL',
+    subject: 'An empty leg you follow has changed: {{route}}',
+    body: 'The empty-leg offer {{reference}} ({{route}}) has been updated by the operator. Open it on Flyviman to see the new price, dates and conditions before you request it.',
+  },
+  {
+    key: 'empty_leg.changed',
+    channel: 'IN_APP',
+    subject: 'Empty leg updated',
+    body: '{{route}} ({{reference}}) has been updated. Check the new details before you request it.',
+  },
+  {
+    key: 'empty_leg.withdrawn',
+    channel: 'EMAIL',
+    subject: 'An empty leg you follow is no longer offered: {{route}}',
+    body: 'The operator has withdrawn the empty-leg offer {{reference}} ({{route}}). It can no longer be requested.',
+  },
+  {
+    key: 'empty_leg.withdrawn',
+    channel: 'IN_APP',
+    subject: 'Empty leg withdrawn',
+    body: '{{route}} ({{reference}}) is no longer offered.',
+  },
+  {
+    key: 'empty_leg.expired',
+    channel: 'EMAIL',
+    subject: 'An empty leg you follow has expired: {{route}}',
+    body: 'The empty-leg offer {{reference}} ({{route}}) has passed its validity and can no longer be requested.',
+  },
+  {
+    key: 'empty_leg.expired',
+    channel: 'IN_APP',
+    subject: 'Empty leg expired',
+    body: '{{route}} ({{reference}}) has expired.',
+  },
+  {
+    key: 'empty_leg.approved',
+    channel: 'IN_APP',
+    subject: 'Empty leg published',
+    body: '{{route}} ({{reference}}) was approved and is now listed.',
+  },
+  {
+    key: 'empty_leg.rejected',
+    channel: 'EMAIL',
+    subject: 'Your empty-leg offer needs changes',
+    body: '{{route}} ({{reference}}) was not approved. Reason: {{reason}}\nYou can update it and publish it again.',
+  },
+  {
+    key: 'empty_leg.rejected',
+    channel: 'IN_APP',
+    subject: 'Empty leg not approved',
+    body: '{{route}} ({{reference}}) was not approved. Reason: {{reason}}',
+  },
+  {
     // To the operations inbox, not to the customer. The subject carries no
     // personal data; the body does, because staff need it to reply.
     key: 'enquiry.received',

@@ -50,13 +50,14 @@ model User {
   createdAt       DateTime          @default(now()) @db.Timestamptz
   updatedAt       DateTime          @updatedAt @db.Timestamptz
 
-  sessions        Session[]
-  consents        Consent[]
-  customerProfile CustomerProfile?
-  operatorMember  OperatorMember?
-  notifications   Notification[]
-  storedFiles     StoredFile[]
-  bookings        Booking[]
+  sessions          Session[]
+  consents          Consent[]
+  customerProfile   CustomerProfile?
+  operatorMember    OperatorMember?
+  notifications     Notification[]
+  storedFiles       StoredFile[]
+  bookings          Booking[]
+  emptyLegInterests EmptyLegInterest[]
 
   @@index([role, status])
 }
@@ -284,6 +285,7 @@ model Operator {
   aircraft  Aircraft[]
   quotes    Quote[]
   bookings  Booking[]
+  emptyLegs EmptyLeg[]
 
   @@index([status, submittedAt])
 }
@@ -501,6 +503,9 @@ model Location {
   homeBasedAircraft     Aircraft[]         @relation("AircraftHomeBase")
   currentlyHereAircraft Aircraft[]         @relation("AircraftCurrentLocation")
   departureSlots        AvailabilitySlot[]
+  emptyLegOrigins       EmptyLeg[]         @relation("EmptyLegOrigin")
+  emptyLegDestinations  EmptyLeg[]         @relation("EmptyLegDestination")
+  emptyLegPositions     EmptyLeg[]         @relation("EmptyLegCurrentLocation")
 
   @@index([type, isActive])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_name_trgm_idx")
@@ -591,6 +596,7 @@ model Aircraft {
   slots           AvailabilitySlot[]
   blocks          AvailabilityBlock[]
   bookings        Booking[]
+  emptyLegs       EmptyLeg[]
 
   @@index([operatorId, listingStatus])
   @@index([listingStatus, category, passengerCapacity])
@@ -684,6 +690,96 @@ model AvailabilityBlock {
 
   @@index([aircraftId, startsAt, endsAt])
   @@index([reason, expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// M7. Empty legs
+// ---------------------------------------------------------------------------
+
+/// Values and transitions: docs/architecture/state-machines.md.
+enum EmptyLegStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  BOOKED
+  WITHDRAWN
+  EXPIRED
+}
+
+/// How the price was set. Only OPERATOR_PRICE is built (M7); its priceType is QUOTE.
+enum EmptyLegPricingBasis {
+  OPERATOR_PRICE
+  PLATFORM_CALCULATED
+}
+
+/// An operator's one-way offer on an aircraft that would otherwise fly
+/// empty. Listed only while PUBLISHED, before `expiresAt`, for an approved
+/// operator and a bookable aircraft (rule 4, checked at read time).
+model EmptyLeg {
+  id                   String               @id @default(uuid()) @db.Uuid
+  /// `FLY-EL-7K2M9Q` (common/reference.ts).
+  reference            String               @unique
+  aircraftId           String               @db.Uuid
+  operatorId           String               @db.Uuid
+  originId             String               @db.Uuid
+  destinationId        String               @db.Uuid
+  /// Not set by any route yet.
+  currentLocationId    String?              @db.Uuid
+  departureWindowStart DateTime             @db.Timestamptz
+  departureWindowEnd   DateTime             @db.Timestamptz
+  /// Seats offered.
+  passengerCapacity    Int
+  priceMinor           BigInt
+  currency             String               @default("INR") @db.Char(3)
+  pricingBasis         EmptyLegPricingBasis @default(OPERATOR_PRICE)
+  /// The offer's validity: not bookable from this time.
+  expiresAt            DateTime             @db.Timestamptz
+  /// Not set by any route yet; `expiresAt` is the booking deadline.
+  bookingDeadline      DateTime?            @db.Timestamptz
+  /// Not set by any route yet; conditions are in `bookingConditions`.
+  restrictions         Json?
+  bookingConditions    String
+  status               EmptyLegStatus       @default(DRAFT)
+  submittedAt          DateTime?            @db.Timestamptz
+  publishedAt          DateTime?            @db.Timestamptz
+  reviewedById         String?              @db.Uuid
+  reviewedAt           DateTime?            @db.Timestamptz
+  /// The reason for the last rejection; cleared when submitted again.
+  reviewNote           String?
+  createdById          String               @db.Uuid
+  createdAt            DateTime             @default(now()) @db.Timestamptz
+  updatedAt            DateTime             @updatedAt @db.Timestamptz
+
+  aircraft        Aircraft           @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  operator        Operator           @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  origin          Location           @relation("EmptyLegOrigin", fields: [originId], references: [id], onDelete: Restrict)
+  destination     Location           @relation("EmptyLegDestination", fields: [destinationId], references: [id], onDelete: Restrict)
+  currentLocation Location?          @relation("EmptyLegCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  interests       EmptyLegInterest[]
+
+  @@index([status, expiresAt])
+  @@index([originId, destinationId, departureWindowStart])
+  @@index([operatorId, createdAt])
+  @@index([aircraftId])
+  @@index([destinationId])
+  @@index([currentLocationId])
+}
+
+/// A customer asking to hear about changes to an offer.
+model EmptyLegInterest {
+  id         String    @id @default(uuid()) @db.Uuid
+  emptyLegId String    @db.Uuid
+  userId     String    @db.Uuid
+  /// When the customer was last told of a change, withdrawal or expiry.
+  notifiedAt DateTime? @db.Timestamptz
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @db.Timestamptz
+
+  emptyLeg EmptyLeg @relation(fields: [emptyLegId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([emptyLegId, userId])
+  @@index([userId])
 }
 
 model ContentItem {

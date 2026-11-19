@@ -511,6 +511,30 @@ export class AircraftService implements OnModuleInit {
     }));
   }
 
+  /**
+   * The aircraft search would offer, as a query filter for other modules'
+   * listings (empty legs, M7): approved listing of an approved operator,
+   * available, and every required document current (`gapsOf`). Home base and
+   * range are not checked; an offer names its own route.
+   */
+  bookableWhere(now = new Date()): Prisma.AircraftWhereInput {
+    const today = indiaTodayAsDate(now);
+    return {
+      listingStatus: AircraftListingStatus.APPROVED,
+      availabilityStatus: AircraftAvailabilityStatus.AVAILABLE,
+      operator: { status: OperatorStatus.APPROVED },
+      AND: REQUIRED_AIRCRAFT_DOCUMENTS.map((type) => ({
+        documents: {
+          some: {
+            type,
+            verificationStatus: { not: DocumentVerificationStatus.REJECTED },
+            OR: [{ expiresAt: null }, { expiresAt: { gte: today } }],
+          },
+        },
+      })),
+    };
+  }
+
   // --- Completeness -------------------------------------------------------
 
   async missing(

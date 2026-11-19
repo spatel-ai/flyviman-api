@@ -5,10 +5,14 @@ import { Role } from '../../generated/prisma/enums.js';
 
 /**
  * What an operator's staff member may do (D-049). Operator administrators
- * hold every capability on every aircraft. Later milestones add capabilities
- * here (empty legs in M7, booking requests in M8).
+ * hold every capability on every aircraft. "Manage empty legs" (M7) covers
+ * offers on the aircraft in reach. Booking requests come in M8.
  */
-export const CAPABILITIES = ['MANAGE_AIRCRAFT', 'MANAGE_AVAILABILITY'] as const;
+export const CAPABILITIES = [
+  'MANAGE_AIRCRAFT',
+  'MANAGE_AVAILABILITY',
+  'MANAGE_EMPTY_LEGS',
+] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 /** The shape of `OperatorMember.permissions` for a staff member. */
