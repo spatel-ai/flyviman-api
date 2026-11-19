@@ -478,6 +478,7 @@ export class SearchService {
               id: candidate.aircraft.id,
               operatorId: candidate.aircraft.operatorId,
               category: candidate.aircraft.category,
+              pricingModel: candidate.aircraft.pricingModel,
               cruiseSpeedKmh: candidate.aircraft.cruiseSpeedKmh,
               base: candidate.base,
             },
@@ -579,6 +580,7 @@ function priceCandidate(
       id: aircraft.id,
       operatorId: aircraft.operatorId,
       category: aircraft.category,
+      pricingModel: aircraft.pricingModel,
       cruiseSpeedKmh: aircraft.cruiseSpeedKmh,
       base: candidate.base,
     },
@@ -597,6 +599,7 @@ function priceCandidate(
     passengerCount,
     aircraft: {
       category: aircraft.category,
+      pricingModel: aircraft.pricingModel,
       cruiseSpeedKmh: aircraft.cruiseSpeedKmh,
       baseId: candidate.base?.id ?? null,
     },

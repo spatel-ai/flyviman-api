@@ -7,9 +7,10 @@ import { hasHiddenCharacter } from '../../common/validation/text.js';
 
 /**
  * Rule types Flyviman's finance team sets through `/admin/pricing-rules`
- * (M5 slice 3; pricing-engine.md, "Who edits what"). Only types the engine
- * applies today: a markup, service fee or discount would be stored and then
- * silently ignored, so they arrive with the engine change that applies them.
+ * (M5 slices 3 and 4c; pricing-engine.md, "Who edits what"). Only types the
+ * engine applies, so no setting is stored and silently ignored. `MARKUP`,
+ * `SERVICE_FEE` and `DISCOUNT` are optional: a platform rule of these types
+ * can be ended, unlike the rest.
  * `MIN_BILLABLE_HOURS` and `POSITIONING` are defaults here, for all aircraft
  * or one category; operators override them for their own organisation and
  * aircraft. `MATCHING_LIMITS` is not a price: matching reads it, and the
@@ -24,8 +25,18 @@ export const ADMIN_RULE_TYPES = [
   'VALIDITY',
   'MIN_BILLABLE_HOURS',
   'POSITIONING',
+  'MARKUP',
+  'SERVICE_FEE',
+  'DISCOUNT',
   'MATCHING_LIMITS',
 ] as const satisfies readonly PricingRuleType[];
+
+/** Platform rules every price can do without; the others cannot be ended. */
+export const OPTIONAL_PLATFORM_TYPES: ReadonlySet<string> = new Set([
+  'MARKUP',
+  'SERVICE_FEE',
+  'DISCOUNT',
+]);
 
 export type AdminRuleType = (typeof ADMIN_RULE_TYPES)[number];
 
@@ -105,6 +116,8 @@ const SHAPES: Record<AdminRuleType, Shape> = {
   },
   MIN_BILLABLE_HOURS: {
     required: { hours: { kind: 'number', min: 0.5, max: 12, decimals: 2 } },
+    // Left out is per leg; not defaulted, so an unchanged rule stays equal.
+    optional: { per: { kind: 'enum', values: ['LEG', 'DAY'] } },
   },
   POSITIONING: {
     required: {
@@ -118,6 +131,18 @@ const SHAPES: Record<AdminRuleType, Shape> = {
         decimals: 0,
         default: 0,
       },
+    },
+  },
+  MARKUP: { required: { percent: percent(50) } },
+  SERVICE_FEE: {
+    required: {
+      amountMinor: { kind: 'number', min: 0, max: MAX_RULE_MINOR, decimals: 0 },
+    },
+  },
+  DISCOUNT: {
+    required: {
+      name: { kind: 'text', min: 2, max: 40 },
+      percent: percent(50),
     },
   },
   MATCHING_LIMITS: {

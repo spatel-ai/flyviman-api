@@ -1,5 +1,8 @@
-import type { AircraftCategory } from '../../generated/prisma/enums.js';
-import type { ResolvedRules, RuleRow } from './rules.js';
+import type {
+  AircraftCategory,
+  AircraftPricingModel,
+} from '../../generated/prisma/enums.js';
+import type { OperatorRate, ResolvedRules, RuleRow } from './rules.js';
 
 /**
  * The charter and helicopter price engine (docs/architecture/pricing-engine.md),
@@ -29,6 +32,8 @@ export interface EngineInput {
     id: string;
     operatorId: string;
     category: AircraftCategory;
+    /** How the flying is priced: hourly, per sector or per fixed route. */
+    pricingModel: AircraftPricingModel;
     cruiseSpeedKmh: number | null;
     /** Where it is: current location, else home base. */
     base: PricePoint | null;
@@ -372,10 +377,38 @@ function priceTrip(
     } satisfies EngineResult,
   });
 
-  const rate = use(rules.HOURLY_RATE);
-  if (!rate) return unpriced('No hourly rate is set for this aircraft.');
-  if (rate.currency !== 'INR') {
-    return unpriced('The hourly rate is not in INR.');
+  // The flying is priced by the aircraft's model: hours at the hourly rate,
+  // a price per flight (sector), or a fixed price for the route. The hourly
+  // rate also prices positioning, so a sector or fixed-route aircraft uses
+  // it there when one is set.
+  const hourly = rules.HOURLY_RATE;
+  let flight: { rule: RuleRow; rate: OperatorRate };
+  if (aircraft.pricingModel === 'SECTOR') {
+    const sector = rules.SECTOR_RATE;
+    if (!sector) return unpriced('No sector rate is set for this aircraft.');
+    flight = { rule: sector.rule, rate: sector.config };
+  } else if (aircraft.pricingModel === 'FIXED_ROUTE') {
+    const fixed = rules.FIXED_ROUTE;
+    const route = fixed?.config.routes.find(
+      (entry) =>
+        (entry.originId === origin.id &&
+          entry.destinationId === destination.id) ||
+        (entry.originId === destination.id &&
+          entry.destinationId === origin.id),
+    );
+    if (!fixed || !route) {
+      return unpriced('No fixed price is set for this route.');
+    }
+    flight = {
+      rule: fixed.rule,
+      rate: { ...fixed.config, amountMinor: route.amountMinor },
+    };
+  } else {
+    if (!hourly) return unpriced('No hourly rate is set for this aircraft.');
+    flight = { rule: hourly.rule, rate: hourly.config };
+  }
+  if (flight.rate.currency !== 'INR') {
+    return unpriced('The aircraft rate is not in INR.');
   }
   if (leg.minutes == null) {
     return unpriced('The aircraft has no cruise speed recorded.');
@@ -383,30 +416,73 @@ function priceTrip(
   if (turn && turn.groundMinutes < 0) {
     return unpriced('The return departs before the outbound flight lands.');
   }
+  used.push(flight.rule);
 
   const commission = use(rules.COMMISSION);
   const tax = use(rules.TAX);
 
   // Operator rates normalised to tax- and commission-exclusive amounts, so
   // commission and tax are each added exactly once (pricing-engine.md, step 6).
-  let hourlyMinor = rate.amountMinor;
-  if (rate.taxInclusive && tax) hourlyMinor /= 1 + tax.percent / 100;
-  if (rate.commissionInclusive && commission?.mode === 'ADD_ON') {
-    hourlyMinor /= 1 + commission.percent / 100;
-  }
+  const exclusive = (rate: OperatorRate) => {
+    let amount = rate.amountMinor;
+    if (rate.taxInclusive && tax) amount /= 1 + tax.percent / 100;
+    if (rate.commissionInclusive && commission?.mode === 'ADD_ON') {
+      amount /= 1 + commission.percent / 100;
+    }
+    return amount;
+  };
+  const hourlyMinor =
+    hourly && hourly.config.currency === 'INR'
+      ? exclusive(hourly.config)
+      : null;
+  const useHourly = () => {
+    if (hourly) used.push(hourly.rule);
+  };
 
   const breakdown: LineItem[] = [];
-  const minimum = use(rules.MIN_BILLABLE_HOURS)?.hours ?? 0;
   const hours = leg.minutes / 60;
-  const billable = Math.max(hours, minimum);
-  // The minimum applies to each of the customer's legs.
-  const operating = {
-    amountMinor: Math.round(billable * hourlyMinor),
-    basis:
-      billable > hours
-        ? `${minimum} h minimum billable × hourly rate`
-        : `${hours.toFixed(2)} h × hourly rate`,
-  };
+  let operating: { amountMinor: number; basis: string };
+  let shortfall: LineItem | null = null;
+  if (aircraft.pricingModel === 'HOURLY') {
+    const minimumRule = use(rules.MIN_BILLABLE_HOURS);
+    const minimum = minimumRule?.hours ?? 0;
+    const perDay = minimumRule?.per === 'DAY';
+    const rate = hourlyMinor!;
+    // Per leg: each of the customer's flights bills at least the minimum.
+    // Per day: the flights together bill at least the minimum for each
+    // local date at the origin from departure to return.
+    const billable = perDay ? hours : Math.max(hours, minimum);
+    operating = {
+      amountMinor: Math.round(billable * rate),
+      basis:
+        billable > hours
+          ? `${minimum} h minimum billable × hourly rate`
+          : `${hours.toFixed(2)} h × hourly rate`,
+    };
+    if (perDay) {
+      const days = input.returnAt
+        ? localNights(origin.timeZone, input.departureAt, input.returnAt) + 1
+        : 1;
+      const flown = hours * legs;
+      const floor = minimum * days;
+      if (floor > flown) {
+        shortfall = {
+          code: 'MIN_BILLABLE',
+          label: 'Minimum billable hours',
+          amountMinor: Math.round((floor - flown) * rate),
+          basis: `${minimum} h a day × ${days} day${days === 1 ? '' : 's'}, ${flown.toFixed(2)} h flown; the difference × hourly rate`,
+        };
+      }
+    }
+  } else {
+    operating = {
+      amountMinor: Math.round(exclusive(flight.rate)),
+      basis:
+        aircraft.pricingModel === 'SECTOR'
+          ? 'Sector rate per flight'
+          : `Fixed price, ${origin.name} and ${destination.name}`,
+    };
+  }
   breakdown.push({
     code: 'OPERATING',
     label: turn ? 'Outbound flight operating cost' : 'Flight operating cost',
@@ -419,41 +495,75 @@ function priceTrip(
       ...operating,
     });
   }
+  if (shortfall) breakdown.push(shortfall);
 
-  if (positioning && (position.out || position.back)) {
-    used.push(rules.POSITIONING!.rule);
-    const rateFactor = positioning.rateFactor;
-    if (position.out) {
-      breakdown.push({
-        code: 'POSITIONING',
-        label: `Positioning from ${aircraft.base!.name}`,
-        amountMinor: Math.round((position.out / 60) * hourlyMinor * rateFactor),
-        basis: `${position.outKm} km, ${(position.out / 60).toFixed(2)} h × ${rateFactor} × hourly rate`,
-      });
+  if (position.out || position.back) {
+    if (!positioning) {
+      warnings.push('No positioning rate is set; positioning is not included.');
+      exclusions.push('Aircraft positioning');
+    } else if (hourlyMinor == null) {
+      warnings.push('No hourly rate is set; positioning is not included.');
+      exclusions.push('Aircraft positioning');
+    } else {
+      used.push(rules.POSITIONING!.rule);
+      useHourly();
+      const rateFactor = positioning.rateFactor;
+      if (position.out) {
+        breakdown.push({
+          code: 'POSITIONING',
+          label: `Positioning from ${aircraft.base!.name}`,
+          amountMinor: Math.round(
+            (position.out / 60) * hourlyMinor * rateFactor,
+          ),
+          basis: `${position.outKm} km, ${(position.out / 60).toFixed(2)} h × ${rateFactor} × hourly rate`,
+        });
+      }
+      if (position.back) {
+        breakdown.push({
+          code: 'REPOSITIONING',
+          label: `Return to ${aircraft.base!.name}`,
+          amountMinor: Math.round(
+            (position.back / 60) * hourlyMinor * rateFactor,
+          ),
+          basis: `${position.backKm} km, ${(position.back / 60).toFixed(2)} h × ${rateFactor} × hourly rate`,
+        });
+      }
     }
-    if (position.back) {
-      breakdown.push({
-        code: 'REPOSITIONING',
-        label: `Return to ${aircraft.base!.name}`,
-        amountMinor: Math.round(
-          (position.back / 60) * hourlyMinor * rateFactor,
-        ),
-        basis: `${position.backKm} km, ${(position.back / 60).toFixed(2)} h × ${rateFactor} × hourly rate`,
-      });
-    }
-  } else if (position.out || position.back) {
-    warnings.push('No positioning rate is set; positioning is not included.');
-    exclusions.push('Aircraft positioning');
   }
 
   if (turn) {
     breakdown.push(
-      ...turnaroundLines(input, turn, hourlyMinor, use, {
+      ...turnaroundLines(input, turn, hourlyMinor, useHourly, use, {
         missing,
         warnings,
         exclusions,
       }),
     );
+  }
+
+  // The operator's trip charges: per customer flight, and one of its own.
+  const perFlight = [
+    ['FUEL_SURCHARGE', 'Fuel surcharge', use(rules.FUEL_SURCHARGE)],
+    ['PERMIT', 'Permits', use(rules.PERMIT)],
+    ['NAVIGATION', 'Navigation charges', use(rules.NAVIGATION)],
+  ] as const;
+  for (const [code, label, charge] of perFlight) {
+    if (!charge || charge.amountMinor === 0) continue;
+    breakdown.push({
+      code,
+      label,
+      amountMinor: charge.amountMinor * legs,
+      basis: `${legs} flight${legs === 1 ? '' : 's'} × ${label.toLowerCase()} per flight`,
+    });
+  }
+  const other = use(rules.OTHER);
+  if (other && other.amountMinor > 0) {
+    breakdown.push({
+      code: 'OTHER',
+      label: other.label,
+      amountMinor: other.amountMinor,
+      basis: 'Per trip',
+    });
   }
 
   // Landing at each arrival; handling at both ends of each leg.
@@ -506,6 +616,9 @@ function priceTrip(
     baseMinor = minCharge;
   }
 
+  // Flyviman's charges on the operator subtotal: commission, markup and a
+  // service fee, then any discount (funded by Flyviman, so the operator's
+  // payable never moves), then tax on what the customer pays before tax.
   let feesMinor = 0;
   let commissionMinor = 0;
   if (commission) {
@@ -522,9 +635,56 @@ function priceTrip(
     warnings.push('No commission rule is in force.');
   }
 
+  const markup = use(rules.MARKUP);
+  const markupMinor = markup
+    ? Math.round((baseMinor * markup.percent) / 100)
+    : 0;
+  if (markupMinor > 0) {
+    breakdown.push({
+      code: 'MARKUP',
+      label: 'Markup',
+      amountMinor: markupMinor,
+      basis: `${markup!.percent}% of the operator subtotal`,
+    });
+  }
+  const serviceFeeMinor = use(rules.SERVICE_FEE)?.amountMinor ?? 0;
+  if (serviceFeeMinor > 0) {
+    breakdown.push({
+      code: 'SERVICE_FEE',
+      label: 'Service fee',
+      amountMinor: serviceFeeMinor,
+      basis: 'Per trip',
+    });
+  }
+  feesMinor += markupMinor + serviceFeeMinor;
+
+  // Never more than Flyviman earns on the trip, so platform revenue never
+  // goes below zero and the operator's payable never moves.
+  const discount = use(rules.DISCOUNT);
+  const platformMinor = commissionMinor + markupMinor + serviceFeeMinor;
+  const offeredMinor = discount
+    ? Math.round(((baseMinor + feesMinor) * discount.percent) / 100)
+    : 0;
+  const discountMinor = Math.min(offeredMinor, platformMinor);
+  if (discountMinor < offeredMinor) {
+    assumptions.push(
+      `${discount!.name} is limited to Flyviman's charges on this trip`,
+    );
+  }
+  if (discountMinor > 0) {
+    breakdown.push({
+      code: 'DISCOUNT',
+      label: discount!.name,
+      amountMinor: -discountMinor,
+      basis: `${discount!.percent}% of the price before tax`,
+    });
+  }
+
   let taxMinor = 0;
   if (tax) {
-    taxMinor = Math.round(((baseMinor + feesMinor) * tax.percent) / 100);
+    taxMinor = Math.round(
+      ((baseMinor + feesMinor - discountMinor) * tax.percent) / 100,
+    );
     breakdown.push({ code: 'TAX', label: tax.name, amountMinor: taxMinor });
   } else {
     warnings.push('No tax rule is in force; tax is not included.');
@@ -545,13 +705,14 @@ function priceTrip(
       baseMinor,
       feesMinor,
       taxMinor,
-      discountMinor: 0,
-      totalMinor: baseMinor + feesMinor + taxMinor,
+      discountMinor,
+      totalMinor: baseMinor + feesMinor - discountMinor + taxMinor,
       operatorPayableMinor:
         commission?.mode === 'DEDUCTED'
           ? baseMinor - commissionMinor
           : baseMinor,
-      platformRevenueMinor: commissionMinor,
+      platformRevenueMinor:
+        commissionMinor + markupMinor + serviceFeeMinor - discountMinor,
       currency: 'INR',
       validUntil,
       appliedRules: applied(used),
@@ -566,13 +727,16 @@ function priceTrip(
  * The round trip's cost between the flights. WAIT: waiting hours beyond the
  * free allowance on a same-day return, or overnight and crew charges per
  * night away. RETURN_TO_BASE: the flights back to base and out again, at
- * the positioning rate (within `freeWithinKm` they are free). Amounts are
- * the operator's, tax- and commission-exclusive, like landing and handling.
+ * the positioning rate (within `freeWithinKm` they are free). Nights away
+ * also pay the destination's parking. Amounts are the operator's, tax- and
+ * commission-exclusive, like landing and handling.
  */
 function turnaroundLines(
   input: EngineInput,
   turn: Turnaround,
-  hourlyMinor: number,
+  /** Null when the aircraft has no hourly rate (sector or fixed route). */
+  hourlyMinor: number | null,
+  useHourly: () => void,
   use: <T>(entry: { rule: RuleRow; config: T } | undefined) => T | undefined,
   out: { missing: string[]; warnings: string[]; exclusions: string[] },
 ): LineItem[] {
@@ -617,6 +781,14 @@ function turnaroundLines(
       );
       return lines;
     }
+    if (hourlyMinor == null) {
+      lack(
+        'Return to base between the flights',
+        'No hourly rate is set; returning to base between the flights is not included.',
+      );
+      return lines;
+    }
+    useHourly();
     for (const { code, label, leg } of ferries) {
       const hours = (leg.minutes ?? 0) / 60;
       lines.push({
@@ -680,6 +852,22 @@ function turnaroundLines(
       'Crew overnight costs',
       'No crew allowance is set; crew costs for nights away are not included.',
     );
+  }
+  // The location's parking charge per night parked. Like landing, a charge
+  // not on record is a warning, not a missing input of the strategy.
+  const parking = chargeAt(destination, aircraft.category)?.parkingMinor;
+  if (parking == null) {
+    out.warnings.push(
+      `Parking charges at ${destination.name} are not on record.`,
+    );
+    out.exclusions.push(`Parking at ${destination.name}`);
+  } else if (parking > 0) {
+    lines.push({
+      code: 'PARKING',
+      label: `Parking at ${destination.name}, ${plural}`,
+      amountMinor: nights * parking,
+      basis: `${plural} × parking charge`,
+    });
   }
   return lines;
 }

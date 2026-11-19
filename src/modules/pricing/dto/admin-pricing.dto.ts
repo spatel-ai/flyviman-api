@@ -98,7 +98,7 @@ export class CreatePricingRuleDto extends ReasonDto {
     type: 'object',
     additionalProperties: true,
     description:
-      'Settings of the rule type, checked exactly: COMMISSION { percent, mode }, TAX { name, percent }, MIN_CHARGE { amountMinor }, ROUTING_FACTOR { factor }, TIME_ALLOWANCE { minutes }, VALIDITY { minutes }, MIN_BILLABLE_HOURS { hours }, POSITIONING { rateFactor, freeWithinKm? }.',
+      'Settings of the rule type, checked exactly: COMMISSION { percent, mode }, TAX { name, percent }, MIN_CHARGE { amountMinor }, ROUTING_FACTOR { factor }, TIME_ALLOWANCE { minutes }, VALIDITY { minutes }, MIN_BILLABLE_HOURS { hours, per?: LEG | DAY }, POSITIONING { rateFactor, freeWithinKm? }, MARKUP { percent }, SERVICE_FEE { amountMinor }, DISCOUNT { name, percent }, MATCHING_LIMITS { minLegKm?, maxLegKm?, minRunwayM?, minimumNoticeMinutes?, landingSites? }.',
   })
   @IsDefined()
   @IsObject()

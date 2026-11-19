@@ -1,7 +1,13 @@
-/** Every flight line: the customer's legs, positioning and ferries. */
+/**
+ * Every flight line: the customer's legs (hourly, sector or fixed-route),
+ * the per-day minimum billable hours, positioning and ferries.
+ */
 const FLIGHT_LINES = new Set([
   'OPERATING',
   'OPERATING_RETURN',
+  'MIN_BILLABLE',
+  // Flyviman's markup is not shown on its own (lead, W2-4 review).
+  'MARKUP',
   'POSITIONING',
   'REPOSITIONING',
   'INTERIM_REPOSITIONING',
@@ -9,8 +15,8 @@ const FLIGHT_LINES = new Set([
 ]);
 
 /**
- * The breakdown a customer sees (D-099). Flight lines are combined into one
- * "Flying" line, so per-leg amounts (hours × rate) and the aircraft's base
+ * The breakdown a customer sees (D-099). Flight lines, and the markup, are
+ * combined into one "Flying" line, so per-leg amounts (hours × rate) and the aircraft's base
  * in positioning labels are not shown; other lines pass through. An
  * explicit allowlist of fields: the `basis` wording, and anything added to
  * a stored line later, never reaches customers. The stored calculation and

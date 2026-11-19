@@ -121,11 +121,55 @@ describe('MATCHING_LIMITS config', () => {
 });
 
 describe('admin rule types', () => {
-  it('leaves out the types the engine does not apply yet', () => {
-    for (const type of ['MARKUP', 'SERVICE_FEE', 'DISCOUNT', 'HOURLY_RATE']) {
+  it('leaves out the operator types and keeps the platform ones', () => {
+    for (const type of ['HOURLY_RATE', 'SECTOR_RATE', 'FUEL_SURCHARGE']) {
       expect(isAdminRuleType(type)).toBe(false);
     }
-    expect(ADMIN_RULE_TYPES).toContain('COMMISSION');
+    for (const type of ['COMMISSION', 'MARKUP', 'SERVICE_FEE', 'DISCOUNT']) {
+      expect(ADMIN_RULE_TYPES).toContain(type);
+    }
+  });
+});
+
+describe('markup, service fee and discount config (M5 4c)', () => {
+  it('accepts each, zero included, so finance can switch one off', () => {
+    expect(checkRuleConfig('MARKUP', { percent: 0 })).toEqual({
+      ok: true,
+      config: { percent: 0 },
+    });
+    expect(checkRuleConfig('SERVICE_FEE', { amountMinor: 0 }).ok).toBe(true);
+    expect(
+      checkRuleConfig('DISCOUNT', { name: ' Launch offer ', percent: 12.5 }),
+    ).toEqual({ ok: true, config: { name: 'Launch offer', percent: 12.5 } });
+  });
+
+  it('bounds them and refuses anything else', () => {
+    for (const [type, config] of [
+      ['MARKUP', { percent: 50.01 }],
+      ['MARKUP', { percent: 5, mode: 'ADD_ON' }],
+      ['SERVICE_FEE', { amountMinor: 99.5 }],
+      ['SERVICE_FEE', { amountMinor: -1 }],
+      ['SERVICE_FEE', { percent: 2 }],
+      ['DISCOUNT', { percent: 10 }],
+      ['DISCOUNT', { name: 'X', percent: 10 }],
+      ['DISCOUNT', { name: 'Offer', percent: 51 }],
+      ['DISCOUNT', { name: 'Off\u202eer', percent: 10 }],
+    ] as const) {
+      expect(checkRuleConfig(type, config).ok).toBe(false);
+    }
+  });
+
+  it('takes a per-day or per-leg minimum, and leaves `per` out when not sent', () => {
+    expect(checkRuleConfig('MIN_BILLABLE_HOURS', { hours: 2 })).toEqual({
+      ok: true,
+      config: { hours: 2 },
+    });
+    expect(
+      checkRuleConfig('MIN_BILLABLE_HOURS', { hours: 2, per: 'DAY' }),
+    ).toEqual({ ok: true, config: { hours: 2, per: 'DAY' } });
+    expect(
+      checkRuleConfig('MIN_BILLABLE_HOURS', { hours: 2, per: 'WEEK' }).ok,
+    ).toBe(false);
   });
 });
 

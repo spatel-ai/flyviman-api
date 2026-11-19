@@ -4,7 +4,48 @@ import { approvedOperator } from './support/fleet.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
-/** Operator pricing inputs (M5 slice 2). */
+/** Operator pricing inputs (M5 slices 2, 4b and 4c). */
+
+type Line = { code: string; label: string; amountMinor: number };
+
+/** The customer's detail of this aircraft's result, and its stored lines. */
+async function priced(
+  request: Parameters<typeof searchFor>[0],
+  trip: Parameters<typeof searchFor>[1],
+) {
+  const { searchId, result } = await searchFor(request, trip);
+  expect(result.price).toMatchObject({ priceType: 'ESTIMATE' });
+  const detail = (
+    await (
+      await request.get(`search/${searchId}/results/${result.resultId}`)
+    ).json()
+  ).data;
+  const stored = await withPrisma((prisma) =>
+    prisma.priceCalculation.findFirstOrThrow({
+      where: { searchId, aircraftId: trip.aircraftId },
+      select: { breakdown: true },
+    }),
+  );
+  const lines = detail.breakdown as Line[];
+  expect(lines.reduce((sum, line) => sum + line.amountMinor, 0)).toBe(
+    detail.price.amountMinor,
+  );
+  return {
+    shown: (code: string) => lines.find((line) => line.code === code),
+    stored: (code: string) =>
+      (stored.breakdown as unknown as Line[]).find(
+        (line) => line.code === code,
+      ),
+  };
+}
+
+const NO_DEFAULTS = {
+  minBillableHours: null,
+  positioningRateFactor: null,
+  freeWithinKm: null,
+  landingFallbackMinor: null,
+  handlingFallbackMinor: null,
+};
 
 test.describe('operator pricing', () => {
   test('an aircraft rate turns "price on request" into an estimate, versioned and audited', async ({
@@ -204,6 +245,229 @@ test.describe('operator pricing', () => {
       overnightMinor: null,
       crewNightMinor: 500_000,
     });
+  });
+
+  test('trip charges and a per-day minimum reach the customer; left out keeps, null clears', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const trip = await listedJet({ request, playwright, baseURL });
+    const rate = await request.put(
+      `operator/aircraft/${trip.aircraftId}/pricing`,
+      {
+        headers: await csrfHeaders(request),
+        data: {
+          hourlyRateMinor: 18_000_000,
+          taxInclusive: false,
+          commissionInclusive: false,
+          minBillableHours: 3,
+          minBillableHoursPer: 'DAY',
+        },
+      },
+    );
+    expect((await rate.json()).data).toMatchObject({
+      minBillableHours: 3,
+      minBillableHoursPer: 'DAY',
+    });
+    const put = async (data: object, status = 200) => {
+      const response = await request.put('operator/pricing', {
+        headers: await csrfHeaders(request),
+        data: { ...NO_DEFAULTS, ...data },
+      });
+      expect(response.status()).toBe(status);
+      return await response.json();
+    };
+    expect(
+      (
+        await put({
+          fuelSurchargePerFlightMinor: 500_000,
+          permitPerFlightMinor: 200_000,
+          navigationPerFlightMinor: 100_000,
+          otherChargeMinor: 300_000,
+          otherChargeLabel: 'Catering',
+        })
+      ).data,
+    ).toMatchObject({
+      fuelSurchargePerFlightMinor: 500_000,
+      permitPerFlightMinor: 200_000,
+      navigationPerFlightMinor: 100_000,
+      otherChargeMinor: 300_000,
+      otherChargeLabel: 'Catering',
+      minBillableHoursPer: null,
+    });
+    // A new name alone keeps every amount.
+    expect(
+      (await put({ otherChargeLabel: 'Ground transport' })).data,
+    ).toMatchObject({
+      fuelSurchargePerFlightMinor: 500_000,
+      otherChargeMinor: 300_000,
+      otherChargeLabel: 'Ground transport',
+    });
+
+    const { shown, stored } = await priced(request, trip);
+    expect(shown('FUEL_SURCHARGE')?.amountMinor).toBe(500_000);
+    expect(shown('PERMIT')?.amountMinor).toBe(200_000);
+    expect(shown('NAVIGATION')?.amountMinor).toBe(100_000);
+    expect(shown('OTHER')).toMatchObject({
+      label: 'Ground transport',
+      amountMinor: 300_000,
+    });
+    // Under 3 h flown: the day's shortfall is stored, and part of Flying.
+    const shortfall = stored('MIN_BILLABLE');
+    expect(shortfall?.amountMinor).toBeGreaterThan(0);
+    expect(shown('MIN_BILLABLE')).toBeUndefined();
+    // 3 h billed for the day; Flying also holds the return to base.
+    expect(stored('OPERATING')!.amountMinor + shortfall!.amountMinor).toBe(
+      54_000_000,
+    );
+    expect(shown('FLYING')?.amountMinor).toBe(
+      ['OPERATING', 'MIN_BILLABLE', 'POSITIONING', 'REPOSITIONING'].reduce(
+        (sum, code) => sum + (stored(code)?.amountMinor ?? 0),
+        0,
+      ),
+    );
+
+    // Null clears; the rest stay.
+    expect(
+      (await put({ fuelSurchargePerFlightMinor: null, otherChargeMinor: null }))
+        .data,
+    ).toMatchObject({
+      fuelSurchargePerFlightMinor: null,
+      permitPerFlightMinor: 200_000,
+      otherChargeMinor: null,
+      otherChargeLabel: null,
+    });
+    // A new other charge needs a name; a name must be one plain line.
+    const nameless = await put({ otherChargeMinor: 1_000 }, 400);
+    expect(nameless.error.details[0].field).toBe('otherChargeLabel');
+    const hidden = await put(
+      { otherChargeMinor: 1_000, otherChargeLabel: 'Cater\u202eing' },
+      400,
+    );
+    expect(hidden.error.details[0].field).toBe('otherChargeLabel');
+  });
+
+  test('sector and fixed-route aircraft are priced by their own rate; routes are checked', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const trip = await listedJet({ request, playwright, baseURL });
+    const { aircraftId, mumbai, goa } = trip;
+    const model = (pricingModel: 'SECTOR' | 'FIXED_ROUTE') =>
+      withPrisma((prisma) =>
+        prisma.aircraft.update({
+          where: { id: aircraftId },
+          data: { pricingModel },
+        }),
+      );
+    const put = async (data: object, status = 200) => {
+      const response = await request.put(
+        `operator/aircraft/${aircraftId}/pricing`,
+        {
+          headers: await csrfHeaders(request),
+          data: {
+            hourlyRateMinor: null,
+            taxInclusive: false,
+            commissionInclusive: false,
+            minBillableHours: null,
+            ...data,
+          },
+        },
+      );
+      expect(response.status()).toBe(status);
+      return await response.json();
+    };
+
+    await model('SECTOR');
+    expect((await put({ sectorRateMinor: 25_000_000 })).data).toMatchObject({
+      sectorRateMinor: 25_000_000,
+      fixedRoutes: [],
+    });
+    // No hourly rate: the flight is the sector rate; positioning is excluded.
+    const sector = await priced(request, trip);
+    expect(sector.stored('OPERATING')?.amountMinor).toBe(25_000_000);
+    expect(sector.shown('FLYING')?.amountMinor).toBe(25_000_000);
+
+    // The flags cover every rate: a sector rate left out is kept under them.
+    expect((await put({ taxInclusive: true })).data).toMatchObject({
+      sectorRateMinor: 25_000_000,
+      taxInclusive: true,
+    });
+    const sectorRules = await withPrisma((prisma) =>
+      prisma.pricingRule.findMany({
+        where: { scopeRef: aircraftId, type: 'SECTOR_RATE', isActive: true },
+      }),
+    );
+    expect(sectorRules.map((rule) => rule.config)).toEqual([
+      {
+        amountMinor: 25_000_000,
+        currency: 'INR',
+        taxInclusive: true,
+        commissionInclusive: false,
+      },
+    ]);
+
+    await model('FIXED_ROUTE');
+    const routes = await put({
+      fixedRoutes: [
+        { originId: goa, destinationId: mumbai, amountMinor: 30_000_000 },
+      ],
+    });
+    expect(routes.data.fixedRoutes).toEqual([
+      {
+        originId: goa,
+        destinationId: mumbai,
+        amountMinor: 30_000_000,
+        originName: expect.stringMatching(/Dabolim/),
+        destinationName: expect.stringMatching(/Chhatrapati Shivaji/),
+      },
+    ]);
+    expect(routes.data.sectorRateMinor).toBe(25_000_000);
+    // Listed Goa to Mumbai, priced Mumbai to Goa: either direction.
+    const fixed = await priced(request, trip);
+    expect(fixed.stored('OPERATING')?.amountMinor).toBe(30_000_000);
+
+    const unknown = '00000000-0000-4000-8000-000000000000';
+    const refused = await put(
+      {
+        fixedRoutes: [
+          { originId: mumbai, destinationId: goa, amountMinor: 1_000 },
+          { originId: goa, destinationId: mumbai, amountMinor: 1_000 },
+          { originId: goa, destinationId: goa, amountMinor: 1_000 },
+          { originId: unknown, destinationId: goa, amountMinor: 1_000 },
+        ],
+      },
+      400,
+    );
+    expect(
+      refused.error.details.map((detail: { field: string }) => detail.field),
+    ).toEqual([
+      'fixedRoutes[1]',
+      'fixedRoutes[2].destinationId',
+      'fixedRoutes[3].originId',
+    ]);
+    const tooMany = await put(
+      {
+        fixedRoutes: Array.from({ length: 51 }, () => ({
+          originId: mumbai,
+          destinationId: goa,
+          amountMinor: 1_000,
+        })),
+      },
+      400,
+    );
+    expect(tooMany.error.details[0].field).toBe('fixedRoutes');
+
+    // An empty list clears the routes; the sector rate stays.
+    expect((await put({ fixedRoutes: [] })).data).toMatchObject({
+      fixedRoutes: [],
+      sectorRateMinor: 25_000_000,
+    });
+    expect(
+      (await put({ sectorRateMinor: null })).data.sectorRateMinor,
+    ).toBeNull();
   });
 
   test('only the operator administrator, only for their own aircraft', async ({

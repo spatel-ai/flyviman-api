@@ -15,15 +15,30 @@ export interface RuleRow {
   version: number;
 }
 
+/** An operator's rate, and whether it already includes tax or commission. */
+export interface OperatorRate {
+  amountMinor: number;
+  currency: string;
+  taxInclusive?: boolean;
+  commissionInclusive?: boolean;
+}
+
+/** One route an aircraft flies at a fixed price, in either direction. */
+export interface FixedRoute {
+  originId: string;
+  destinationId: string;
+  amountMinor: number;
+}
+
 /** Config shapes of the rule types the engine applies today. */
 export interface RuleConfigs {
-  HOURLY_RATE: {
-    amountMinor: number;
-    currency: string;
-    taxInclusive?: boolean;
-    commissionInclusive?: boolean;
-  };
-  MIN_BILLABLE_HOURS: { hours: number };
+  HOURLY_RATE: OperatorRate;
+  /** Per flight (sector), for an aircraft priced by sector. */
+  SECTOR_RATE: OperatorRate;
+  /** Fixed prices per route, for an aircraft priced by fixed route. */
+  FIXED_ROUTE: Omit<OperatorRate, 'amountMinor'> & { routes: FixedRoute[] };
+  /** `per` absent is `LEG`: the minimum applies to each flight. */
+  MIN_BILLABLE_HOURS: { hours: number; per?: 'LEG' | 'DAY' };
   POSITIONING: { rateFactor: number; freeWithinKm?: number };
   /** Per hour on the ground between a round trip's flights, beyond `freeHours`. */
   WAITING: { amountMinor: number; freeHours: number };
@@ -33,6 +48,18 @@ export interface RuleConfigs {
   CREW: { amountMinor: number };
   LANDING: { amountMinor: number };
   HANDLING: { amountMinor: number };
+  /** Per customer flight, tax- and commission-exclusive like landing. */
+  FUEL_SURCHARGE: { amountMinor: number };
+  PERMIT: { amountMinor: number };
+  NAVIGATION: { amountMinor: number };
+  /** Once per trip, under the operator's own label. */
+  OTHER: { label: string; amountMinor: number };
+  /** Platform: a share of the operator subtotal, added for Flyviman. */
+  MARKUP: { percent: number };
+  /** Platform: a flat fee per trip. */
+  SERVICE_FEE: { amountMinor: number };
+  /** Platform: a share of the price before tax, funded by Flyviman. */
+  DISCOUNT: { name: string; percent: number };
   MIN_CHARGE: { amountMinor: number };
   COMMISSION: { percent: number; mode: 'ADD_ON' | 'DEDUCTED' };
   TAX: { name: string; percent: number };
@@ -53,6 +80,7 @@ const PLATFORM_OWNED = new Set<string>([
   'MARKUP',
   'SERVICE_FEE',
   'TAX',
+  'DISCOUNT',
 ]);
 
 /** Most specific wins (pricing-engine.md, rule model). Routes come later. */
