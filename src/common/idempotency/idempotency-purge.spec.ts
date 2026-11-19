@@ -1,16 +1,19 @@
+import type { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
 import { IdempotencyPurge } from './idempotency-purge.js';
 import type { IdempotencyStore } from './idempotency.store.js';
 
-function setup(locked: 'OK' | null = 'OK') {
+function setup(locked: 'OK' | null = 'OK', lastRun: string | null = null) {
   const redis = {
     set: vi.fn().mockResolvedValue(locked),
+    get: vi.fn().mockResolvedValue(lastRun),
     eval: vi.fn().mockResolvedValue(1),
   };
   const store = { purgeExpired: vi.fn().mockResolvedValue(4) };
   const purge = new IdempotencyPurge(
     store as unknown as IdempotencyStore,
     redis as unknown as Redis,
+    { get: () => 'test' } as unknown as ConfigService,
   );
   return { purge, redis, store };
 }
@@ -51,5 +54,25 @@ describe('IdempotencyPurge', () => {
     store.purgeExpired.mockRejectedValue(new Error('database down'));
     await expect(purge.daily()).resolves.toBeUndefined();
     expect(redis.eval).toHaveBeenCalled();
+  });
+
+  it('records the run, and catches up on start only after 23 hours', async () => {
+    const { purge, redis } = setup();
+    await purge.run(NOW);
+    expect(redis.set).toHaveBeenCalledWith(
+      'idempotency:purge:last-run',
+      NOW.toISOString(),
+    );
+
+    const recent = setup('OK', new Date(Date.now() - 3_600_000).toISOString());
+    await recent.purge.catchUp();
+    expect(recent.store.purgeExpired).not.toHaveBeenCalled();
+
+    const stale = setup(
+      'OK',
+      new Date(Date.now() - 24 * 3_600_000).toISOString(),
+    );
+    await stale.purge.catchUp();
+    expect(stale.store.purgeExpired).toHaveBeenCalled();
   });
 });
