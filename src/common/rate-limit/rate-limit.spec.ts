@@ -15,7 +15,7 @@ function context(request: object): ExecutionContext {
 }
 
 /** The guard alone, with a stand-in for the identity the auth module provides. */
-function guard(identity: Partial<RateLimitIdentity> = {}) {
+function guard(identity: Partial<RateLimitIdentity> = {}, tier?: string) {
   const fake = {
     identify: vi.fn().mockResolvedValue(null),
     exempt: vi.fn().mockResolvedValue(false),
@@ -24,11 +24,14 @@ function guard(identity: Partial<RateLimitIdentity> = {}) {
   const instance = new RateLimitGuard(
     [],
     {} as ThrottlerStorage,
-    {} as Reflector,
+    { getAllAndOverride: () => tier } as unknown as Reflector,
     fake as RateLimitIdentity,
   ) as unknown as {
     shouldSkip(context: ExecutionContext): Promise<boolean>;
-    getTracker(request: Record<string, unknown>): Promise<string>;
+    getTracker(
+      request: Record<string, unknown>,
+      context?: ExecutionContext,
+    ): Promise<string>;
   };
   return { instance, fake };
 }
@@ -59,6 +62,25 @@ describe('RateLimitGuard tracker', () => {
     });
     await expect(instance.getTracker(request)).resolves.toBe('user:user-1');
     expect(fake.identify).toHaveBeenCalledWith(request);
+  });
+
+  it('counts a payment webhook by address only, never asking for a session', async () => {
+    const request = {
+      path: '/api/v1/webhooks/payments/mock',
+      ip: '203.0.113.9',
+      cookies: { access_token: 'signed' },
+    };
+    const { instance, fake } = guard(
+      { identify: vi.fn().mockResolvedValue('user:user-1') },
+      'webhook',
+    );
+    await expect(
+      instance.getTracker(request, {
+        getHandler: () => undefined,
+        getClass: () => undefined,
+      } as unknown as ExecutionContext),
+    ).resolves.toBe('203.0.113.9');
+    expect(fake.identify).not.toHaveBeenCalled();
   });
 
   it('counts by address when the identity recognises none', async () => {
