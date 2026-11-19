@@ -99,6 +99,17 @@ export class EnvironmentVariables {
   @IsString()
   COOKIE_DOMAIN?: string;
 
+  /**
+   * Shared with the web host (its own WEB_PROXY_SECRET), which signs the
+   * visitor's address into `x-flyviman-client-ip` when it proxies `/api/v1`.
+   * Unset, that header is ignored and every caller is its connection's
+   * address. At least 32 characters.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(32)
+  WEB_PROXY_SECRET?: string;
+
   /** Requests per minute, per address, on each sign-in route. */
   @Type(() => Number)
   @IsInt()

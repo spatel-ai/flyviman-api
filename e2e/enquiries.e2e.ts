@@ -3,6 +3,7 @@ import { APIRequestContext, expect, test } from '@playwright/test';
 import { STRICT_BASE_URL } from './support/accounts.js';
 import { outbox, uniqueEmail } from './support/data.js';
 import { withPrisma } from './support/db.js';
+import { asVisitor, visitorAddress } from './support/visitor.js';
 
 /** The operations inbox (OPERATIONS_INBOX_EMAIL's default). */
 const OPERATIONS_INBOX = 'operations@flyviman.test';
@@ -22,9 +23,10 @@ function send(
   request: APIRequestContext,
   data: object,
   key: string = randomUUID(),
+  headers: Record<string, string> = {},
 ) {
   return request.post('enquiries', {
-    headers: { 'Idempotency-Key': key },
+    headers: { 'Idempotency-Key': key, ...headers },
     data,
   });
 }
@@ -250,6 +252,33 @@ test.describe('POST /enquiries rate limit', () => {
     expect(blocked, `statuses: ${statuses.join(', ')}`).toBeDefined();
     expect((await blocked!.json()).error.code).toBe('RATE_LIMITED');
     expect(Number(blocked!.headers()['retry-after'])).toBeGreaterThan(0);
+    await request.dispose();
+  });
+
+  test('behind the web host, each visitor has 5 of its own', async ({
+    playwright,
+  }) => {
+    // The web host signs each visitor's address (WEB_PROXY_SECRET), so one
+    // visitor using up the limit does not close the form for everyone.
+    const request = await playwright.request.newContext({
+      baseURL: STRICT_BASE_URL,
+    });
+    const busy = asVisitor(visitorAddress());
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      statuses.push(
+        (await send(request, enquiry(), randomUUID(), busy)).status(),
+      );
+    }
+    expect(statuses).toEqual([201, 201, 201, 201, 201, 429]);
+
+    const other = await send(
+      request,
+      enquiry(),
+      randomUUID(),
+      asVisitor(visitorAddress()),
+    );
+    expect(other.status()).toBe(201);
     await request.dispose();
   });
 });

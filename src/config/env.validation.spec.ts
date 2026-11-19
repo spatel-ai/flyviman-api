@@ -26,6 +26,17 @@ describe('validateEnv', () => {
     }
   });
 
+  it('accepts no WEB_PROXY_SECRET, and refuses a short one', () => {
+    expect(validateEnv(valid).WEB_PROXY_SECRET).toBeUndefined();
+    expect(
+      validateEnv({ ...valid, WEB_PROXY_SECRET: 's'.repeat(32) })
+        .WEB_PROXY_SECRET,
+    ).toBe('s'.repeat(32));
+    expect(() =>
+      validateEnv({ ...valid, WEB_PROXY_SECRET: 'too-short' }),
+    ).toThrow(/WEB_PROXY_SECRET/);
+  });
+
   it('keeps the development helpers off unless asked, and never in production', () => {
     expect(validateEnv(valid).ENABLE_DEV_TOOLS).toBe(false);
     expect(

@@ -7,6 +7,7 @@ import {
   ThrottlerModuleOptions,
   ThrottlerOptionsFactory,
 } from '@nestjs/throttler';
+import { signedClientAddress } from '../middleware/client-address.middleware.js';
 
 export type RateTier = 'auth' | 'search' | 'default';
 const RATE_TIER = 'rateTier';
@@ -105,9 +106,12 @@ export class RateLimitGuard extends ThrottlerGuard {
   static identify: RateLimitIdentity = async () => null;
 
   protected async getTracker(request: Record<string, any>): Promise<string> {
-    return (
-      (await RateLimitGuard.identify(request)) ?? super.getTracker(request)
-    );
+    const identity = await RateLimitGuard.identify(request);
+    if (identity) return identity;
+    // Behind the web host's proxy, the visitor's verified address; normalised
+    // (IPv6 to its subnet) exactly as the connection's address would be.
+    const visitor = signedClientAddress(request);
+    return super.getTracker(visitor ? { ip: visitor } : request);
   }
 
   /**

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { requestContext } from '../context/request-context.js';
+import { clientAddress } from './client-address.middleware.js';
 
 const HEADER = 'x-request-id';
 const SAFE_ID = /^[A-Za-z0-9._-]{1,64}$/;
@@ -19,5 +20,8 @@ export function requestIdMiddleware(
   const id = incoming && SAFE_ID.test(incoming) ? incoming : randomUUID();
   request.id = id;
   response.setHeader(HEADER, id);
-  requestContext.run({ requestId: id, ipAddress: request.ip ?? null }, next);
+  requestContext.run(
+    { requestId: id, ipAddress: clientAddress(request) },
+    next,
+  );
 }
