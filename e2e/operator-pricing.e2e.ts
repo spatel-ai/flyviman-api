@@ -145,6 +145,67 @@ test.describe('operator pricing', () => {
     });
   });
 
+  test('round-trip charges left out keep what is stored; only null clears', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    await approvedOperator(request, playwright, baseURL);
+    const put = async (data: object) => {
+      const response = await request.put('operator/pricing', {
+        headers: await csrfHeaders(request),
+        // The first five defaults are always sent; the round-trip four are optional.
+        data: {
+          minBillableHours: null,
+          positioningRateFactor: null,
+          freeWithinKm: null,
+          landingFallbackMinor: null,
+          handlingFallbackMinor: null,
+          ...data,
+        },
+      });
+      expect(response.status()).toBe(200);
+      return (await response.json()).data;
+    };
+    expect(
+      await put({
+        waitingHourlyMinor: 1_000_000,
+        waitingFreeHours: 2,
+        overnightMinor: 3_000_000,
+        crewNightMinor: 500_000,
+      }),
+    ).toMatchObject({
+      waitingHourlyMinor: 1_000_000,
+      waitingFreeHours: 2,
+      overnightMinor: 3_000_000,
+      crewNightMinor: 500_000,
+    });
+    // A new rate without free hours keeps the free hours.
+    expect(await put({ waitingHourlyMinor: 1_200_000 })).toMatchObject({
+      waitingHourlyMinor: 1_200_000,
+      waitingFreeHours: 2,
+      overnightMinor: 3_000_000,
+      crewNightMinor: 500_000,
+    });
+    // Free hours alone keep the rate.
+    expect(await put({ waitingFreeHours: 1.5 })).toMatchObject({
+      waitingHourlyMinor: 1_200_000,
+      waitingFreeHours: 1.5,
+    });
+    // Null free hours is 0; a null rate clears the charge; others stay.
+    expect(
+      await put({ waitingHourlyMinor: 1_200_000, waitingFreeHours: null }),
+    ).toMatchObject({ waitingFreeHours: 0 });
+    expect(
+      await put({ waitingHourlyMinor: null, overnightMinor: null }),
+    ).toMatchObject({
+      waitingHourlyMinor: null,
+      waitingFreeHours: null,
+      overnightMinor: null,
+      crewNightMinor: 500_000,
+    });
+  });
+
   test('only the operator administrator, only for their own aircraft', async ({
     request,
     playwright,

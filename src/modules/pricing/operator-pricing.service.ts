@@ -99,18 +99,7 @@ export class OperatorPricingService {
           : { amountMinor: dto.handlingFallbackMinor },
       ],
     ]);
-    // Round-trip charges: left out keeps what is in force.
-    if (dto.waitingHourlyMinor !== undefined) {
-      desired.set(
-        PricingRuleType.WAITING,
-        dto.waitingHourlyMinor == null
-          ? null
-          : {
-              amountMinor: dto.waitingHourlyMinor,
-              freeHours: dto.waitingFreeHours ?? 0,
-            },
-      );
-    }
+    // Round-trip charges: left out keeps what is in force; null clears.
     if (dto.overnightMinor !== undefined) {
       desired.set(
         PricingRuleType.OVERNIGHT,
@@ -128,7 +117,18 @@ export class OperatorPricingService {
       PricingRuleScope.OPERATOR,
       operatorId,
       OPERATOR_TYPES,
-      desired,
+      (current) => {
+        // Read under the lock, so a field left out keeps the value in force
+        // even when another save lands first.
+        const waiting = waitingConfig(
+          dto,
+          current.get(PricingRuleType.WAITING)?.config as
+            RuleConfigs['WAITING'] | undefined,
+        );
+        if (waiting !== undefined)
+          desired.set(PricingRuleType.WAITING, waiting);
+        return desired;
+      },
     );
     return this.getOperator(user);
   }
@@ -173,7 +173,7 @@ export class OperatorPricingService {
       PricingRuleScope.AIRCRAFT,
       aircraftId,
       AIRCRAFT_TYPES,
-      desired,
+      () => desired,
     );
     return this.getAircraft(user, aircraftId);
   }
@@ -246,7 +246,8 @@ export class OperatorPricingService {
     scope: PricingRuleScope,
     scopeRef: string,
     types: readonly PricingRuleType[],
-    desired: Map<string, unknown>,
+    /** The settings wanted, given what is in force under the locks. */
+    plan: (current: Map<string, RuleRow>) => Map<string, unknown>,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       // One lock per rule key, in a fixed order so two saves never wait on
@@ -257,7 +258,7 @@ export class OperatorPricingService {
       }
       const now = new Date();
       const current = await this.inForce(scope, scopeRef, types, tx);
-      for (const change of planRuleChanges(current, desired)) {
+      for (const change of planRuleChanges(current, plan(current))) {
         if (change.close) {
           await tx.pricingRule.update({
             where: { id: change.close.id },
@@ -307,6 +308,32 @@ export class OperatorPricingService {
       }
     });
   }
+}
+
+/**
+ * The waiting rule wanted: undefined to leave it, null to clear it. Each of
+ * `waitingHourlyMinor` and `waitingFreeHours` left out keeps its stored
+ * value; `waitingHourlyMinor: null` clears the rule; `waitingFreeHours:
+ * null` is 0. Free hours without a rate on record or sent set nothing.
+ */
+export function waitingConfig(
+  dto: Pick<OperatorPricingDto, 'waitingHourlyMinor' | 'waitingFreeHours'>,
+  stored: RuleConfigs['WAITING'] | undefined,
+): RuleConfigs['WAITING'] | null | undefined {
+  if (dto.waitingHourlyMinor === null) return null;
+  if (
+    dto.waitingHourlyMinor === undefined &&
+    dto.waitingFreeHours === undefined
+  ) {
+    return undefined;
+  }
+  const amountMinor = dto.waitingHourlyMinor ?? stored?.amountMinor;
+  if (amountMinor === undefined) return undefined;
+  const freeHours =
+    dto.waitingFreeHours === undefined
+      ? (stored?.freeHours ?? 0)
+      : (dto.waitingFreeHours ?? 0);
+  return { amountMinor, freeHours };
 }
 
 function configOf<K extends keyof RuleConfigs>(

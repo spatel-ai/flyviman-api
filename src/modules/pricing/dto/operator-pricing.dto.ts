@@ -107,7 +107,7 @@ export class OperatorPricingDto {
     minimum: 0,
     maximum: 24,
     description:
-      'Hours of waiting not charged. Saved with `waitingHourlyMinor` (0 when left out or null); ignored without it.',
+      'Hours of waiting not charged. Left out: unchanged (0 for a new waiting charge); `null` sets 0. Sent alone, it changes the free hours of the waiting charge in force; ignored when there is none.',
     example: 1,
   })
   @ValidateIf((_, value) => value != null)
