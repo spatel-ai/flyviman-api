@@ -87,13 +87,19 @@ export class MatchingService {
     private readonly routing: RoutingProvider,
   ) {}
 
+  /** `returnAt`: a round trip's return departure from the destination. */
   async match(
     route: MatchRoute,
     departureAt: Date,
     now: Date,
+    returnAt: Date | null = null,
   ): Promise<MatchResult> {
-    const prepared = await this.prepare(route, departureAt, departureAt);
-    return this.evaluate(prepared, departureAt, now);
+    const prepared = await this.prepare(
+      route,
+      departureAt,
+      returnAt ?? departureAt,
+    );
+    return this.evaluate(prepared, departureAt, now, returnAt);
   }
 
   /** Loads the aircraft and their offered time for departures in [from, to]. */
@@ -197,7 +203,12 @@ export class MatchingService {
   }
 
   /** The aircraft that can fly at this departure time. No database access. */
-  evaluate(prepared: PreparedRoute, departureAt: Date, now: Date): MatchResult {
+  evaluate(
+    prepared: PreparedRoute,
+    departureAt: Date,
+    now: Date,
+    returnAt: Date | null = null,
+  ): MatchResult {
     const candidates: Candidate[] = [];
     const exclusions = [...prepared.excluded];
     for (const entry of prepared.ready) {
@@ -210,10 +221,9 @@ export class MatchingService {
         departureAt,
         now,
       });
+      const legMs = (entry.legMinutes ?? 60) * 60_000;
       // Landing at the destination; an hour when the leg time is unknown.
-      const arrivalAt = new Date(
-        departureAt.getTime() + (entry.legMinutes ?? 60) * 60_000,
-      );
+      const arrivalAt = new Date(departureAt.getTime() + legMs);
       const timing = timeChecks({
         departureAt,
         arrivalAt,
@@ -224,14 +234,18 @@ export class MatchingService {
         restrictions: entry.restrictions,
       });
       reasons.push(...timing.reasons);
+      // A round trip's return cannot leave before the outbound lands.
+      if (returnAt && arrivalAt.getTime() > returnAt.getTime()) {
+        reasons.push('returnTime');
+      }
       if (reasons.length === 0) {
-        // Busy from leaving base to landing at the destination.
+        // Busy from leaving base to landing at the destination, or back at
+        // the origin after a round trip.
         const from = new Date(
           departureAt.getTime() - entry.positioningMinutes * 60_000,
         );
-        if (
-          !windowFree(entry.windows, from, arrivalAt, prepared.route.origin.id)
-        ) {
+        const to = returnAt ? new Date(returnAt.getTime() + legMs) : arrivalAt;
+        if (!windowFree(entry.windows, from, to, prepared.route.origin.id)) {
           reasons.push('availability');
         }
       }

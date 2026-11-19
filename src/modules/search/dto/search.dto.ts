@@ -23,7 +23,15 @@ export const CHARTER_CATEGORIES = [
   AircraftCategory.HEAVY_JET,
 ] as const;
 
-/** A one-way trip. Round trips and multi-leg come later in M5. */
+/** Trip types a search accepts. Multi-leg comes later. */
+export const SEARCH_TRIP_TYPES = ['ONE_WAY', 'ROUND_TRIP'] as const;
+export type SearchTripType = (typeof SEARCH_TRIP_TYPES)[number];
+
+export const ROUND_TRIP_STRATEGIES = ['WAIT', 'RETURN_TO_BASE'] as const;
+
+const OFFSET = /(Z|[+-]\d{2}:\d{2})$/;
+
+/** A one-way or round trip. Multi-leg comes later in M5. */
 export class HelicopterSearchDto {
   @ApiProperty({
     format: 'uuid',
@@ -42,10 +50,33 @@ export class HelicopterSearchDto {
   })
   @IsISO8601({ strict: true })
   // A time without an offset would be read in the server's zone (D-099).
-  @Matches(/(Z|[+-]\d{2}:\d{2})$/, {
+  @Matches(OFFSET, {
     message: 'departureAt must include a time zone offset (Z or +05:30)',
   })
   departureAt: string;
+
+  @ApiPropertyOptional({
+    enum: SEARCH_TRIP_TYPES,
+    enumName: 'SearchTripType',
+    default: 'ONE_WAY',
+  })
+  @IsOptional()
+  @IsIn(SEARCH_TRIP_TYPES)
+  tripType?: SearchTripType;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.',
+    example: '2026-12-07T16:00:00+05:30',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @Matches(OFFSET, {
+    message: 'returnAt must include a time zone offset (Z or +05:30)',
+  })
+  returnAt?: string | null;
 
   @ApiProperty({ minimum: 1, maximum: 50, example: 4 })
   @IsInt()
@@ -103,11 +134,38 @@ export class SearchResultDto {
   @ApiProperty()
   operatorName: string;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'The flying the customer books: out and back for a round trip.',
+  })
   distanceKm: number;
 
-  @ApiProperty({ nullable: true, type: Number })
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Out and back for a round trip. Null when unknown.',
+  })
   flightMinutes: number | null;
+
+  @ApiProperty({ enum: SEARCH_TRIP_TYPES, enumName: 'SearchTripType' })
+  tripType: SearchTripType;
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    type: String,
+    description: 'The return departure; null for a one-way trip.',
+  })
+  returnAt: string | null;
+
+  @ApiProperty({
+    enum: ROUND_TRIP_STRATEGIES,
+    enumName: 'RoundTripStrategy',
+    nullable: true,
+    description:
+      'How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.',
+  })
+  roundTripStrategy: (typeof ROUND_TRIP_STRATEGIES)[number] | null;
 
   @ApiProperty({
     type: SearchPriceDto,
@@ -155,7 +213,10 @@ export class SearchResponseDto {
   })
   aircraftCategory: (typeof CHARTER_CATEGORIES)[number] | null;
 
-  @ApiProperty({ type: [SearchLegDto] })
+  @ApiProperty({
+    type: [SearchLegDto],
+    description: 'One leg, or the outbound and the return for a round trip.',
+  })
   legs: SearchLegDto[];
 
   @ApiProperty()

@@ -7915,6 +7915,13 @@
           "registration"
         ]
       },
+      "SearchTripType": {
+        "type": "string",
+        "enum": [
+          "ONE_WAY",
+          "ROUND_TRIP"
+        ]
+      },
       "CharterCategory": {
         "type": "string",
         "enum": [
@@ -7941,6 +7948,20 @@
             "type": "string",
             "description": "ISO 8601 with offset, at least an hour ahead.",
             "example": "2026-12-05T10:00:00+05:30"
+          },
+          "tripType": {
+            "default": "ONE_WAY",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.",
+            "example": "2026-12-07T16:00:00+05:30"
           },
           "passengerCount": {
             "type": "number",
@@ -8026,6 +8047,14 @@
           "passengerCapacity"
         ]
       },
+      "RoundTripStrategy": {
+        "type": "string",
+        "enum": [
+          "WAIT",
+          "RETURN_TO_BASE"
+        ],
+        "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request."
+      },
       "PriceType": {
         "type": "string",
         "enum": [
@@ -8074,11 +8103,35 @@
             "type": "string"
           },
           "distanceKm": {
-            "type": "number"
+            "type": "number",
+            "description": "The flying the customer books: out and back for a round trip."
           },
           "flightMinutes": {
             "type": "number",
-            "nullable": true
+            "nullable": true,
+            "description": "Out and back for a round trip. Null when unknown."
+          },
+          "tripType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The return departure; null for a one-way trip."
+          },
+          "roundTripStrategy": {
+            "nullable": true,
+            "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoundTripStrategy"
+              }
+            ]
           },
           "price": {
             "nullable": true,
@@ -8107,6 +8160,9 @@
           "operatorName",
           "distanceKm",
           "flightMinutes",
+          "tripType",
+          "returnAt",
+          "roundTripStrategy",
           "price",
           "validUntil",
           "warnings"
@@ -8136,6 +8192,7 @@
             ]
           },
           "legs": {
+            "description": "One leg, or the outbound and the return for a round trip.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SearchLegDto"
@@ -8182,6 +8239,20 @@
             "type": "string",
             "description": "ISO 8601 with offset, at least an hour ahead.",
             "example": "2026-12-05T10:00:00+05:30"
+          },
+          "tripType": {
+            "default": "ONE_WAY",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.",
+            "example": "2026-12-07T16:00:00+05:30"
           },
           "passengerCount": {
             "type": "number",
@@ -8283,11 +8354,35 @@
             "type": "string"
           },
           "distanceKm": {
-            "type": "number"
+            "type": "number",
+            "description": "The flying the customer books: out and back for a round trip."
           },
           "flightMinutes": {
             "type": "number",
-            "nullable": true
+            "nullable": true,
+            "description": "Out and back for a round trip. Null when unknown."
+          },
+          "tripType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The return departure; null for a one-way trip."
+          },
+          "roundTripStrategy": {
+            "nullable": true,
+            "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoundTripStrategy"
+              }
+            ]
           },
           "price": {
             "nullable": true,
@@ -8365,6 +8460,9 @@
           "operatorName",
           "distanceKm",
           "flightMinutes",
+          "tripType",
+          "returnAt",
+          "roundTripStrategy",
           "price",
           "validUntil",
           "warnings",
@@ -8418,6 +8516,32 @@
             "description": "Handling charge per stop in paise, used where the airport has none on record.",
             "example": 500000
           },
+          "waitingHourlyMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Round trips: per hour on the ground between a same-day outbound and return, in paise, beyond `waitingFreeHours`. Left out: unchanged; `null` clears.",
+            "example": 2000000
+          },
+          "waitingFreeHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 24,
+            "description": "Null when no waiting charge is set.",
+            "example": 1
+          },
+          "overnightMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Round trips: per night the aircraft spends away from base, in paise. Left out: unchanged; `null` clears.",
+            "example": 5000000
+          },
+          "crewNightMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Round trips: crew allowance and accommodation per night away from base, in paise (0 when included in the overnight charge). Left out: unchanged; `null` clears.",
+            "example": 3000000
+          },
           "currency": {
             "type": "string",
             "example": "INR"
@@ -8429,6 +8553,10 @@
           "freeWithinKm",
           "landingFallbackMinor",
           "handlingFallbackMinor",
+          "waitingHourlyMinor",
+          "waitingFreeHours",
+          "overnightMinor",
+          "crewNightMinor",
           "currency"
         ]
       },
@@ -8470,6 +8598,32 @@
             "nullable": true,
             "description": "Handling charge per stop in paise, used where the airport has none on record.",
             "example": 500000
+          },
+          "waitingHourlyMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Round trips: per hour on the ground between a same-day outbound and return, in paise, beyond `waitingFreeHours`. Left out: unchanged; `null` clears.",
+            "example": 2000000
+          },
+          "waitingFreeHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 24,
+            "description": "Hours of waiting not charged. Saved with `waitingHourlyMinor` (0 when left out or null); ignored without it.",
+            "example": 1
+          },
+          "overnightMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Round trips: per night the aircraft spends away from base, in paise. Left out: unchanged; `null` clears.",
+            "example": 5000000
+          },
+          "crewNightMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Round trips: crew allowance and accommodation per night away from base, in paise (0 when included in the overnight charge). Left out: unchanged; `null` clears.",
+            "example": 3000000
           }
         },
         "required": [

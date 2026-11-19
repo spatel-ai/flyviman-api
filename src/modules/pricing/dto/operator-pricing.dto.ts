@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsInt,
@@ -13,9 +13,10 @@ const MAX_MINOR = 10_000_000_000;
 
 /**
  * Operator-wide pricing defaults (pricing-engine.md, "Who edits what").
- * Every field is required; `null` means "not set" (the platform default or
- * nothing applies). Saving creates new rule versions; unchanged fields
- * write nothing.
+ * The original five fields are required; `null` means "not set" (the
+ * platform default or nothing applies). The round-trip charges (M5 slice
+ * 4b) are optional: left out, the value in force is kept. Saving creates
+ * new rule versions; unchanged fields write nothing.
  */
 export class OperatorPricingDto {
   @ApiProperty({
@@ -86,11 +87,81 @@ export class OperatorPricingDto {
   @Min(0)
   @Max(MAX_MINOR)
   handlingFallbackMinor: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'Round trips: per hour on the ground between a same-day outbound and return, in paise, beyond `waitingFreeHours`. Left out: unchanged; `null` clears.',
+    example: 2000000,
+  })
+  @ValidateIf((_, value) => value != null)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_MINOR)
+  waitingHourlyMinor?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 0,
+    maximum: 24,
+    description:
+      'Hours of waiting not charged. Saved with `waitingHourlyMinor` (0 when left out or null); ignored without it.',
+    example: 1,
+  })
+  @ValidateIf((_, value) => value != null)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(24)
+  waitingFreeHours?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'Round trips: per night the aircraft spends away from base, in paise. Left out: unchanged; `null` clears.',
+    example: 5000000,
+  })
+  @ValidateIf((_, value) => value != null)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_MINOR)
+  overnightMinor?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'Round trips: crew allowance and accommodation per night away from base, in paise (0 when included in the overnight charge). Left out: unchanged; `null` clears.',
+    example: 3000000,
+  })
+  @ValidateIf((_, value) => value != null)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_MINOR)
+  crewNightMinor?: number | null;
 }
 
 export class OperatorPricingResponseDto extends OperatorPricingDto {
   @ApiProperty({ example: 'INR' })
   currency: string;
+
+  @ApiProperty({ type: Number, nullable: true })
+  declare waitingHourlyMinor: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Null when no waiting charge is set.',
+  })
+  declare waitingFreeHours: number | null;
+
+  @ApiProperty({ type: Number, nullable: true })
+  declare overnightMinor: number | null;
+
+  @ApiProperty({ type: Number, nullable: true })
+  declare crewNightMinor: number | null;
 }
 
 /** One aircraft's rate. `null` clears it (the aircraft is then priced on request). */

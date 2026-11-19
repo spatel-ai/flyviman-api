@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { calculatePrice, type EngineInput, type PricePoint } from './engine.js';
+import {
+  calculatePrice,
+  localNights,
+  type EngineInput,
+  type PricePoint,
+} from './engine.js';
 import { resolveRules, type RuleRow } from './rules.js';
 
 const point = (
@@ -11,6 +16,7 @@ const point = (
   name: id,
   latitude,
   longitude,
+  timeZone: 'UTC',
   charges: null,
 });
 
@@ -263,6 +269,190 @@ describe('calculatePrice', () => {
   it('stays valid for the configured time', () => {
     const result = run([RATE, rule('VALIDITY', { minutes: 30 })]);
     expect(result.validUntil.toISOString()).toBe('2026-12-01T00:30:00.000Z');
+  });
+});
+
+describe('round trips', () => {
+  // Out at 04:30 UTC, an hour's flight: lands at B at 05:30.
+  const at = (iso: string) => new Date(iso);
+  const POSITIONING = rule('POSITIONING', { rateFactor: 0.5 });
+  const WAITING = rule('WAITING', { amountMinor: 1_000_000, freeHours: 1 });
+  const OVERNIGHT = rule('OVERNIGHT', { amountMinor: 3_000_000 });
+  const CREW = rule('CREW', { amountMinor: 2_000_000 });
+  const ALL = [RATE, POSITIONING, WAITING, OVERNIGHT, CREW];
+  const codes = (result: ReturnType<typeof run>) =>
+    Object.fromEntries(result.breakdown.map((l) => [l.code, l.amountMinor]));
+  const sum = (result: ReturnType<typeof run>) =>
+    result.breakdown.reduce((total, line) => total + line.amountMinor, 0);
+
+  it('prices both flights, each with the minimum billable hours', () => {
+    const result = run([RATE, rule('MIN_BILLABLE_HOURS', { hours: 2 })], {
+      returnAt: at('2026-12-05T05:30:00Z'),
+    });
+    expect(codes(result)).toMatchObject({
+      OPERATING: 20_000_000,
+      OPERATING_RETURN: 20_000_000,
+    });
+    expect(result.distanceKm).toBe(1200);
+    expect(result.flightMinutes).toBe(120);
+  });
+
+  it('waits on a same-day return: hours beyond the free allowance', () => {
+    // On the ground 05:30 to 09:00: 3.5 h, 1 h free.
+    const result = run(ALL, { returnAt: at('2026-12-05T09:00:00Z') });
+    expect(result.roundTrip?.strategy).toBe('WAIT');
+    expect(result.roundTrip?.nights).toBe(0);
+    expect(codes(result).WAITING).toBe(2_500_000);
+    expect(codes(result).OVERNIGHT).toBeUndefined();
+    expect(result.assumptions.join(' ')).toMatch(/waits at B/);
+  });
+
+  it('charges no waiting within the free hours, and none at zero', () => {
+    const within = run(ALL, { returnAt: at('2026-12-05T06:30:00Z') });
+    expect(within.roundTrip?.strategy).toBe('WAIT');
+    expect(codes(within).WAITING).toBeUndefined();
+    const free = run(
+      [RATE, rule('WAITING', { amountMinor: 1, freeHours: 0 })],
+      {
+        returnAt: at('2026-12-05T05:30:00Z'),
+      },
+    );
+    expect(codes(free).WAITING).toBeUndefined();
+    expect(free.warnings.join(' ')).not.toMatch(/waiting/);
+  });
+
+  it('charges overnight and crew per night away, not waiting hours', () => {
+    const result = run(ALL, { returnAt: at('2026-12-07T04:00:00Z') });
+    expect(result.roundTrip?.nights).toBe(2);
+    expect(codes(result)).toMatchObject({
+      OVERNIGHT: 6_000_000,
+      CREW: 4_000_000,
+    });
+    expect(codes(result).WAITING).toBeUndefined();
+  });
+
+  it('counts nights in local dates at the destination', () => {
+    // 20:00 UTC is 01:30 the next day in India.
+    const from = at('2026-12-05T17:00:00Z');
+    const to = at('2026-12-05T20:00:00Z');
+    expect(localNights('UTC', from, to)).toBe(0);
+    expect(localNights('Asia/Kolkata', from, to)).toBe(1);
+  });
+
+  it('returns to base when that is cheaper than nights away', () => {
+    // Based at A (the origin), 2 nights at B cost 1,00,00,000; flying back
+    // and out again costs 2 × 1 h × 0.5 × 1,00,00,000.
+    const result = run(ALL, { returnAt: at('2026-12-07T04:00:00Z') });
+    expect(result.roundTrip?.options).toEqual([
+      expect.objectContaining({ strategy: 'WAIT', complete: true }),
+      expect.objectContaining({ strategy: 'RETURN_TO_BASE', complete: true }),
+    ]);
+    const cheaper = run(
+      [
+        RATE,
+        POSITIONING,
+        WAITING,
+        CREW,
+        rule('OVERNIGHT', { amountMinor: 9_000_000 }),
+      ],
+      { returnAt: at('2026-12-07T04:00:00Z') },
+    );
+    expect(cheaper.roundTrip?.strategy).toBe('RETURN_TO_BASE');
+    expect(codes(cheaper)).toMatchObject({
+      INTERIM_REPOSITIONING: 5_000_000,
+      INTERIM_POSITIONING: 5_000_000,
+    });
+    expect(codes(cheaper).OVERNIGHT).toBeUndefined();
+    expect(cheaper.assumptions.join(' ')).toMatch(/returns to A between/);
+    expect(cheaper.totalMinor).toBe(sum(cheaper));
+  });
+
+  it('keeps the waiting price when it is cheaper, and WAIT on a tie', () => {
+    const result = run(ALL, { returnAt: at('2026-12-07T04:00:00Z') });
+    // WAIT 10,00,000 × 2 nights = 1,00,00,000 = RETURN_TO_BASE: a tie.
+    expect(result.roundTrip?.strategy).toBe('WAIT');
+    expect(result.assumptions.join(' ')).toMatch(
+      /waits 2 nights at B .* priced below returning to A/,
+    );
+  });
+
+  it('only waits when there is not time to fly to base and back', () => {
+    // 3.5 h on the ground; to a base 3 h away and back takes 6 h.
+    const C = point('C', 0, -12); // 1,800 km from B: 3 h each way
+    const result = run([RATE, POSITIONING, WAITING], {
+      aircraft: { ...AIRCRAFT, base: C },
+      returnAt: at('2026-12-05T09:00:00Z'),
+    });
+    expect(result.roundTrip?.options.map((o) => o.strategy)).toEqual(['WAIT']);
+    expect(result.assumptions.join(' ')).toMatch(/not time to return to C/);
+  });
+
+  it('a strategy with an input not on record loses to a complete one', () => {
+    // No overnight or crew rule: waiting 2 nights cannot be fully priced.
+    const result = run([RATE, POSITIONING], {
+      returnAt: at('2026-12-07T04:00:00Z'),
+    });
+    expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
+    expect(result.warnings.join(' ')).not.toMatch(/overnight/);
+  });
+
+  it('warns and excludes what it cannot price when nothing is complete', () => {
+    const C = point('C', 0, -12);
+    const result = run([RATE, POSITIONING], {
+      aircraft: { ...AIRCRAFT, base: C },
+      returnAt: at('2026-12-05T09:00:00Z'),
+    });
+    expect(result.roundTrip?.strategy).toBe('WAIT');
+    expect(result.roundTrip?.options[0].complete).toBe(false);
+    expect(result.warnings.join(' ')).toMatch(/No waiting charge/);
+    expect(result.exclusions).toContain('Waiting at B');
+  });
+
+  it('an aircraft based at the destination stays at home between flights', () => {
+    const result = run(ALL, {
+      aircraft: { ...AIRCRAFT, base: B },
+      returnAt: at('2026-12-07T04:00:00Z'),
+    });
+    expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
+    expect(codes(result).OVERNIGHT).toBeUndefined();
+    expect(codes(result).INTERIM_REPOSITIONING).toBeUndefined();
+    expect(result.assumptions.join(' ')).toMatch(/stays at its base, B/);
+  });
+
+  it('lands and handles at both ends of both flights', () => {
+    const result = run(
+      [
+        RATE,
+        rule('LANDING', { amountMinor: 100 }),
+        rule('HANDLING', { amountMinor: 10 }),
+      ],
+      { returnAt: at('2026-12-05T05:30:00Z') },
+    );
+    expect(codes(result).LANDING_HANDLING).toBe(240);
+  });
+
+  it('is not priced when the return leaves before the outbound lands', () => {
+    const result = run(ALL, { returnAt: at('2026-12-05T05:00:00Z') });
+    expect(result.priced).toBe(false);
+    expect(result.roundTrip?.strategy).toBeNull();
+  });
+
+  it('the same inputs give the same price, and the total is the breakdown', () => {
+    const rows = [
+      ...ALL,
+      rule('COMMISSION', { percent: 7.5, mode: 'ADD_ON' }),
+      rule('TAX', { name: 'GST', percent: 18 }),
+      rule('TIME_ALLOWANCE', { minutes: 7 }),
+    ];
+    const input = { returnAt: at('2026-12-06T11:13:00Z') };
+    const first = run(rows, input);
+    expect(run(rows, input)).toEqual(first);
+    expect(first.totalMinor).toBe(sum(first));
+    expect(Number.isInteger(first.totalMinor)).toBe(true);
+  });
+
+  it('a one-way trip has no round-trip pricing', () => {
+    expect(run(ALL).roundTrip).toBeNull();
   });
 });
 

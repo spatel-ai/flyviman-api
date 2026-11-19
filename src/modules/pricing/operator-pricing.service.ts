@@ -25,6 +25,9 @@ const OPERATOR_TYPES = [
   PricingRuleType.POSITIONING,
   PricingRuleType.LANDING,
   PricingRuleType.HANDLING,
+  PricingRuleType.WAITING,
+  PricingRuleType.OVERNIGHT,
+  PricingRuleType.CREW,
 ] as const;
 
 const AIRCRAFT_TYPES = [
@@ -96,6 +99,30 @@ export class OperatorPricingService {
           : { amountMinor: dto.handlingFallbackMinor },
       ],
     ]);
+    // Round-trip charges: left out keeps what is in force.
+    if (dto.waitingHourlyMinor !== undefined) {
+      desired.set(
+        PricingRuleType.WAITING,
+        dto.waitingHourlyMinor == null
+          ? null
+          : {
+              amountMinor: dto.waitingHourlyMinor,
+              freeHours: dto.waitingFreeHours ?? 0,
+            },
+      );
+    }
+    if (dto.overnightMinor !== undefined) {
+      desired.set(
+        PricingRuleType.OVERNIGHT,
+        dto.overnightMinor == null ? null : { amountMinor: dto.overnightMinor },
+      );
+    }
+    if (dto.crewNightMinor !== undefined) {
+      desired.set(
+        PricingRuleType.CREW,
+        dto.crewNightMinor == null ? null : { amountMinor: dto.crewNightMinor },
+      );
+    }
     await this.save(
       user,
       PricingRuleScope.OPERATOR,
@@ -293,6 +320,7 @@ function toOperatorDto(
   rules: Map<string, RuleRow>,
 ): OperatorPricingResponseDto {
   const positioning = configOf(rules, 'POSITIONING');
+  const waiting = configOf(rules, 'WAITING');
   return {
     currency: 'INR',
     minBillableHours: configOf(rules, 'MIN_BILLABLE_HOURS')?.hours ?? null,
@@ -300,6 +328,10 @@ function toOperatorDto(
     freeWithinKm: positioning ? (positioning.freeWithinKm ?? 0) : null,
     landingFallbackMinor: configOf(rules, 'LANDING')?.amountMinor ?? null,
     handlingFallbackMinor: configOf(rules, 'HANDLING')?.amountMinor ?? null,
+    waitingHourlyMinor: waiting?.amountMinor ?? null,
+    waitingFreeHours: waiting?.freeHours ?? null,
+    overnightMinor: configOf(rules, 'OVERNIGHT')?.amountMinor ?? null,
+    crewNightMinor: configOf(rules, 'CREW')?.amountMinor ?? null,
   };
 }
 
