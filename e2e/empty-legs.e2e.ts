@@ -176,8 +176,33 @@ test.describe('operator offers and the public listing', () => {
     ).toBe(400);
 
     const { customer } = await follower(playwright, baseURL);
+    const interested = async (context: APIRequestContext) => {
+      const response = await context.get(`empty-legs/${offer.id}`);
+      expect(response.status()).toBe(200);
+      return {
+        interested: (await response.json()).data.interested,
+        cache: response.headers()['cache-control'],
+      };
+    };
+    expect((await interested(customer)).interested).toBe(false);
     await follow(customer, offer.id);
     await follow(customer, offer.id); // repeatable
+    // The alert state is the caller's own, and kept out of shared caches.
+    expect(await interested(customer)).toEqual({
+      interested: true,
+      cache: 'private, no-store',
+    });
+    expect((await interested(anonymous)).interested).toBe(false);
+    expect((await interested(request)).interested).toBe(false); // operator
+    expect(
+      (
+        await customer.delete(`empty-legs/${offer.id}/interest`, {
+          headers: await csrfHeaders(customer),
+        })
+      ).status(),
+    ).toBe(204);
+    expect((await interested(customer)).interested).toBe(false);
+    await follow(customer, offer.id);
 
     const withdrawn = await request.post(
       `operator/empty-legs/${offer.id}/withdraw`,
@@ -587,6 +612,27 @@ test.describe('operator staff', () => {
     expect(
       (await assigned.get(`operator/empty-legs/${offer.id}`)).status(),
     ).toBe(200);
+    // Staff with only "manage empty legs" can pick an aircraft and offer
+    // it, but have no fleet access.
+    const options = await assigned.get('operator/empty-legs/aircraft');
+    expect(options.status()).toBe(200);
+    expect((await options.json()).data).toEqual([
+      expect.objectContaining({ id: trip.aircraftId, seats: 8 }),
+    ]);
+    const created = await assigned.post('operator/empty-legs', {
+      headers: await csrfHeaders(assigned),
+      data: offerBody(trip),
+    });
+    expect(created.status()).toBe(201);
+    const edit = await assigned.patch(`operator/aircraft/${trip.aircraftId}`, {
+      headers: await csrfHeaders(assigned),
+      data: { baggageCapacityKg: 400 },
+    });
+    expect(edit.status()).toBe(403);
+    expect(
+      (await withoutCapability.get('operator/empty-legs/aircraft')).status(),
+    ).toBe(403);
+
     const published = await assigned.post(
       `operator/empty-legs/${offer.id}/publish`,
       { headers: await csrfHeaders(assigned) },

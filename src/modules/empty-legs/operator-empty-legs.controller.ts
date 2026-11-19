@@ -22,6 +22,7 @@ import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import {
   CreateEmptyLegDto,
+  OperatorEmptyLegAircraftDto,
   OperatorEmptyLegQueryDto,
   OperatorEmptyLegResponseDto,
   UpdateEmptyLegDto,
@@ -68,6 +69,19 @@ export class OperatorEmptyLegsController {
     @Body() dto: CreateEmptyLegDto,
   ): Promise<OperatorEmptyLegResponseDto> {
     return this.emptyLegs.toOperator(await this.emptyLegs.create(user, dto));
+  }
+
+  @Get('aircraft')
+  @ApiOperation({
+    summary: 'Aircraft an offer can be made on',
+    description:
+      'Approved aircraft within your reach, by registration. Read only; for staff with "manage empty legs" who have no fleet access.',
+  })
+  @ApiOkResponse({ type: [OperatorEmptyLegAircraftDto] })
+  aircraft(
+    @CurrentUser() user: AuthUser,
+  ): Promise<OperatorEmptyLegAircraftDto[]> {
+    return this.emptyLegs.aircraftOptions(user);
   }
 
   @Get(':id')

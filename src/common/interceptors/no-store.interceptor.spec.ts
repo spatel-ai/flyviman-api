@@ -4,7 +4,7 @@ import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { NoStoreInterceptor } from './no-store.interceptor.js';
 
-function run(isPublic: boolean | undefined, existing?: string) {
+function run(isPublic: boolean | undefined, existing?: string, user?: object) {
   const headers: Record<string, string> = existing
     ? { 'Cache-Control': existing }
     : {};
@@ -17,7 +17,10 @@ function run(isPublic: boolean | undefined, existing?: string) {
   const context = {
     getHandler: () => undefined,
     getClass: () => undefined,
-    switchToHttp: () => ({ getResponse: () => response }),
+    switchToHttp: () => ({
+      getResponse: () => response,
+      getRequest: () => ({ user }),
+    }),
   } as unknown as ExecutionContext;
   const reflector = {
     getAllAndOverride: vi.fn().mockReturnValue(isPublic),
@@ -34,6 +37,9 @@ describe('NoStoreInterceptor', () => {
   });
   it('leaves a public route alone', () => {
     expect(run(true)).toBeUndefined();
+  });
+  it('marks a public route private when it recognised a caller', () => {
+    expect(run(true, undefined, { id: 'u' })).toBe('private, no-store');
   });
   it('does not override a header already set', () => {
     expect(run(undefined, 'max-age=60')).toBe('max-age=60');

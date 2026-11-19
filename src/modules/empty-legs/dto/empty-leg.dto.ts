@@ -356,6 +356,15 @@ export class EmptyLegResponseDto {
   conditions: string;
 }
 
+/** The public detail, with the caller's alert state. */
+export class EmptyLegDetailResponseDto extends EmptyLegResponseDto {
+  @ApiProperty({
+    description:
+      'Whether the signed-in customer follows this offer for change alerts. False when not signed in as a customer.',
+  })
+  interested: boolean;
+}
+
 /** The operator's and operations' view. */
 export class OperatorEmptyLegResponseDto extends EmptyLegResponseDto {
   @ApiProperty({ type: OperatorEmptyLegAircraftDto })

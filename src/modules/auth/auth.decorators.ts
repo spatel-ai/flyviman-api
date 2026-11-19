@@ -1,4 +1,5 @@
 import {
+  applyDecorators,
   createParamDecorator,
   ExecutionContext,
   SetMetadata,
@@ -10,6 +11,7 @@ import type { AuthUser } from './auth-user.js';
 export const IS_PUBLIC = 'isPublic';
 export const ROLES = 'roles';
 export const SKIP_CSRF = 'skipCsrf';
+export const OPTIONAL_USER = 'optionalUser';
 
 /** Opens a route to callers who are not signed in. Routes are private by default. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
@@ -38,4 +40,20 @@ export const CurrentUser = createParamDecorator(
     }
     return user;
   },
+);
+
+/**
+ * A public route that also recognises a signed-in caller, for answers that
+ * differ only for them (whether a customer follows an empty leg). An
+ * invalid or missing session is treated as anonymous, never refused. Read
+ * the caller with `@OptionalUser()`. The response is kept out of shared
+ * caches when a caller is recognised (NoStoreInterceptor).
+ */
+export const PublicOptionalUser = () =>
+  applyDecorators(Public(), SetMetadata(OPTIONAL_USER, true));
+
+/** The signed-in caller on a `@PublicOptionalUser()` route, or null. */
+export const OptionalUser = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): AuthUser | null =>
+    context.switchToHttp().getRequest<Request>().user ?? null,
 );

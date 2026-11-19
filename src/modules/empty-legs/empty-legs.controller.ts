@@ -18,8 +18,15 @@ import {
 import { Paginated } from '../../common/dto/paginated.js';
 import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
-import { CurrentUser, Public, Roles } from '../auth/auth.decorators.js';
 import {
+  CurrentUser,
+  OptionalUser,
+  Public,
+  PublicOptionalUser,
+  Roles,
+} from '../auth/auth.decorators.js';
+import {
+  EmptyLegDetailResponseDto,
   EmptyLegInterestResponseDto,
   EmptyLegResponseDto,
   PublicEmptyLegQueryDto,
@@ -52,17 +59,23 @@ export class EmptyLegsController {
   }
 
   @Get(':id')
-  @Public()
+  @PublicOptionalUser()
   @ApiOperation({
     summary: 'Empty-leg offer detail',
     description:
-      '410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed.',
+      '410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.',
   })
-  @ApiOkResponse({ type: EmptyLegResponseDto })
+  @ApiOkResponse({ type: EmptyLegDetailResponseDto })
   async detail(
+    @OptionalUser() user: AuthUser | null,
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<EmptyLegResponseDto> {
-    return this.emptyLegs.toPublic(await this.emptyLegs.listed(id));
+  ): Promise<EmptyLegDetailResponseDto> {
+    const row = await this.emptyLegs.listed(id);
+    const interested =
+      user?.role === Role.CUSTOMER
+        ? await this.emptyLegs.isInterested(user.id, id)
+        : false;
+    return { ...this.emptyLegs.toPublic(row), interested };
   }
 
   @Post(':id/interest')

@@ -418,6 +418,34 @@ export class EmptyLegsService {
     return new Paginated(rows, query.page, query.pageSize, total);
   }
 
+  /**
+   * Approved aircraft in the caller's reach, to choose from when creating
+   * an offer. Lets staff with only "manage empty legs" pick an aircraft
+   * without any access to the fleet routes.
+   */
+  async aircraftOptions(user: AuthUser) {
+    const { access } = await this.scope(user);
+    const fleet = await this.aircraft.fleetFor(access);
+    return fleet
+      .filter((row) => row.listingStatus === AircraftListingStatus.APPROVED)
+      .map((row) => ({
+        id: row.id,
+        registration: row.registration,
+        type: `${row.manufacturer} ${row.model}`,
+        category: row.category,
+        seats: row.passengerCapacity,
+      }));
+  }
+
+  /** Whether the customer follows the offer. */
+  async isInterested(userId: string, id: string): Promise<boolean> {
+    const row = await this.prisma.emptyLegInterest.findUnique({
+      where: { emptyLegId_userId: { emptyLegId: id, userId } },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
   async operatorGet(user: AuthUser, id: string): Promise<OfferRow> {
     const { access } = await this.scope(user);
     return this.own(access, id);
