@@ -3924,7 +3924,7 @@
     },
     "/api/v1/admin/audit-logs": {
       "get": {
-        "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only; other roles get null for those fields.",
+        "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields.",
         "operationId": "AdminAuditController_list",
         "parameters": [
           {

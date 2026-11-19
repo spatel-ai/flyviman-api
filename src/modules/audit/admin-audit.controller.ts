@@ -27,7 +27,7 @@ export class AdminAuditController {
     description:
       'Newest first. Filter by entity, actor, action and time range. ' +
       'Pricing rule records show before, after and reason to finance and ' +
-      'super admins only; other roles get null for those fields.',
+      'super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields.',
   })
   @ApiOkResponse({ type: [AuditLogResponseDto] })
   async list(
@@ -37,7 +37,7 @@ export class AdminAuditController {
     const result = await this.audit.list(query);
     return new Paginated(
       result.items.map((log) => {
-        const readable = canReadAuditContents(log.entityType, user.role);
+        const readable = canReadAuditContents(log, user.role);
         return {
           id: log.id,
           actorId: log.actorId,
