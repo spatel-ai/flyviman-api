@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AirlineModule } from '../../integrations/airline/airline.module.js';
 import { RoutingModule } from '../../integrations/routing/routing.module.js';
+import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { LocationsModule } from '../locations/locations.module.js';
 import { MatchingModule } from '../matching/matching.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
@@ -12,6 +13,7 @@ import { SearchService } from './search.service.js';
 @Module({
   imports: [
     AirlineModule,
+    ConfigurationModule,
     LocationsModule,
     MatchingModule,
     PricingModule,

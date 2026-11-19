@@ -10,6 +10,7 @@ import {
 } from '../../generated/prisma/enums.js';
 import { RoutingProvider } from '../../integrations/routing/routing.provider.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { LocationsService } from '../locations/locations.service.js';
 import {
   type Candidate,
@@ -99,6 +100,7 @@ export class SearchService {
     private readonly matching: MatchingService,
     private readonly pricing: PricingService,
     private readonly routing: RoutingProvider,
+    private readonly categories: CategoryConfigService,
   ) {}
 
   async search(
@@ -295,6 +297,16 @@ export class SearchService {
     const calculation = stored.calculationId
       ? await this.pricing.calculation(stored.calculationId)
       : null;
+    // How this aircraft's operator books the category, as a booking made
+    // from this result would be (C2): the platform row and the operator's
+    // own override.
+    const aircraft = await this.prisma.aircraft.findUnique({
+      where: { id: stored.aircraft.id },
+      select: { operatorId: true },
+    });
+    const { bookingMode } = await this.categories.resolve(search.category, {
+      operatorId: aircraft?.operatorId,
+    });
     return {
       ...publicResult(stored),
       searchId: search.id,
@@ -309,7 +321,7 @@ export class SearchService {
       ),
       assumptions: (calculation?.assumptions ?? []) as string[],
       exclusions: (calculation?.exclusions ?? []) as string[],
-      bookingMode: 'REQUEST',
+      bookingMode,
       confirmationRequirements: [
         'The operator confirms the aircraft, crew and price',
         'Availability and price are checked again before you pay',
