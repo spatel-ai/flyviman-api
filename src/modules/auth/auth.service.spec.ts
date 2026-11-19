@@ -345,6 +345,31 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
       });
     });
 
+    it('still renews the winner when Redis hangs', async () => {
+      const { service, session, users, successors } = setup();
+      session.findUnique.mockResolvedValue(storedSession());
+      users.findAccount.mockResolvedValue(ACTIVE);
+      successors.keep.mockReturnValue(new Promise(() => undefined));
+
+      await expect(service.refresh('old', CLIENT)).resolves.toMatchObject({
+        refreshToken: 'random',
+      });
+    });
+
+    it('refuses a racing request when Redis hangs', async () => {
+      const { service, session, successors } = setup();
+      session.findUnique.mockResolvedValue(
+        storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
+      );
+      session.findFirst.mockResolvedValue({ id: 'session-2' });
+      successors.take.mockReturnValue(new Promise(() => undefined));
+
+      await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+      });
+      expect(session.updateMany).not.toHaveBeenCalled();
+    });
+
     it('refuses a racing request, without ending the sign-in', async () => {
       const { service, session, audit, successors } = setup();
       session.findUnique.mockResolvedValue(

@@ -34,6 +34,21 @@ function unauthenticated(): AppException {
   );
 }
 
+/**
+ * Longest a refresh waits on Redis for a kept pair. Redis only helps racing
+ * requests here, so a slow one must not hold the session row (the pair is
+ * kept inside the rotation's transaction) or the request.
+ */
+const SUCCESSOR_TIMEOUT_MS = 250;
+
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Timed out')), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** Sign-in, token rotation and sign-out. Owns the Session table. */
 @Injectable()
 export class AuthService {
@@ -267,7 +282,10 @@ export class AuthService {
     ttlMs: number,
   ): Promise<void> {
     try {
-      await this.successors.keep(retiredHash, tokens, ttlMs);
+      await within(
+        this.successors.keep(retiredHash, tokens, ttlMs),
+        SUCCESSOR_TIMEOUT_MS,
+      );
     } catch {
       this.logger.warn(
         'Could not keep a refreshed session for racing requests',
@@ -282,8 +300,12 @@ export class AuthService {
   ): Promise<SessionTokens> {
     // A sign-out or suspension in the meantime ends the sign-in for good.
     if (!(await this.isFamilyActive(session.familyId))) throw unauthenticated();
-    // Unreadable (Redis down), expired or used up: refused, never minted.
-    const tokens = await this.successors.take(retiredHash).catch(() => null);
+    // Unreadable (Redis down or slow), expired or used up: refused, never
+    // minted.
+    const tokens = await within(
+      this.successors.take(retiredHash),
+      SUCCESSOR_TIMEOUT_MS,
+    ).catch(() => null);
     if (!tokens) throw unauthenticated();
     await this.audit.record({
       action: 'auth.refresh_replayed',
