@@ -86,6 +86,14 @@ export interface LocationSummary {
   timeZone: string;
 }
 
+const SUMMARY_SELECT = {
+  id: true,
+  name: true,
+  iata: true,
+  icao: true,
+  timeZone: true,
+} as const satisfies Prisma.LocationSelect;
+
 /** `Location.charges`; shape in docs/architecture/database-design.md. */
 
 export interface LocationCharges {
@@ -289,6 +297,26 @@ export class LocationsService {
       select: { id: true },
     });
     return row !== null;
+  }
+
+  /** Active locations by id, as summaries (scheduled search). */
+  async activeSummaries(ids: string[]): Promise<Map<string, LocationSummary>> {
+    const rows = await this.prisma.location.findMany({
+      where: { id: { in: ids }, isActive: true },
+      select: SUMMARY_SELECT,
+    });
+    return new Map(rows.map((row) => [row.id, row]));
+  }
+
+  /** Active locations by IATA code, as summaries keyed by that code. */
+  async activeSummariesByIata(
+    codes: string[],
+  ): Promise<Map<string, LocationSummary>> {
+    const rows = await this.prisma.location.findMany({
+      where: { iata: { in: codes }, isActive: true },
+      select: SUMMARY_SELECT,
+    });
+    return new Map(rows.map((row) => [row.iata!, row]));
   }
 
   /** Name, codes and time zone of a location, active or not. */

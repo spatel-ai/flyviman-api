@@ -254,6 +254,27 @@ export class EnvironmentVariables {
   AIRLINE_PROVIDER: string = 'mock';
 
   /**
+   * How long scheduled search waits for each airline supplier, in
+   * milliseconds. A supplier that has not answered is reported as
+   * `TIMEOUT` and the search returns the others' fares (partial).
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(60000)
+  AIRLINE_TIMEOUT_MS: number = 8000;
+
+  /**
+   * How long scheduled fares stay valid after a search or a revalidation,
+   * in minutes. A search past it answers 404 and is run again.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  AIRLINE_OFFER_TTL_MINUTES: number = 15;
+
+  /**
    * The payment gateway. Only `mock` exists in this build: it moves no
    * money, and payments must not go live until the commercial decisions
    * are settled (docs/open-decisions.md, Hard gate). Razorpay will be added

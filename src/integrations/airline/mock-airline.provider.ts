@@ -6,8 +6,12 @@ import {
   FareRules,
   FareSearchQuery,
   FareSearchResult,
+  PartySize,
   RevalidationResult,
 } from './airline.provider.js';
+
+/** What the mock does for one route, set from the development tools. */
+export type MockAirlineBehaviour = 'NORMAL' | 'TIMEOUT' | 'ERROR';
 
 /**
  * Deterministic mock of an Indian domestic airline supplier. Fares, times
@@ -85,6 +89,8 @@ const FAMILIES: Record<
 const FAMILY_CODES = Object.keys(FAMILIES) as FareFamily[];
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PRICE_CHANGE_MARKER = 5;
+/** Per infant on a lap, whatever the fare: a flat fee, as Indian carriers charge. */
+const INFANT_FEE_MINOR = 150000;
 const SOLD_OUT_MARKER = 11;
 
 /** FNV-1a, 32 bit: a stable hash with no dependency. */
@@ -169,21 +175,51 @@ function settle<T>(run: () => T): Promise<T> {
   }
 }
 
+interface Party {
+  adults: number;
+  children: number;
+  infants: number;
+}
+
 export class MockAirlineProvider extends AirlineInventoryProvider {
+  /** Simulated failures by `ORIGIN-DESTINATION`, for tests (development tools). */
+  private readonly behaviours = new Map<string, MockAirlineBehaviour>();
+
   constructor(private readonly seed = 'flyviman') {
     super();
   }
 
+  /**
+   * Makes searches from `origin` to `destination` time out (never answer)
+   * or fail, or answer normally again. Scoped to the route so that tests
+   * running in parallel on other routes are not affected.
+   */
+  simulate(
+    origin: string,
+    destination: string,
+    behaviour: MockAirlineBehaviour,
+  ): void {
+    const key = `${origin.toUpperCase()}-${destination.toUpperCase()}`;
+    if (behaviour === 'NORMAL') this.behaviours.delete(key);
+    else this.behaviours.set(key, behaviour);
+  }
+
   searchFares(query: FareSearchQuery): Promise<FareSearchResult> {
+    const key = `${String(query.origin).toUpperCase()}-${String(query.destination).toUpperCase()}`;
+    const behaviour = this.behaviours.get(key);
+    if (behaviour === 'TIMEOUT') return new Promise(() => undefined);
+    if (behaviour === 'ERROR') {
+      return Promise.reject(new Error('Mock supplier failure.'));
+    }
     return settle(() => this.search(query));
   }
 
   revalidate(
     offerId: string,
-    adults: number,
+    party: PartySize,
     previousTotalMinor: number,
   ): Promise<RevalidationResult> {
-    return settle(() => this.recheck(offerId, adults, previousTotalMinor));
+    return settle(() => this.recheck(offerId, party, previousTotalMinor));
   }
 
   getFareRules(offerId: string): Promise<FareRules> {
@@ -192,14 +228,14 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
 
   private recheck(
     offerId: string,
-    adults: number,
+    partySize: PartySize,
     previousTotalMinor: number,
   ): RevalidationResult {
     const key = decodeKey(offerId);
-    this.checkAdults(adults);
-    const base = this.build(key, adults);
+    const party = this.checkParty(partySize);
+    const base = this.build(key, party);
     const h = hash(`${this.seed}|reval|${offerId}`);
-    const gone = base.seatsLeft < adults || h % SOLD_OUT_MARKER === 0;
+    const gone = base.seatsLeft < seats(party) || h % SOLD_OUT_MARKER === 0;
     if (gone) {
       return {
         status: 'SOLD_OUT',
@@ -214,7 +250,7 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
     if (h % PRICE_CHANGE_MARKER === 0) {
       const pct = 3 + (h % 10);
       const fareMinor = this.round(base.fareMinor * (1 + pct / 100));
-      offer = { ...base, fareMinor, totalMinor: fareMinor * adults };
+      offer = { ...base, fareMinor, totalMinor: total(fareMinor, party) };
     }
     const changed = offer.totalMinor !== previousTotalMinor;
     return {
@@ -231,13 +267,22 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
     const family = FAMILIES[key.f];
     const baggage = { cabinKg: 7, checkedKg: family.checkedKg };
     const conditions = [
-      `Cabin baggage ${baggage.cabinKg} kg, checked baggage ${baggage.checkedKg} kg per passenger.`,
-      family.refundable
-        ? 'Refundable up to 4 hours before departure; a cancellation fee applies per passenger.'
-        : 'Non-refundable. Taxes may be refunded by the airline on cancellation.',
-      family.changeFee
-        ? 'Date or time changes are allowed up to 4 hours before departure for a change fee plus any fare difference.'
-        : 'Date or time changes are free up to 4 hours before departure; any fare difference is payable.',
+      {
+        title: 'Baggage',
+        text: `Cabin baggage ${baggage.cabinKg} kg, checked baggage ${baggage.checkedKg} kg per passenger.`,
+      },
+      {
+        title: 'Cancellation',
+        text: family.refundable
+          ? 'Refundable up to 4 hours before departure; a cancellation fee applies per passenger.'
+          : 'Non-refundable. Taxes may be refunded by the airline on cancellation.',
+      },
+      {
+        title: 'Changes',
+        text: family.changeFee
+          ? 'Date or time changes are allowed up to 4 hours before departure for a change fee plus any fare difference.'
+          : 'Date or time changes are free up to 4 hours before departure; any fare difference is payable.',
+      },
     ];
     return {
       offerId,
@@ -251,7 +296,7 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
   }
 
   private search(query: FareSearchQuery): FareSearchResult {
-    this.checkAdults(query.adults);
+    const party = this.checkParty(query);
     const origin = query.origin?.toUpperCase();
     const destination = query.destination?.toUpperCase();
     for (const code of [origin, destination]) {
@@ -279,31 +324,46 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
         throw new AirlineProviderError('INVALID_QUERY', 'Invalid returnDate.');
       }
     }
+    // The mock's carriers sell economy only on these routes.
+    const economy = (query.cabin ?? 'ECONOMY') === 'ECONOMY';
     return {
-      outbound: this.flights(
-        origin,
-        destination,
-        query.departDate,
-        query.adults,
-      ),
+      outbound: economy
+        ? this.flights(origin, destination, query.departDate, party)
+        : [],
       inbound:
         query.returnDate === undefined
           ? null
-          : this.flights(destination, origin, query.returnDate, query.adults),
+          : economy
+            ? this.flights(destination, origin, query.returnDate, party)
+            : [],
     };
   }
 
-  private checkAdults(adults: number): void {
+  private checkParty(size: PartySize): Party {
+    const { adults, children = 0, infants = 0 } = size;
     if (!Number.isInteger(adults) || adults < 1 || adults > 9) {
       throw new AirlineProviderError('INVALID_QUERY', 'Adults must be 1 to 9.');
     }
+    if (!Number.isInteger(children) || children < 0 || adults + children > 9) {
+      throw new AirlineProviderError(
+        'INVALID_QUERY',
+        'Adults and children together must be 1 to 9.',
+      );
+    }
+    if (!Number.isInteger(infants) || infants < 0 || infants > adults) {
+      throw new AirlineProviderError(
+        'INVALID_QUERY',
+        'Infants must be 0 to the number of adults.',
+      );
+    }
+    return { adults, children, infants };
   }
 
   private flights(
     origin: string,
     destination: string,
     date: string,
-    adults: number,
+    party: Party,
   ): FareOffer[] {
     if (!isServed(origin, destination)) return [];
     const offers: FareOffer[] = [];
@@ -322,15 +382,15 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
       };
       const minute = slot + (h % 4) * 5;
       for (const f of FAMILY_CODES) {
-        const offer = this.build({ ...key, t: date, f }, adults, minute);
+        const offer = this.build({ ...key, t: date, f }, party, minute);
         // A sold-out fare is not bookable, so it is not listed (rule 4).
-        if (offer.seatsLeft >= adults) offers.push(offer);
+        if (offer.seatsLeft >= seats(party)) offers.push(offer);
       }
     }
     return offers.sort((a, b) => a.departureAt.localeCompare(b.departureAt));
   }
 
-  private build(key: OfferKey, adults: number, minute?: number): FareOffer {
+  private build(key: OfferKey, party: Party, minute?: number): FareOffer {
     const carrier = CARRIERS.find((c) => c.code === key.c)!;
     const family = FAMILIES[key.f];
     const departMinute = minute ?? this.findMinute(key);
@@ -371,7 +431,7 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
       seatsLeft:
         hash(`${this.seed}|seats|${key.c}${key.n}|${key.t}|${key.f}`) % 10,
       fareMinor,
-      totalMinor: fareMinor * adults,
+      totalMinor: total(fareMinor, party),
       currency: 'INR',
       priceType: 'LIVE_FARE',
     };
@@ -397,4 +457,13 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
   private round(minor: number): number {
     return Math.round(minor / 100) * 100;
   }
+}
+
+/** Seats the party needs: infants travel on a lap. */
+function seats(party: Party): number {
+  return party.adults + party.children;
+}
+
+function total(fareMinor: number, party: Party): number {
+  return fareMinor * seats(party) + INFANT_FEE_MINOR * party.infants;
 }

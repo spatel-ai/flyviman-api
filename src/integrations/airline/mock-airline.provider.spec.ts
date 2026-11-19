@@ -91,7 +91,11 @@ describe('MockAirlineProvider', () => {
   it('revalidates to available, price changed and sold out across offers', async () => {
     const statuses = new Set<string>();
     for (const o of await allOffers()) {
-      const r = await provider.revalidate(o.offerId, 1, o.totalMinor);
+      const r = await provider.revalidate(
+        o.offerId,
+        { adults: 1 },
+        o.totalMinor,
+      );
       statuses.add(r.status);
       if (r.status === 'SOLD_OUT') {
         expect(r.offer).toBeNull();
@@ -102,7 +106,9 @@ describe('MockAirlineProvider', () => {
       } else {
         expect(r.currentTotalMinor).toBe(o.totalMinor);
       }
-      expect(await provider.revalidate(o.offerId, 1, o.totalMinor)).toEqual(r);
+      expect(
+        await provider.revalidate(o.offerId, { adults: 1 }, o.totalMinor),
+      ).toEqual(r);
     }
     expect(statuses).toEqual(
       new Set(['AVAILABLE', 'PRICE_CHANGED', 'SOLD_OUT']),
@@ -111,7 +117,7 @@ describe('MockAirlineProvider', () => {
 
   it('reports a changed price when the shown total is stale', async () => {
     const [o] = (await provider.searchFares(base)).outbound;
-    const r = await provider.revalidate(o.offerId, 2, 1);
+    const r = await provider.revalidate(o.offerId, { adults: 2 }, 1);
     expect(['PRICE_CHANGED', 'SOLD_OUT']).toContain(r.status);
   });
 
@@ -128,6 +134,69 @@ describe('MockAirlineProvider', () => {
     expect(flexi.fareMinor).toBeGreaterThan(0);
   });
 
+  it('prices children like adults and infants at a flat fee', async () => {
+    const adults = await provider.searchFares({ ...base, adults: 1 });
+    const party = await provider.searchFares({
+      ...base,
+      adults: 2,
+      children: 1,
+      infants: 1,
+    });
+    const one = adults.outbound.find((o) =>
+      party.outbound.some((p) => p.offerId === o.offerId),
+    )!;
+    const all = party.outbound.find((o) => o.offerId === one.offerId)!;
+    expect(all.fareMinor).toBe(one.fareMinor);
+    expect(all.totalMinor).toBe(one.fareMinor * 3 + 150000);
+    for (const o of party.outbound)
+      expect(o.seatsLeft).toBeGreaterThanOrEqual(3);
+    const r = await provider.revalidate(
+      all.offerId,
+      { adults: 2, children: 1, infants: 1 },
+      all.totalMinor,
+    );
+    if (r.status === 'AVAILABLE')
+      expect(r.currentTotalMinor).toBe(all.totalMinor);
+  });
+
+  it('rejects a party over nine seats or with more infants than adults', async () => {
+    for (const bad of [
+      { ...base, adults: 5, children: 5 },
+      { ...base, adults: 1, infants: 2 },
+      { ...base, children: -1 },
+    ]) {
+      await expect(provider.searchFares(bad)).rejects.toBeInstanceOf(
+        AirlineProviderError,
+      );
+    }
+  });
+
+  it('sells economy only', async () => {
+    const r = await provider.searchFares({
+      ...base,
+      cabin: 'BUSINESS',
+      returnDate: '2027-03-14',
+    });
+    expect(r).toEqual({ outbound: [], inbound: [] });
+  });
+
+  it('times out or fails one route on request, and recovers', async () => {
+    const mock = new MockAirlineProvider();
+    mock.simulate('del', 'bom', 'ERROR');
+    await expect(mock.searchFares(base)).rejects.toThrow();
+    // Another route is unaffected.
+    const other = await mock.searchFares({ ...base, destination: 'BLR' });
+    expect(other.outbound.length).toBeGreaterThan(0);
+    mock.simulate('DEL', 'BOM', 'TIMEOUT');
+    const pending = await Promise.race([
+      mock.searchFares(base).then(() => 'answered'),
+      new Promise((resolve) => setTimeout(() => resolve('pending'), 20)),
+    ]);
+    expect(pending).toBe('pending');
+    mock.simulate('DEL', 'BOM', 'NORMAL');
+    expect((await mock.searchFares(base)).outbound.length).toBeGreaterThan(0);
+  });
+
   it('rejects an unknown or forged offer id', async () => {
     await expect(provider.getFareRules('nope')).rejects.toBeInstanceOf(
       AirlineProviderError,
@@ -142,8 +211,8 @@ describe('MockAirlineProvider', () => {
         f: 'SAVER',
       }),
     ).toString('base64url');
-    await expect(provider.revalidate(forged, 1, 1)).rejects.toBeInstanceOf(
-      AirlineProviderError,
-    );
+    await expect(
+      provider.revalidate(forged, { adults: 1 }, 1),
+    ).rejects.toBeInstanceOf(AirlineProviderError);
   });
 });

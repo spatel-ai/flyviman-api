@@ -3203,6 +3203,142 @@
         ]
       }
     },
+    "/api/v1/search/scheduled": {
+      "post": {
+        "description": "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned.",
+        "operationId": "ScheduledSearchController_search",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduledSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search scheduled flights across airline suppliers",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/scheduled/revalidate": {
+      "post": {
+        "description": "A changed fare is returned, never hidden. 503 `SEARCH_PROVIDER_UNAVAILABLE` when the airline does not answer.",
+        "operationId": "ScheduledSearchController_revalidate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevalidateScheduledDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledRevalidationDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Recheck the fare and seats of a selected flight",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/scheduled/{searchId}": {
+      "get": {
+        "operationId": "ScheduledSearchController_get",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A stored scheduled search and its results (404 once expired)",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/scheduled/{searchId}/offers/{offerId}/fare-rules": {
+      "get": {
+        "operationId": "ScheduledSearchController_fareRules",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledFareRulesDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Fare rules of one offer: baggage, cancellation and changes",
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v1/search/charter": {
       "post": {
         "operationId": "SearchController_charter",
@@ -7967,6 +8103,463 @@
           "operatorName",
           "aircraftId",
           "registration"
+        ]
+      },
+      "ScheduledPassengersDto": {
+        "type": "object",
+        "properties": {
+          "adults": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 9,
+            "example": 1
+          },
+          "children": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8,
+            "example": 0,
+            "description": "Seated. Adults and children together at most 9."
+          },
+          "infants": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0,
+            "description": "On a lap: at most one per adult."
+          }
+        },
+        "required": [
+          "adults",
+          "children",
+          "infants"
+        ]
+      },
+      "ScheduledCabin": {
+        "type": "string",
+        "enum": [
+          "ECONOMY",
+          "PREMIUM_ECONOMY",
+          "BUSINESS"
+        ]
+      },
+      "ScheduledSearchDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active airport with an IATA code (`GET /locations`)."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-12-05",
+            "description": "Local date at the origin, `YYYY-MM-DD`: today there or later, within a year."
+          },
+          "returnDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-12-08",
+            "description": "For a return trip: local date at the destination, on or after `departureDate`, within a year. Results then hold both directions."
+          },
+          "passengers": {
+            "$ref": "#/components/schemas/ScheduledPassengersDto"
+          },
+          "cabin": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledCabin"
+              }
+            ]
+          }
+        },
+        "required": [
+          "originId",
+          "destinationId",
+          "departureDate",
+          "passengers",
+          "cabin"
+        ]
+      },
+      "ScheduledProviderStatus": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "TIMEOUT",
+          "ERROR"
+        ]
+      },
+      "ScheduledProviderStatusDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "mock"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledProviderStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ]
+      },
+      "ScheduledCarrierDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "6E"
+          },
+          "name": {
+            "type": "string",
+            "example": "IndiGo"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ]
+      },
+      "ScheduledLocationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "iata": {
+            "type": "string",
+            "nullable": true
+          },
+          "icao": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "iata",
+          "icao",
+          "timeZone"
+        ]
+      },
+      "ScheduledSegmentDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ScheduledLocationDto"
+          },
+          "to": {
+            "$ref": "#/components/schemas/ScheduledLocationDto"
+          },
+          "departAt": {
+            "type": "string",
+            "example": "2026-12-05T06:15:00+05:30",
+            "description": "Local time at `from`, ISO 8601 with its offset."
+          },
+          "arriveAt": {
+            "type": "string",
+            "example": "2026-12-05T08:25:00+05:30",
+            "description": "Local time at `to`, ISO 8601 with its offset."
+          },
+          "flightNumber": {
+            "type": "string",
+            "example": "6E 2131"
+          },
+          "durationMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "departAt",
+          "arriveAt",
+          "flightNumber",
+          "durationMinutes"
+        ]
+      },
+      "ScheduledDirection": {
+        "type": "string",
+        "enum": [
+          "OUTBOUND",
+          "RETURN"
+        ]
+      },
+      "ScheduledFareDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise, for the whole party: adults, children and infants together."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ]
+          },
+          "priceType": {
+            "type": "string",
+            "enum": [
+              "LIVE_FARE"
+            ],
+            "description": "The supplier's price now; rechecked by revalidation before payment."
+          },
+          "fareFamily": {
+            "type": "string",
+            "example": "SAVER"
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "priceType",
+          "fareFamily"
+        ]
+      },
+      "ScheduledBaggageDto": {
+        "type": "object",
+        "properties": {
+          "cabinKg": {
+            "type": "number"
+          },
+          "checkedKg": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "cabinKg",
+          "checkedKg"
+        ]
+      },
+      "ScheduledOfferDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "carrier": {
+            "$ref": "#/components/schemas/ScheduledCarrierDto"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledSegmentDto"
+            }
+          },
+          "direction": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledDirection"
+              }
+            ]
+          },
+          "stops": {
+            "type": "number"
+          },
+          "fare": {
+            "$ref": "#/components/schemas/ScheduledFareDto"
+          },
+          "baggage": {
+            "$ref": "#/components/schemas/ScheduledBaggageDto"
+          },
+          "refundable": {
+            "type": "boolean"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The fare holds until then; the search expires with it."
+          }
+        },
+        "required": [
+          "offerId",
+          "carrier",
+          "segments",
+          "direction",
+          "stops",
+          "fare",
+          "baggage",
+          "refundable",
+          "validUntil"
+        ]
+      },
+      "ScheduledSearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "True when a supplier timed out or failed: the results hold only the others."
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledProviderStatusDto"
+            }
+          },
+          "results": {
+            "description": "Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledOfferDto"
+            }
+          }
+        },
+        "required": [
+          "searchId",
+          "partial",
+          "providers",
+          "results"
+        ]
+      },
+      "RevalidateScheduledDto": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "searchId",
+          "offerId"
+        ]
+      },
+      "ScheduledRevalidationStatus": {
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "PRICE_CHANGED",
+          "SOLD_OUT"
+        ]
+      },
+      "ScheduledRevalidationDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledRevalidationStatus"
+              }
+            ]
+          },
+          "fare": {
+            "description": "The fare now. Absent when sold out.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledFareDto"
+              }
+            ]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "How long the rechecked fare holds. Absent when sold out."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ScheduledFareRuleDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Cancellation"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ]
+      },
+      "ScheduledCancellationDto": {
+        "type": "object",
+        "properties": {
+          "refundable": {
+            "type": "boolean"
+          },
+          "feeMinor": {
+            "type": "number",
+            "description": "Paise per passenger. Absent when the fare is not refundable."
+          }
+        },
+        "required": [
+          "refundable"
+        ]
+      },
+      "ScheduledChangeDto": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "feeMinor": {
+            "type": "number",
+            "description": "Paise per passenger, plus any fare difference. Absent when changes are not allowed."
+          }
+        },
+        "required": [
+          "allowed"
+        ]
+      },
+      "ScheduledFareRulesDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledFareRuleDto"
+            }
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/ScheduledCancellationDto"
+          },
+          "change": {
+            "$ref": "#/components/schemas/ScheduledChangeDto"
+          }
+        },
+        "required": [
+          "offerId",
+          "rules",
+          "cancellation",
+          "change"
         ]
       },
       "SearchTripType": {
