@@ -851,6 +851,32 @@ describe('markup, service fee and discount (M5 4c)', () => {
     ).toBe(result.totalMinor);
   });
 
+  it('a tax- and commission-inclusive rate gives the same platform charges', () => {
+    const inclusive = rule(
+      'HOURLY_RATE',
+      {
+        amountMinor: 12_980_000,
+        currency: 'INR',
+        taxInclusive: true,
+        commissionInclusive: true,
+      },
+      'AIRCRAFT',
+      'ac1',
+    );
+    const result = run([
+      inclusive,
+      rule('COMMISSION', { percent: 10, mode: 'ADD_ON' }),
+      ...PLATFORM,
+    ]);
+    expect(result).toMatchObject({
+      baseMinor: 10_000_000,
+      feesMinor: 1_700_000,
+      discountMinor: 1_170_000,
+      taxMinor: 1_895_400,
+      totalMinor: 12_425_400,
+    });
+  });
+
   it('a zero setting adds no line', () => {
     const result = run([
       RATE,

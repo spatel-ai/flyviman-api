@@ -12,9 +12,10 @@ import { csrfHeaders, signIn } from './support/session.js';
  * Admin pricing rules and the calculation viewer (M5 slice 3).
  *
  * Other API tests run at the same time and price jets against the platform
- * rules, so these tests never change a platform rule: they create, change
+ * rules, so these tests never change a platform price: they create, change
  * and end rules on the turboprop category, which no other test prices, and
- * touch platform rules only through refusals and identical saves.
+ * touch platform rules only through refusals, identical saves and a 0%
+ * discount that changes no total.
  */
 
 const CATEGORY = 'TURBOPROP';
