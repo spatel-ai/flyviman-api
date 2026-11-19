@@ -279,11 +279,12 @@ model Operator {
   createdAt          DateTime          @default(now()) @db.Timestamptz
   updatedAt          DateTime          @updatedAt @db.Timestamptz
 
-  members   OperatorMember[]
-  documents OperatorDocument[]
-  aircraft  Aircraft[]
-  quotes    Quote[]
-  bookings  Booking[]
+  members     OperatorMember[]
+  documents   OperatorDocument[]
+  aircraft    Aircraft[]
+  quotes      Quote[]
+  bookings    Booking[]
+  settlements Settlement[]
 
   @@index([status, submittedAt])
 }
@@ -1063,6 +1064,8 @@ model Booking {
   passengers     BookingPassenger[]
   events         BookingEvent[]
   changeRequests ChangeRequest[]
+  payments       Payment[]
+  settlement     Settlement?
 
   @@index([customerId, createdAt])
   @@index([operatorId, status])
@@ -1136,5 +1139,144 @@ model ChangeRequest {
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
 
   @@index([bookingId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// Values and transitions: docs/architecture/state-machines.md (Payment).
+/// Separate from the booking status: a payment never confirms a booking by
+/// itself (rule 2).
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUND_PENDING
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  RAZORPAY
+}
+
+enum PaymentPurpose {
+  FULL
+  DEPOSIT
+  BALANCE
+}
+
+enum RefundStatus {
+  REQUESTED
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum SettlementStatus {
+  NOT_DUE
+  DUE
+  PAID
+  ON_HOLD
+}
+
+/// One attempt to pay for a booking through the gateway (M9). Holds provider
+/// ids and the method type only: never card data (rule 10). The provider ids
+/// are unique per provider, so a callback can never be applied to two rows.
+model Payment {
+  id                String          @id @default(uuid()) @db.Uuid
+  reference         String          @unique
+  bookingId         String          @db.Uuid
+  provider          PaymentProvider
+  providerOrderId   String?
+  providerPaymentId String?
+  purpose           PaymentPurpose
+  amountMinor       BigInt
+  currency          String          @db.Char(3)
+  status            PaymentStatus   @default(INITIATED)
+  /// The method type the gateway reports (`card`, `upi`, `netbanking`, ...).
+  method            String?
+  failureCode       String?
+  /// From the `Idempotency-Key` of the request that created it (rule 5).
+  idempotencyKey    String          @unique
+  paidAt            DateTime?       @db.Timestamptz
+  createdAt         DateTime        @default(now()) @db.Timestamptz
+  updatedAt         DateTime        @updatedAt @db.Timestamptz
+
+  booking Booking        @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  events  PaymentEvent[]
+  refunds Refund[]
+
+  @@unique([provider, providerOrderId])
+  @@unique([provider, providerPaymentId])
+  @@index([bookingId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// Every gateway webhook, stored once (rule 5): unique on the provider's
+/// event id, so a duplicate callback is refused by the database. Append-only:
+/// a trigger refuses update, delete and truncate, and the API role may only
+/// insert. `processedAt` is therefore set when the row is written, in the
+/// transaction that applies the event.
+model PaymentEvent {
+  id              String          @id @default(uuid()) @db.Uuid
+  paymentId       String?         @db.Uuid
+  provider        PaymentProvider
+  providerEventId String
+  type            String
+  payload         Json
+  signatureValid  Boolean
+  processedAt     DateTime?       @db.Timestamptz
+  createdAt       DateTime        @default(now()) @db.Timestamptz
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerEventId])
+  @@index([paymentId, createdAt])
+}
+
+/// Money returned against a payment (M9).
+model Refund {
+  id               String          @id @default(uuid()) @db.Uuid
+  reference        String          @unique
+  paymentId        String          @db.Uuid
+  provider         PaymentProvider
+  amountMinor      BigInt
+  currency         String          @db.Char(3)
+  reason           String
+  status           RefundStatus    @default(REQUESTED)
+  providerRefundId String?
+  /// Not a foreign key, like Quote.createdById.
+  requestedById    String?         @db.Uuid
+  idempotencyKey   String          @unique
+  createdAt        DateTime        @default(now()) @db.Timestamptz
+  updatedAt        DateTime        @updatedAt @db.Timestamptz
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerRefundId])
+  @@index([paymentId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// What Flyviman owes an operator for one booking (M9, manual payout).
+model Settlement {
+  id               String           @id @default(uuid()) @db.Uuid
+  bookingId        String           @unique @db.Uuid
+  operatorId       String           @db.Uuid
+  payableMinor     BigInt
+  commissionMinor  BigInt
+  taxMinor         BigInt
+  currency         String           @db.Char(3)
+  status           SettlementStatus @default(NOT_DUE)
+  paidAt           DateTime?        @db.Timestamptz
+  /// The bank transfer reference of a manual payout.
+  paymentReference String?
+  createdAt        DateTime         @default(now()) @db.Timestamptz
+  updatedAt        DateTime         @updatedAt @db.Timestamptz
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  operator Operator @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+
+  @@index([operatorId, status])
   @@index([status, createdAt])
 }
