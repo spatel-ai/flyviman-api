@@ -3,6 +3,7 @@ import { APIRequestContext, expect, test } from '@playwright/test';
 import { STRICT_BASE_URL } from './support/accounts.js';
 import { outbox, uniqueEmail } from './support/data.js';
 import { withPrisma } from './support/db.js';
+import { csrfHeaders, signIn } from './support/session.js';
 
 /** The operations inbox (OPERATIONS_INBOX_EMAIL's default). */
 const OPERATIONS_INBOX = 'operations@flyviman.test';
@@ -251,5 +252,157 @@ test.describe('POST /enquiries rate limit', () => {
     expect((await blocked!.json()).error.code).toBe('RATE_LIMITED');
     expect(Number(blocked!.headers()['retry-after'])).toBeGreaterThan(0);
     await request.dispose();
+  });
+});
+
+test.describe('admin enquiries', () => {
+  const UNKNOWN = '00000000-0000-4000-8000-000000000000';
+
+  async function sendOne(
+    request: APIRequestContext,
+    overrides: Record<string, unknown> = {},
+  ) {
+    const body = enquiry(overrides);
+    expect((await send(request, body)).status()).toBe(201);
+    const [row] = await rowsWith(body.message);
+    return { body, id: row.id };
+  }
+
+  test('is closed to customers, operators and finance', async ({ request }) => {
+    const { id } = await sendOne(request);
+    const paths = ['admin/enquiries', `admin/enquiries/${id}`];
+    for (const path of paths) {
+      expect((await request.get(path)).status()).toBe(401);
+    }
+    for (const account of ['customer', 'operatorAdmin', 'finance'] as const) {
+      await signIn(request, account);
+      for (const path of paths) {
+        expect((await request.get(path)).status()).toBe(403);
+      }
+      const handle = await request.post(`admin/enquiries/${id}/handle`, {
+        headers: await csrfHeaders(request),
+      });
+      expect(handle.status()).toBe(403);
+    }
+    const [row] = await withPrisma((prisma) =>
+      prisma.enquiry.findMany({ where: { id } }),
+    );
+    expect(row.handledAt).toBeNull();
+  });
+
+  test('operations read the list newest first, filtered and paginated', async ({
+    request,
+  }) => {
+    const first = await sendOne(request, { topic: 'CONSULTANCY' });
+    const second = await sendOne(request, { topic: 'CONSULTANCY' });
+    await signIn(request, 'ops');
+
+    const list = await request.get('admin/enquiries', {
+      params: { topic: 'CONSULTANCY', pageSize: 1 },
+    });
+    expect(list.status()).toBe(200);
+    const body = await list.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]).toMatchObject({
+      id: second.id,
+      name: 'Asha Rao',
+      topic: 'CONSULTANCY',
+      message: second.body.message,
+      handledAt: null,
+    });
+    expect(body.meta.pageSize).toBe(1);
+    expect(body.meta.total).toBeGreaterThanOrEqual(2);
+
+    const next = await request.get('admin/enquiries', {
+      params: { topic: 'CONSULTANCY', pageSize: 1, page: 2 },
+    });
+    expect((await next.json()).data[0].id).not.toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+
+    const bad = await request.get('admin/enquiries', {
+      params: { topic: 'SPACE_TOURISM' },
+    });
+    expect(bad.status()).toBe(400);
+    const badFlag = await request.get('admin/enquiries', {
+      params: { handled: 'maybe' },
+    });
+    expect(badFlag.status()).toBe(400);
+  });
+
+  test('marking handled is audited without personal data, and repeating it is harmless', async ({
+    request,
+  }) => {
+    const { id, body } = await sendOne(request, { phone: '+919876543210' });
+    await signIn(request, 'ops');
+    const headers = await csrfHeaders(request);
+
+    const detail = await request.get(`admin/enquiries/${id}`);
+    expect((await detail.json()).data).toMatchObject({
+      id,
+      email: body.email,
+      phone: '+919876543210',
+      handledAt: null,
+    });
+
+    const handle = await request.post(`admin/enquiries/${id}/handle`, {
+      headers,
+    });
+    expect(handle.status()).toBe(200);
+    const { handledAt } = (await handle.json()).data;
+    expect(new Date(handledAt).toISOString()).toBe(handledAt);
+
+    const again = await request.post(`admin/enquiries/${id}/handle`, {
+      headers,
+    });
+    expect(again.status()).toBe(200);
+    expect((await again.json()).data.handledAt).toBe(handledAt);
+
+    const audit = await request.get('admin/audit-logs', {
+      params: {
+        entityType: 'Enquiry',
+        entityId: id,
+        action: 'enquiry.handle',
+      },
+    });
+    const rows = (await audit.json()).data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorRole: 'OPS',
+      before: { topic: 'PRIVATE_CHARTER', handled: false },
+      after: { topic: 'PRIVATE_CHARTER', handled: true },
+    });
+    const stored = JSON.stringify(rows[0]);
+    expect(stored).not.toContain(body.message);
+    expect(stored).not.toContain('Asha Rao');
+    expect(stored).not.toContain('+919876543210');
+
+    const unhandled = await request.get('admin/enquiries', {
+      params: { handled: 'false', topic: 'PRIVATE_CHARTER' },
+    });
+    expect(
+      (await unhandled.json()).data.map((row: { id: string }) => row.id),
+    ).not.toContain(id);
+    const handled = await request.get('admin/enquiries', {
+      params: { handled: 'true' },
+    });
+    expect(
+      (await handled.json()).data.map((row: { id: string }) => row.id),
+    ).toContain(id);
+  });
+
+  test('an unknown or malformed id is refused', async ({ request }) => {
+    await signIn(request, 'ops');
+    const headers = await csrfHeaders(request);
+    expect((await request.get(`admin/enquiries/${UNKNOWN}`)).status()).toBe(
+      404,
+    );
+    expect(
+      (
+        await request.post(`admin/enquiries/${UNKNOWN}/handle`, { headers })
+      ).status(),
+    ).toBe(404);
+    expect((await request.get('admin/enquiries/not-a-uuid')).status()).toBe(
+      400,
+    );
   });
 });

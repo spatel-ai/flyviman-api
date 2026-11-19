@@ -136,3 +136,58 @@ describe('EnquiriesService.create', () => {
     });
   });
 });
+
+describe('EnquiriesService.markHandled', () => {
+  function handling(count: number, row: Record<string, unknown> | null) {
+    const tx = {
+      enquiry: {
+        updateMany: vi.fn(async () => ({ count })),
+        findUnique: vi.fn(async () => row),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (run: (client: typeof tx) => unknown) =>
+        run(tx),
+      ),
+    } as unknown as PrismaService;
+    const audit = { record: vi.fn(async () => undefined) };
+    const service = new EnquiriesService(
+      prisma,
+      audit as unknown as AuditService,
+      {} as NotificationsService,
+      {} as ConfigService,
+    );
+    return { service, audit };
+  }
+
+  it('audits the topic and ids only, when it changes the row', async () => {
+    const { service, audit } = handling(1, {
+      id: 'e-1',
+      topic: 'CONSULTANCY',
+      name: 'Asha',
+    });
+    await service.markHandled('e-1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'enquiry.handle',
+        entityId: 'e-1',
+        before: { topic: 'CONSULTANCY', handled: false },
+        after: { topic: 'CONSULTANCY', handled: true },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('records nothing when it was already handled', async () => {
+    const { service, audit } = handling(0, { id: 'e-1', topic: 'GENERAL' });
+    await service.markHandled('e-1');
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown id', async () => {
+    const { service } = handling(0, null);
+    await expect(service.markHandled('e-1')).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});

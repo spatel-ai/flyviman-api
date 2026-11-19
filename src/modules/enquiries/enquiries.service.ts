@@ -1,6 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppException } from '../../common/errors/app.exception.js';
+import { Paginated } from '../../common/dto/paginated.js';
+import type { Enquiry, Prisma } from '../../generated/prisma/client.js';
 import {
   EnquiryTopic,
   NotificationChannel,
@@ -115,5 +117,83 @@ export class EnquiriesService {
         if (!clash) throw error;
       }
     }
+  }
+
+  // --- Administration -----------------------------------------------------
+
+  async list(filter: {
+    page: number;
+    pageSize: number;
+    handled?: boolean;
+    topic?: EnquiryTopic;
+  }): Promise<Paginated<Enquiry>> {
+    const where: Prisma.EnquiryWhereInput = {
+      topic: filter.topic,
+      handledAt:
+        filter.handled === undefined
+          ? undefined
+          : filter.handled
+            ? { not: null }
+            : null,
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.enquiry.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (filter.page - 1) * filter.pageSize,
+        take: filter.pageSize,
+      }),
+      this.prisma.enquiry.count({ where }),
+    ]);
+    return new Paginated(items, filter.page, filter.pageSize, total);
+  }
+
+  async getDetail(id: string): Promise<Enquiry> {
+    const row = await this.prisma.enquiry.findUnique({ where: { id } });
+    if (!row) {
+      throw new AppException(
+        'NOT_FOUND',
+        'Enquiry not found.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return row;
+  }
+
+  /**
+   * Marks an enquiry handled and audits it in the same transaction (the id
+   * and topic only; the details are personal data). Already handled: returns
+   * it unchanged, with no second audit record.
+   */
+  async markHandled(id: string): Promise<Enquiry> {
+    return this.prisma.$transaction(async (tx) => {
+      // Only the request that finds it unhandled changes it, so two at once
+      // write one audit record.
+      const { count } = await tx.enquiry.updateMany({
+        where: { id, handledAt: null },
+        data: { handledAt: new Date() },
+      });
+      const row = await tx.enquiry.findUnique({ where: { id } });
+      if (!row) {
+        throw new AppException(
+          'NOT_FOUND',
+          'Enquiry not found.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (count === 1) {
+        await this.audit.record(
+          {
+            action: 'enquiry.handle',
+            entityType: 'Enquiry',
+            entityId: id,
+            before: { topic: row.topic, handled: false },
+            after: { topic: row.topic, handled: true },
+          },
+          tx,
+        );
+      }
+      return row;
+    });
   }
 }
