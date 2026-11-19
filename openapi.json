@@ -8309,7 +8309,7 @@
         "properties": {
           "amountMinor": {
             "type": "number",
-            "description": "Paise, for the whole party: adults, children and infants together."
+            "description": "Paise, the total for all travellers: adults, children and infants together."
           },
           "currency": {
             "type": "string",
@@ -8389,7 +8389,7 @@
           "validUntil": {
             "type": "string",
             "format": "date-time",
-            "description": "The fare holds until then; the search expires with it."
+            "description": "The fare holds until then. Set at search time, when the search itself expires; a revalidation may store a new fare and validity, never past that."
           }
         },
         "required": [
@@ -8422,7 +8422,7 @@
             }
           },
           "results": {
-            "description": "Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party.",
+            "description": "Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party; an offer found sold out at revalidation is left out.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ScheduledOfferDto"
@@ -8482,7 +8482,7 @@
           "validUntil": {
             "type": "string",
             "format": "date-time",
-            "description": "How long the rechecked fare holds. Absent when sold out."
+            "description": "How long the rechecked fare holds, never past the search's expiry. Absent when sold out."
           }
         },
         "required": [

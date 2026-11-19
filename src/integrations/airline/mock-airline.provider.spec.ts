@@ -171,9 +171,63 @@ describe('MockAirlineProvider', () => {
     }
   });
 
-  it('sells economy only', async () => {
+  it('sells premium economy and business between metros, dearer and scarcer', async () => {
+    const economy = new Map<string, number>();
+    const premium: {
+      cabin: string;
+      o: Awaited<ReturnType<typeof provider.searchFares>>['outbound'][number];
+    }[] = [];
+    for (let day = 1; day <= 14; day += 1) {
+      const departDate = `2027-04-${String(day).padStart(2, '0')}`;
+      for (const o of (
+        await provider.searchFares({ ...base, departDate, adults: 1 })
+      ).outbound) {
+        economy.set(
+          `${o.flightNumber}|${o.departureAt}|${o.fareFamily}`,
+          o.fareMinor,
+        );
+      }
+      for (const cabin of ['PREMIUM_ECONOMY', 'BUSINESS'] as const) {
+        const r = await provider.searchFares({
+          ...base,
+          departDate,
+          adults: 1,
+          cabin,
+        });
+        for (const o of r.outbound) premium.push({ cabin, o });
+      }
+    }
+    const cabins = new Set(premium.map((p) => p.cabin));
+    expect(cabins).toEqual(new Set(['PREMIUM_ECONOMY', 'BUSINESS']));
+    for (const { cabin, o } of premium) {
+      expect(o.cabin).toBe(cabin);
+      expect(cabin === 'BUSINESS' ? ['AI', '6E'] : ['AI']).toContain(
+        o.carrierCode,
+      );
+      expect(o.seatsLeft).toBeLessThan(cabin === 'BUSINESS' ? 5 : 7);
+      expect(o.baggage.checkedKg).toBeGreaterThanOrEqual(25);
+      const eco = economy.get(
+        `${o.flightNumber}|${o.departureAt}|${o.fareFamily}`,
+      );
+      if (eco !== undefined) expect(o.fareMinor).toBeGreaterThan(eco * 1.5);
+      // Its id round-trips through fare rules and revalidation.
+      expect((await provider.getFareRules(o.offerId)).baggage.checkedKg).toBe(
+        o.baggage.checkedKg,
+      );
+      const again = await provider.revalidate(
+        o.offerId,
+        { adults: 1 },
+        o.totalMinor,
+      );
+      expect(again.offer?.cabin ?? cabin).toBe(cabin);
+    }
+  });
+
+  it('sells only economy off the metro routes', async () => {
     const r = await provider.searchFares({
       ...base,
+      origin: 'GOI',
+      destination: 'BOM',
       cabin: 'BUSINESS',
       returnDate: '2027-03-14',
     });

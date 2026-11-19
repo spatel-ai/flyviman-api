@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { withPrisma } from './support/db.js';
 
@@ -224,7 +225,12 @@ test.describe('scheduled search', () => {
     test.setTimeout(60_000);
     const seen = new Map<
       string,
-      { shown: number; body: Record<string, unknown> }
+      {
+        shown: number;
+        body: Record<string, unknown>;
+        searchId: string;
+        offer: Offer;
+      }
     >();
     for (let day = 30; day < 40 && seen.size < 3; day += 1) {
       const body = await search(request, {
@@ -244,6 +250,8 @@ test.describe('scheduled search', () => {
           seen.set(result.status, {
             shown: offer.fare.amountMinor,
             body: result,
+            searchId: body.searchId,
+            offer,
           });
         }
         if (seen.size === 3) break;
@@ -269,6 +277,64 @@ test.describe('scheduled search', () => {
     ).toBeGreaterThan(changed.shown);
     expect(changed.body.fare).toMatchObject({ priceType: 'LIVE_FARE' });
     expect(seen.get('SOLD_OUT')!.body).toEqual({ status: 'SOLD_OUT' });
+
+    const recheck = async (searchId: string, offerId: string) => {
+      const response = await request.post('search/scheduled/revalidate', {
+        data: { searchId, offerId },
+      });
+      expect(response.status()).toBe(200);
+      return (await response.json()).data;
+    };
+    const stored = async (searchId: string) =>
+      (await (await request.get(`search/scheduled/${searchId}`)).json())
+        .data as SearchBody;
+
+    // The changed fare is stored: a second recheck is AVAILABLE at it, the
+    // search shows it, and its validity never outlasts the search.
+    const newFare = changed.body.fare as Offer['fare'];
+    const second = await recheck(changed.searchId, changed.offer.offerId);
+    expect(second.status).toBe('AVAILABLE');
+    expect(second.fare).toEqual(newFare);
+    const searchExpiry = Date.parse(changed.offer.validUntil);
+    expect(Date.parse(second.validUntil)).toBeLessThanOrEqual(searchExpiry);
+    expect(Date.parse(changed.body.validUntil as string)).toBeLessThanOrEqual(
+      searchExpiry,
+    );
+    const after = (await stored(changed.searchId)).results.find(
+      (o) => o.offerId === changed.offer.offerId,
+    )!;
+    expect(after.fare).toEqual(newFare);
+    expect(after.validUntil).toBe(second.validUntil);
+
+    // A sold-out offer leaves the results and stays sold out.
+    const sold = seen.get('SOLD_OUT')!;
+    const listed = (await stored(sold.searchId)).results.map((o) => o.offerId);
+    expect(listed).not.toContain(sold.offer.offerId);
+    expect(await recheck(sold.searchId, sold.offer.offerId)).toEqual({
+      status: 'SOLD_OUT',
+    });
+  });
+
+  test('business and premium economy are sold on some metro flights', async ({
+    request,
+  }) => {
+    for (const cabin of ['BUSINESS', 'PREMIUM_ECONOMY']) {
+      let found = 0;
+      for (let day = 40; day < 50 && found === 0; day += 1) {
+        const body = await search(request, {
+          originId: del,
+          destinationId: bom,
+          departureDate: inDays(day),
+          passengers: { adults: 1, children: 0, infants: 0 },
+          cabin,
+        });
+        found = body.results.length;
+        for (const offer of body.results) {
+          expect(offer.fare.priceType).toBe('LIVE_FARE');
+        }
+      }
+      expect(found, cabin).toBeGreaterThan(0);
+    }
   });
 
   test('fare rules show cancellation and change conditions', async ({

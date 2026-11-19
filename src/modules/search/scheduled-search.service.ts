@@ -40,6 +40,8 @@ interface StoredOffer extends ScheduledOfferDto {
   provider: string;
   /** The supplier's own offer id. Never returned: clients use `offerId`. */
   providerOfferId: string;
+  /** Set when revalidation found it sold out: no longer listed (rule 4). */
+  soldOut?: boolean;
 }
 
 /** `Search.preferences` for a scheduled search. */
@@ -237,6 +239,7 @@ export class ScheduledSearchService {
     offerId: string,
   ): Promise<ScheduledFareRulesDto> {
     const { offer } = await this.findOffer(searchId, offerId);
+    if (offer.soldOut) throw notFound('Offer');
     const rules = await this.callProvider(offer, (provider) =>
       provider.getFareRules(offer.providerOfferId),
     );
@@ -260,14 +263,17 @@ export class ScheduledSearchService {
   }
 
   /**
-   * Rechecks the fare and seats of an offer with its supplier (rule 3).
-   * Stateless: the stored search keeps the fare first shown, so a changed
-   * price is reported on every recheck until the customer searches again.
+   * Rechecks the fare and seats of an offer with its supplier (rule 3)
+   * against the fare last shown, and stores the outcome on the offer: the
+   * fare now and its validity (never past the search's own expiry), or
+   * sold out, which takes it off the results. A second recheck of an
+   * unchanged offer is therefore AVAILABLE at the stored fare.
    */
   async revalidate(
     dto: RevalidateScheduledDto,
   ): Promise<ScheduledRevalidationDto> {
     const { offer, query } = await this.findOffer(dto.searchId, dto.offerId);
+    if (offer.soldOut) return { status: 'SOLD_OUT' };
     const result = await this.callProvider(offer, (provider) =>
       provider.revalidate(
         offer.providerOfferId,
@@ -281,18 +287,46 @@ export class ScheduledSearchService {
       !result.offer ||
       result.currentTotalMinor === null
     ) {
+      await this.updateOffer(dto.searchId, dto.offerId, { soldOut: true });
       return { status: 'SOLD_OUT' };
     }
-    return {
-      status: result.status,
-      fare: {
-        amountMinor: result.currentTotalMinor,
-        currency: 'INR',
-        priceType: 'LIVE_FARE',
-        fareFamily: result.offer.fareFamily,
-      },
-      validUntil: new Date(Date.now() + this.ttlMs()).toISOString(),
+    const fare: ScheduledOfferDto['fare'] = {
+      amountMinor: result.currentTotalMinor,
+      currency: 'INR',
+      priceType: 'LIVE_FARE',
+      fareFamily: result.offer.fareFamily,
     };
+    const validUntil = new Date(
+      Math.min(Date.now() + this.ttlMs(), Date.parse(query.validUntil)),
+    ).toISOString();
+    await this.updateOffer(dto.searchId, dto.offerId, { fare, validUntil });
+    return { status: result.status, fare, validUntil };
+  }
+
+  /**
+   * Changes one stored offer. The row is locked first, so rechecks of
+   * different offers in the same search cannot overwrite each other.
+   */
+  private async updateOffer(
+    searchId: string,
+    offerId: string,
+    change: Partial<StoredOffer>,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Search" WHERE id = ${searchId}::uuid FOR UPDATE`;
+      const row = await tx.search.findUniqueOrThrow({
+        where: { id: searchId },
+        select: { results: true },
+      });
+      const results = row.results as unknown as StoredOffer[];
+      const updated = results.map((entry) =>
+        entry.offerId === offerId ? { ...entry, ...change } : entry,
+      );
+      await tx.search.update({
+        where: { id: searchId },
+        data: { results: updated as unknown as Prisma.InputJsonValue },
+      });
+    });
   }
 
   private ttlMs(): number {
@@ -413,9 +447,16 @@ function response(
     searchId,
     partial: providers.some((p) => p.status !== 'OK'),
     providers,
-    results: results.map(
-      ({ provider: _provider, providerOfferId: _id, ...offer }) => offer,
-    ),
+    results: results
+      .filter((offer) => !offer.soldOut)
+      .map(
+        ({
+          provider: _provider,
+          providerOfferId: _id,
+          soldOut: _soldOut,
+          ...offer
+        }) => offer,
+      ),
   };
 }
 

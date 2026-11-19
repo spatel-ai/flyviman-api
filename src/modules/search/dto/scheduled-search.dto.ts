@@ -152,7 +152,7 @@ export class ScheduledSegmentDto {
 export class ScheduledFareDto {
   @ApiProperty({
     description:
-      'Paise, for the whole party: adults, children and infants together.',
+      'Paise, the total for all travellers: adults, children and infants together.',
   })
   amountMinor: number;
 
@@ -208,7 +208,8 @@ export class ScheduledOfferDto {
 
   @ApiProperty({
     format: 'date-time',
-    description: 'The fare holds until then; the search expires with it.',
+    description:
+      'The fare holds until then. Set at search time, when the search itself expires; a revalidation may store a new fare and validity, never past that.',
   })
   validUntil: string;
 }
@@ -237,7 +238,7 @@ export class ScheduledSearchResponseDto {
   @ApiProperty({
     type: [ScheduledOfferDto],
     description:
-      'Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party.',
+      'Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party; an offer found sold out at revalidation is left out.',
   })
   results: ScheduledOfferDto[];
 }
@@ -310,7 +311,8 @@ export class ScheduledRevalidationDto {
 
   @ApiPropertyOptional({
     format: 'date-time',
-    description: 'How long the rechecked fare holds. Absent when sold out.',
+    description:
+      "How long the rechecked fare holds, never past the search's expiry. Absent when sold out.",
   })
   validUntil?: string;
 }

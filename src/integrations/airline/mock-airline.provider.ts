@@ -1,6 +1,7 @@
 import {
   AirlineInventoryProvider,
   AirlineProviderError,
+  CabinClass,
   FareFamily,
   FareOffer,
   FareRules,
@@ -87,6 +88,49 @@ const FAMILIES: Record<
 };
 
 const FAMILY_CODES = Object.keys(FAMILIES) as FareFamily[];
+
+/**
+ * Cabins above economy: sold only between metros, by the carriers listed,
+ * at a multiple of the economy fare, with fewer seats and more baggage.
+ */
+const PREMIUM_CABINS: Record<
+  Exclude<CabinClass, 'ECONOMY'>,
+  { carriers: string[]; multiplier: number; seats: number; checkedKg: number }
+> = {
+  PREMIUM_ECONOMY: {
+    carriers: ['AI'],
+    multiplier: 1.8,
+    seats: 7,
+    checkedKg: 25,
+  },
+  BUSINESS: {
+    carriers: ['AI', '6E'],
+    multiplier: 3.2,
+    seats: 5,
+    checkedKg: 35,
+  },
+};
+
+function sellsCabin(
+  cabin: CabinClass,
+  carrier: string,
+  origin: string,
+  destination: string,
+): boolean {
+  if (cabin === 'ECONOMY') return true;
+  return (
+    PREMIUM_CABINS[cabin].carriers.includes(carrier) &&
+    METROS.includes(origin) &&
+    METROS.includes(destination)
+  );
+}
+
+function checkedKg(cabin: CabinClass, family: FareFamily): number {
+  const kg = FAMILIES[family].checkedKg;
+  return cabin === 'ECONOMY'
+    ? kg
+    : Math.max(kg, PREMIUM_CABINS[cabin].checkedKg);
+}
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PRICE_CHANGE_MARKER = 5;
 /** Per infant on a lap, whatever the fare: a flat fee, as Indian carriers charge. */
@@ -137,6 +181,8 @@ interface OfferKey {
   d: string;
   t: string;
   f: FareFamily;
+  /** Absent for economy, so economy offer ids are as before. */
+  k?: Exclude<CabinClass, 'ECONOMY'>;
 }
 
 function encodeKey(key: OfferKey): string {
@@ -154,7 +200,10 @@ function decodeKey(offerId: string): OfferKey {
       Number.isInteger(key.n) &&
       isServed(key.o, key.d) &&
       isRealDate(key.t) &&
-      FAMILY_CODES.includes(key.f)
+      FAMILY_CODES.includes(key.f) &&
+      (key.k === undefined ||
+        (Object.hasOwn(PREMIUM_CABINS, key.k) &&
+          sellsCabin(key.k, key.c, key.o, key.d)))
     ) {
       return key;
     }
@@ -265,7 +314,10 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
   private rules(offerId: string): FareRules {
     const key = decodeKey(offerId);
     const family = FAMILIES[key.f];
-    const baggage = { cabinKg: 7, checkedKg: family.checkedKg };
+    const baggage = {
+      cabinKg: 7,
+      checkedKg: checkedKg(key.k ?? 'ECONOMY', key.f),
+    };
     const conditions = [
       {
         title: 'Baggage',
@@ -324,18 +376,22 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
         throw new AirlineProviderError('INVALID_QUERY', 'Invalid returnDate.');
       }
     }
-    // The mock's carriers sell economy only on these routes.
-    const economy = (query.cabin ?? 'ECONOMY') === 'ECONOMY';
+    const cabin = query.cabin ?? 'ECONOMY';
+    if (cabin !== 'ECONOMY' && !Object.hasOwn(PREMIUM_CABINS, cabin)) {
+      throw new AirlineProviderError('INVALID_QUERY', 'Unknown cabin.');
+    }
     return {
-      outbound: economy
-        ? this.flights(origin, destination, query.departDate, party)
-        : [],
+      outbound: this.flights(
+        origin,
+        destination,
+        query.departDate,
+        party,
+        cabin,
+      ),
       inbound:
         query.returnDate === undefined
           ? null
-          : economy
-            ? this.flights(destination, origin, query.returnDate, party)
-            : [],
+          : this.flights(destination, origin, query.returnDate, party, cabin),
     };
   }
 
@@ -364,6 +420,7 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
     destination: string,
     date: string,
     party: Party,
+    cabin: CabinClass,
   ): FareOffer[] {
     if (!isServed(origin, destination)) return [];
     const offers: FareOffer[] = [];
@@ -373,6 +430,7 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
       // Not every slot is operated, and which ones vary by day.
       if (hash(`${h}|${date}`) % 4 === 0) continue;
       const carrier = CARRIERS[h % CARRIERS.length];
+      if (!sellsCabin(cabin, carrier.code, origin, destination)) continue;
       const key = {
         c: carrier.code,
         n: 100 + (h % 90) * 10 + index,
@@ -382,7 +440,11 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
       };
       const minute = slot + (h % 4) * 5;
       for (const f of FAMILY_CODES) {
-        const offer = this.build({ ...key, t: date, f }, party, minute);
+        const offer = this.build(
+          { ...key, f, ...(cabin === 'ECONOMY' ? {} : { k: cabin }) },
+          party,
+          minute,
+        );
         // A sold-out fare is not bookable, so it is not listed (rule 4).
         if (offer.seatsLeft >= seats(party)) offers.push(offer);
       }
@@ -404,9 +466,11 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
     const peak =
       departMinute < 600 || (departMinute > 1020 && departMinute < 1200);
     const base = 220000 + km * 480;
+    const cabin = key.k ?? 'ECONOMY';
     const fareMinor = this.round(
       base *
         carrier.premium *
+        (key.k ? PREMIUM_CABINS[key.k].multiplier : 1) *
         family.multiplier *
         dayFactor *
         (peak ? 1.12 : 1),
@@ -424,12 +488,15 @@ export class MockAirlineProvider extends AirlineInventoryProvider {
       destinationTimeZone: TIME_ZONE,
       durationMinutes,
       stops: 0,
-      cabin: 'ECONOMY',
+      cabin,
       fareFamily: key.f,
-      baggage: { cabinKg: 7, checkedKg: family.checkedKg },
+      baggage: { cabinKg: 7, checkedKg: checkedKg(cabin, key.f) },
       refundable: family.refundable,
-      seatsLeft:
-        hash(`${this.seed}|seats|${key.c}${key.n}|${key.t}|${key.f}`) % 10,
+      seatsLeft: key.k
+        ? hash(
+            `${this.seed}|seats|${key.c}${key.n}|${key.t}|${key.f}|${key.k}`,
+          ) % PREMIUM_CABINS[key.k].seats
+        : hash(`${this.seed}|seats|${key.c}${key.n}|${key.t}|${key.f}`) % 10,
       fareMinor,
       totalMinor: total(fareMinor, party),
       currency: 'INR',
