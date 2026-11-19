@@ -1,5 +1,10 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
-import { FieldCipher } from '../../common/crypto/field-cipher.js';
+import {
+  HttpStatus,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
+import { FieldCipher, isEncrypted } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type {
@@ -7,6 +12,7 @@ import type {
   IdentityDocumentType,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { encryptLegacySpecialAssistance } from './special-assistance-backfill.js';
 
 export interface Profile {
   firstName: string;
@@ -38,6 +44,7 @@ export interface PassengerRecord {
   /** Decrypted. Only ever returned to the passenger's owner. */
   documentNumber: string | null;
   documentExpiry: Date | null;
+  /** Decrypted. Only ever returned to the passenger's owner. */
   specialAssistance: string | null;
 }
 
@@ -65,11 +72,35 @@ function notFound(): AppException {
 
 /** Owns CustomerProfile and Passenger. */
 @Injectable()
-export class CustomersService {
+export class CustomersService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(CustomersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cipher: FieldCipher,
   ) {}
+
+  /**
+   * Encrypts special-assistance notes saved in plain text before they were
+   * encrypted, before the API accepts requests. A failure stops the start:
+   * the notes could not be read otherwise. Only the error's name is kept,
+   * since a database error can repeat the value.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    let changed: number;
+    try {
+      changed = await encryptLegacySpecialAssistance(this.prisma, (plain) =>
+        this.cipher.encrypt(plain),
+      );
+    } catch (error) {
+      throw new Error(
+        `Encrypting special-assistance notes failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+    }
+    if (changed > 0) {
+      this.logger.log(`Encrypted ${changed} special-assistance notes`);
+    }
+  }
 
   async upsertProfile(
     userId: string,
@@ -212,7 +243,11 @@ export class CustomersService {
           ? input.documentNumber
           : this.cipher.encrypt(input.documentNumber),
       documentExpiry: date(input.documentExpiry),
-      specialAssistance: input.specialAssistance,
+      specialAssistance:
+        input.specialAssistance === undefined ||
+        input.specialAssistance === null
+          ? input.specialAssistance
+          : this.cipher.encrypt(input.specialAssistance),
     };
   }
 
@@ -229,7 +264,12 @@ export class CustomersService {
         ? this.cipher.decrypt(row.documentNumber)
         : null,
       documentExpiry: row.documentExpiry,
-      specialAssistance: row.specialAssistance,
+      // Plain text can still be stored briefly while an older instance runs
+      // beside a new one during a deploy; the next start encrypts it.
+      specialAssistance:
+        row.specialAssistance === null || !isEncrypted(row.specialAssistance)
+          ? row.specialAssistance
+          : this.cipher.decrypt(row.specialAssistance),
     };
   }
 }
