@@ -5846,6 +5846,53 @@
           "HELICOPTER"
         ]
       },
+      "OperatingHoursDto": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "example": "06:00",
+            "description": "Local time, HH:MM (24 h)."
+          },
+          "end": {
+            "type": "string",
+            "example": "20:00",
+            "description": "Local time, HH:MM (24 h). Before `start` spans midnight."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "AircraftRestrictionsDto": {
+        "type": "object",
+        "properties": {
+          "operatingHours": {
+            "description": "When the aircraft may depart and arrive, in the local time of each location.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatingHoursDto"
+              }
+            ]
+          },
+          "excludedLocationIds": {
+            "maxItems": 100,
+            "description": "Locations the aircraft does not fly to or from.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "minimumNoticeMinutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10080,
+            "description": "Notice needed before departure, in minutes."
+          }
+        }
+      },
       "AircraftPricingModel": {
         "type": "string",
         "enum": [
@@ -5853,6 +5900,77 @@
           "SECTOR",
           "FIXED_ROUTE"
         ]
+      },
+      "AircraftSpecificationsDto": {
+        "type": "object",
+        "properties": {
+          "cabin": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "A description of the cabin, shown to customers."
+          },
+          "yearOfManufacture": {
+            "type": "number",
+            "minimum": 1950,
+            "description": "Up to next year."
+          },
+          "amenities": {
+            "maxItems": 20,
+            "example": [
+              "Wi-Fi",
+              "Enclosed lavatory"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OxygenDto": {
+        "type": "object",
+        "properties": {
+          "litres": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 20000
+          }
+        },
+        "required": [
+          "litres"
+        ]
+      },
+      "AircraftMedicalEquipmentDto": {
+        "type": "object",
+        "properties": {
+          "stretcher": {
+            "type": "boolean"
+          },
+          "oxygen": {
+            "$ref": "#/components/schemas/OxygenDto"
+          },
+          "ventilator": {
+            "type": "boolean"
+          },
+          "defibrillator": {
+            "type": "boolean"
+          },
+          "patientMonitor": {
+            "type": "boolean"
+          },
+          "incubator": {
+            "type": "boolean"
+          },
+          "infusionPumps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
       },
       "CreateAircraftDto": {
         "type": "object",
@@ -5916,8 +6034,13 @@
             }
           },
           "restrictions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftRestrictionsDto"
+              }
+            ]
           },
           "pricingModel": {
             "allOf": [
@@ -5927,12 +6050,22 @@
             ]
           },
           "specifications": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftSpecificationsDto"
+              }
+            ]
           },
           "medicalEquipment": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftMedicalEquipmentDto"
+              }
+            ]
           }
         },
         "required": [
@@ -6113,8 +6246,13 @@
             }
           },
           "restrictions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftRestrictionsDto"
+              }
+            ]
           },
           "availabilityStatus": {
             "allOf": [
@@ -6138,12 +6276,22 @@
             ]
           },
           "specifications": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftSpecificationsDto"
+              }
+            ]
           },
           "medicalEquipment": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftMedicalEquipmentDto"
+              }
+            ]
           },
           "submittedAt": {
             "type": "string",
@@ -6266,8 +6414,13 @@
             }
           },
           "restrictions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftRestrictionsDto"
+              }
+            ]
           },
           "pricingModel": {
             "allOf": [
@@ -6277,12 +6430,22 @@
             ]
           },
           "specifications": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftSpecificationsDto"
+              }
+            ]
           },
           "medicalEquipment": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftMedicalEquipmentDto"
+              }
+            ]
           }
         }
       },
@@ -6506,8 +6669,13 @@
             }
           },
           "restrictions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftRestrictionsDto"
+              }
+            ]
           },
           "availabilityStatus": {
             "allOf": [
@@ -6531,12 +6699,22 @@
             ]
           },
           "specifications": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftSpecificationsDto"
+              }
+            ]
           },
           "medicalEquipment": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftMedicalEquipmentDto"
+              }
+            ]
           },
           "submittedAt": {
             "type": "string",

@@ -1,6 +1,11 @@
 import type { Aircraft } from '../../generated/prisma/client.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
+  parseMedicalEquipment,
+  parseRestrictions,
+  parseSpecifications,
+} from './aircraft-json.js';
+import {
   HomeBaseSummaryDto,
   AircraftDocumentResponseDto,
   AircraftMediaResponseDto,
@@ -45,15 +50,6 @@ export type AircraftDetail = AircraftWithHomeBase & {
   missing: string[];
   searchBlockers: string[];
 };
-
-function asObject(
-  value: Prisma.JsonValue | null,
-): Record<string, unknown> | null {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
 
 function dateOnly(value: Date | null): string | null {
   return value ? value.toISOString().slice(0, 10) : null;
@@ -112,12 +108,12 @@ export function toAircraftDto(row: AircraftDetail): AircraftResponseDto {
     homeBase: toHomeBaseDto(row.homeBase),
     currentLocationId: row.currentLocationId,
     operatingRegions: row.operatingRegions,
-    restrictions: asObject(row.restrictions),
+    restrictions: parseRestrictions(row.restrictions),
     availabilityStatus: row.availabilityStatus,
     listingStatus: row.listingStatus,
     pricingModel: row.pricingModel,
-    specifications: asObject(row.specifications),
-    medicalEquipment: asObject(row.medicalEquipment),
+    specifications: parseSpecifications(row.specifications),
+    medicalEquipment: parseMedicalEquipment(row.medicalEquipment),
     submittedAt: row.submittedAt?.toISOString() ?? null,
     reviewNote: row.reviewNote,
     missing: row.missing,

@@ -44,6 +44,11 @@ import {
   type AircraftAction,
   type MaterialField,
 } from './aircraft-transitions.js';
+import type {
+  AircraftMedicalEquipment,
+  AircraftRestrictions,
+  AircraftSpecifications,
+} from './aircraft-json.js';
 import {
   HOME_BASE_SELECT,
   type AircraftDetail,
@@ -70,6 +75,18 @@ const JSON_COLUMNS = new Set<string>([
   'specifications',
   'medicalEquipment',
 ]);
+
+/**
+ * A validated JSON shape as stored: a plain object (the DTOs are class
+ * instances, possibly with unset keys), or SQL null for none.
+ */
+function storedJson(
+  value: object | null | undefined,
+): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+  return value
+    ? (JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue)
+    : Prisma.JsonNull;
+}
 
 const ROTARY: AircraftCategory[] = [
   AircraftCategory.HELICOPTER,
@@ -581,10 +598,10 @@ export class AircraftService implements OnModuleInit {
       homeBaseId?: string | null;
       currentLocationId?: string | null;
       operatingRegions?: string[];
-      restrictions?: Record<string, unknown> | null;
+      restrictions?: AircraftRestrictions | null;
       pricingModel?: Prisma.AircraftCreateInput['pricingModel'];
-      specifications?: Record<string, unknown> | null;
-      medicalEquipment?: Record<string, unknown> | null;
+      specifications?: AircraftSpecifications | null;
+      medicalEquipment?: AircraftMedicalEquipment | null;
     },
   ): Promise<AircraftDetail> {
     const { operator, access } = await this.operators.accessFor(user);
@@ -626,16 +643,10 @@ export class AircraftService implements OnModuleInit {
             homeBaseId: input.homeBaseId ?? null,
             currentLocationId: input.currentLocationId ?? null,
             operatingRegions: input.operatingRegions ?? [],
-            restrictions: input.restrictions
-              ? (input.restrictions as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+            restrictions: storedJson(input.restrictions),
             pricingModel: input.pricingModel,
-            specifications: input.specifications
-              ? (input.specifications as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
-            medicalEquipment: input.medicalEquipment
-              ? (input.medicalEquipment as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+            specifications: storedJson(input.specifications),
+            medicalEquipment: storedJson(input.medicalEquipment),
           },
         });
         await this.audit.record(
@@ -681,10 +692,10 @@ export class AircraftService implements OnModuleInit {
       homeBaseId: string | null;
       currentLocationId: string | null;
       operatingRegions: string[];
-      restrictions: Record<string, unknown> | null;
+      restrictions: AircraftRestrictions | null;
       pricingModel: Prisma.AircraftUpdateInput['pricingModel'];
-      specifications: Record<string, unknown> | null;
-      medicalEquipment: Record<string, unknown> | null;
+      specifications: AircraftSpecifications | null;
+      medicalEquipment: AircraftMedicalEquipment | null;
     }>,
   ): Promise<AircraftDetail> {
     const { operator, aircraft } = await this.scoped(
@@ -775,9 +786,7 @@ export class AircraftService implements OnModuleInit {
       data.operatingRegions = changes.operatingRegions;
     }
     if (changes.restrictions !== undefined) {
-      data.restrictions =
-        (changes.restrictions as Prisma.InputJsonValue | null) ??
-        Prisma.JsonNull;
+      data.restrictions = storedJson(changes.restrictions);
     }
     if (changes.pricingModel !== undefined) {
       data.pricingModel = changes.pricingModel;
@@ -786,14 +795,10 @@ export class AircraftService implements OnModuleInit {
       }
     }
     if (changes.specifications !== undefined) {
-      data.specifications =
-        (changes.specifications as Prisma.InputJsonValue | null) ??
-        Prisma.JsonNull;
+      data.specifications = storedJson(changes.specifications);
     }
     if (changes.medicalEquipment !== undefined) {
-      data.medicalEquipment =
-        (changes.medicalEquipment as Prisma.InputJsonValue | null) ??
-        Prisma.JsonNull;
+      data.medicalEquipment = storedJson(changes.medicalEquipment);
       if (!jsonEqual(changes.medicalEquipment, aircraft.medicalEquipment)) {
         materialTouched.push('medicalEquipment');
       }

@@ -290,7 +290,10 @@ test.describe('operator aircraft', () => {
         data: {
           ...aircraftBody(homeBaseId),
           ...(medicalEquipment ? { medicalEquipment } : {}),
-          specifications: { cabin: 'Club four', seats: { leather: true } },
+          specifications: {
+            cabin: 'Club four',
+            amenities: ['Wi-Fi', 'Galley'],
+          },
         },
       });
       expect(created.status()).toBe(201);
@@ -330,7 +333,7 @@ test.describe('operator aircraft', () => {
     expect(
       await patch(id, {
         medicalEquipment: { oxygen: { litres: 10 }, stretcher: true },
-        specifications: { seats: { leather: true }, cabin: 'Club four' },
+        specifications: { amenities: ['Wi-Fi', 'Galley'], cabin: 'Club four' },
       }),
     ).toBe('APPROVED');
     const after = await state(id);
@@ -357,6 +360,75 @@ test.describe('operator aircraft', () => {
     expect(await patch(none, { medicalEquipment: null })).toBe('APPROVED');
     expect((await state(none)).audits).toBe(0);
     expect(await patch(none, { medicalEquipment: {} })).toBe('PENDING_REVIEW');
+  });
+
+  test('JSON fields have typed shapes: malformed writes are refused, malformed stored rows read safely', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { homeBaseId } = await approvedOperator(request, playwright, baseURL);
+    const headers = await csrfHeaders(request);
+    const restrictions = {
+      operatingHours: { start: '06:00', end: '20:00' },
+      excludedLocationIds: [homeBaseId],
+      minimumNoticeMinutes: 180,
+    };
+    const created = await request.post('operator/aircraft', {
+      headers,
+      data: {
+        ...aircraftBody(homeBaseId),
+        restrictions,
+        medicalEquipment: { stretcher: true, oxygen: { litres: 3000 } },
+      },
+    });
+    expect(created.status()).toBe(201);
+    const aircraft = (await created.json()).data;
+    expect(aircraft.restrictions).toEqual(restrictions);
+    expect(aircraft.medicalEquipment).toEqual({
+      stretcher: true,
+      oxygen: { litres: 3000 },
+    });
+
+    const bad = await request.patch(`operator/aircraft/${aircraft.id}`, {
+      headers,
+      data: {
+        specifications: { cabin: 'Club four', seats: { leather: true } },
+        restrictions: { operatingHours: { start: '25:00', end: '20:00' } },
+        medicalEquipment: { oxygen: { litres: -1 } },
+      },
+    });
+    expect(bad.status()).toBe(400);
+    const error = (await bad.json()).error;
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(
+      error.details.map((detail: { field: string }) => detail.field),
+    ).toEqual(
+      expect.arrayContaining([
+        'specifications.seats',
+        'restrictions.operatingHours.start',
+        'medicalEquipment.oxygen.litres',
+      ]),
+    );
+
+    // A row written before the shapes existed is read without its unknown
+    // or malformed parts.
+    await withPrisma((prisma) =>
+      prisma.aircraft.update({
+        where: { id: aircraft.id },
+        data: {
+          specifications: { cabin: 'Club four', seats: { leather: true } },
+          restrictions: ['not', 'an', 'object'],
+          medicalEquipment: { stretcher: 'yes', ventilator: true },
+        },
+      }),
+    );
+    const detail = (
+      await (await request.get(`operator/aircraft/${aircraft.id}`)).json()
+    ).data;
+    expect(detail.specifications).toEqual({ cabin: 'Club four' });
+    expect(detail.restrictions).toBeNull();
+    expect(detail.medicalEquipment).toEqual({ ventilator: true });
   });
 
   test('a suspended aircraft cannot be edited back into review', async ({

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
@@ -14,10 +14,16 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../common/dto/optional.js';
 import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
 import { IsDateOnly } from '../../../common/validation/formats.js';
+import {
+  AircraftMedicalEquipmentDto,
+  AircraftRestrictionsDto,
+  AircraftSpecificationsDto,
+} from './aircraft-json.dto.js';
 import {
   AircraftAvailabilityStatus,
   AircraftCategory,
@@ -108,11 +114,13 @@ export class CreateAircraftDto {
   @MaxLength(100, { each: true })
   operatingRegions?: string[];
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
+  @ApiPropertyOptional({ type: AircraftRestrictionsDto, nullable: true })
   @IsOptional()
   @ValidateIf(present)
   @IsObject()
-  restrictions?: Record<string, unknown> | null;
+  @ValidateNested()
+  @Type(() => AircraftRestrictionsDto)
+  restrictions?: AircraftRestrictionsDto | null;
 
   @ApiPropertyOptional({
     enum: AircraftPricingModel,
@@ -122,17 +130,21 @@ export class CreateAircraftDto {
   @IsEnum(AircraftPricingModel)
   pricingModel?: AircraftPricingModel;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
+  @ApiPropertyOptional({ type: AircraftSpecificationsDto, nullable: true })
   @IsOptional()
   @ValidateIf(present)
   @IsObject()
-  specifications?: Record<string, unknown> | null;
+  @ValidateNested()
+  @Type(() => AircraftSpecificationsDto)
+  specifications?: AircraftSpecificationsDto | null;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
+  @ApiPropertyOptional({ type: AircraftMedicalEquipmentDto, nullable: true })
   @IsOptional()
   @ValidateIf(present)
   @IsObject()
-  medicalEquipment?: Record<string, unknown> | null;
+  @ValidateNested()
+  @Type(() => AircraftMedicalEquipmentDto)
+  medicalEquipment?: AircraftMedicalEquipmentDto | null;
 }
 
 export class UpdateAircraftDto {
@@ -217,11 +229,13 @@ export class UpdateAircraftDto {
   @MaxLength(100, { each: true })
   operatingRegions?: string[];
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
+  @ApiPropertyOptional({ type: AircraftRestrictionsDto, nullable: true })
   @IsOptional()
   @ValidateIf(present)
   @IsObject()
-  restrictions?: Record<string, unknown> | null;
+  @ValidateNested()
+  @Type(() => AircraftRestrictionsDto)
+  restrictions?: AircraftRestrictionsDto | null;
 
   @ApiPropertyOptional({
     enum: AircraftPricingModel,
@@ -231,17 +245,21 @@ export class UpdateAircraftDto {
   @IsEnum(AircraftPricingModel)
   pricingModel?: AircraftPricingModel;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
+  @ApiPropertyOptional({ type: AircraftSpecificationsDto, nullable: true })
   @IsOptional()
   @ValidateIf(present)
   @IsObject()
-  specifications?: Record<string, unknown> | null;
+  @ValidateNested()
+  @Type(() => AircraftSpecificationsDto)
+  specifications?: AircraftSpecificationsDto | null;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
+  @ApiPropertyOptional({ type: AircraftMedicalEquipmentDto, nullable: true })
   @IsOptional()
   @ValidateIf(present)
   @IsObject()
-  medicalEquipment?: Record<string, unknown> | null;
+  @ValidateNested()
+  @Type(() => AircraftMedicalEquipmentDto)
+  medicalEquipment?: AircraftMedicalEquipmentDto | null;
 }
 
 export class ListAircraftQueryDto extends PageQueryDto {
@@ -416,8 +434,8 @@ export class AircraftResponseDto {
   @ApiProperty({ type: [String] })
   operatingRegions: string[];
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
-  restrictions: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: AircraftRestrictionsDto, nullable: true })
+  restrictions: AircraftRestrictionsDto | null;
 
   @ApiProperty({
     enum: AircraftAvailabilityStatus,
@@ -437,11 +455,11 @@ export class AircraftResponseDto {
   })
   pricingModel: AircraftPricingModel;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
-  specifications: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: AircraftSpecificationsDto, nullable: true })
+  specifications: AircraftSpecificationsDto | null;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
-  medicalEquipment: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: AircraftMedicalEquipmentDto, nullable: true })
+  medicalEquipment: AircraftMedicalEquipmentDto | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   submittedAt: string | null;
