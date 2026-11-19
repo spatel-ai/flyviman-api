@@ -236,7 +236,7 @@ export class BreakdownLineDto {
   @ApiProperty({
     example: 'FLYING',
     description:
-      '`FLYING` is every flight (the legs, positioning and any return to base between them) in one line; other codes as the engine sets them (`WAITING`, `OVERNIGHT`, `CREW`, `LANDING_HANDLING`, `MIN_CHARGE`, `PLATFORM_FEE`, `TAX`).',
+      "`FLYING` is every flight (the legs, priced hourly, per sector or at a fixed route price, with any minimum billable hours, positioning and any return to base between them) in one line; other codes as the engine sets them (`WAITING`, `OVERNIGHT`, `CREW`, `PARKING`, `FUEL_SURCHARGE`, `PERMIT`, `NAVIGATION`, `OTHER` under the operator's label, `LANDING_HANDLING`, `MIN_CHARGE`, `PLATFORM_FEE`, `MARKUP`, `SERVICE_FEE`, `DISCOUNT` as a negative amount under the promotion's name, `TAX`).",
   })
   code: string;
 

@@ -252,8 +252,20 @@ test.describe.serial('admin pricing rules', () => {
     expect(
       (await post({ ...base, reason: 'Rate \u202edesrever' })).status(),
     ).toBe(400);
-    // Types the engine does not apply yet, and operator-owned scopes, are refused.
-    expect((await post({ ...base, type: 'MARKUP' })).status()).toBe(400);
+    // Operator-owned types and scopes are refused.
+    expect((await post({ ...base, type: 'SECTOR_RATE' })).status()).toBe(400);
+    // Each platform type has its own settings.
+    const discount = await post({
+      ...base,
+      type: 'DISCOUNT',
+      config: { percent: 60 },
+    });
+    expect(discount.status()).toBe(400);
+    expect(
+      (await discount.json()).error.details.map(
+        (d: { field: string }) => d.field,
+      ),
+    ).toEqual(expect.arrayContaining(['config.name', 'config.percent']));
     expect((await post({ ...base, scope: 'OPERATOR' })).status()).toBe(400);
 
     // An operator's own rule is not found through this screen.
@@ -274,6 +286,136 @@ test.describe.serial('admin pricing rules', () => {
       expect(response.status()).toBe(404);
     }
     await finance.dispose();
+  });
+
+  test('finance sets a markup, a service fee and a discount; each reaches the customer as its own line', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const finance = await as(playwright, baseURL, 'finance');
+    const rules = [
+      ['MARKUP', { percent: 5 }],
+      ['SERVICE_FEE', { amountMinor: 250_000 }],
+      ['DISCOUNT', { name: 'Turboprop launch', percent: 10 }],
+    ] as const;
+    for (const [type, config] of rules) {
+      const created = await finance.post('admin/pricing-rules', {
+        headers: await csrfHeaders(finance),
+        data: {
+          type,
+          scope: 'CATEGORY',
+          scopeRef: CATEGORY,
+          config,
+          reason: 'Turboprop promotion',
+        },
+      });
+      expect(created.status()).toBe(201);
+      expect((await created.json()).data).toMatchObject({
+        type,
+        config,
+        editable: true,
+      });
+    }
+
+    // A turboprop, which only these tests price.
+    const trip = await listedJet({ request, playwright, baseURL });
+    await withPrisma((prisma) =>
+      prisma.aircraft.update({
+        where: { id: trip.aircraftId },
+        data: { category: CATEGORY },
+      }),
+    );
+    const rate = await request.put(
+      `operator/aircraft/${trip.aircraftId}/pricing`,
+      {
+        headers: await csrfHeaders(request),
+        data: {
+          hourlyRateMinor: 18_000_000,
+          taxInclusive: false,
+          commissionInclusive: false,
+          minBillableHours: null,
+        },
+      },
+    );
+    expect(rate.status()).toBe(200);
+    const { searchId, result } = await searchFor(request, trip);
+    const detail = (
+      await (
+        await request.get(`search/${searchId}/results/${result.resultId}`)
+      ).json()
+    ).data;
+    const shown = (code: string) =>
+      detail.breakdown.find((line: { code: string }) => line.code === code);
+    expect(shown('MARKUP')?.amountMinor).toBeGreaterThan(0);
+    expect(shown('SERVICE_FEE')?.amountMinor).toBe(250_000);
+    expect(shown('DISCOUNT')).toMatchObject({ label: 'Turboprop launch' });
+    expect(shown('DISCOUNT').amountMinor).toBeLessThan(0);
+    const sum = (lines: { amountMinor: number }[]) =>
+      lines.reduce((total, line) => total + line.amountMinor, 0);
+    expect(sum(detail.breakdown)).toBe(detail.price.amountMinor);
+
+    // Flyviman funds the discount: payable, revenue and tax make the total.
+    const list = await finance.get('admin/price-calculations', {
+      params: { searchId, aircraftId: trip.aircraftId },
+    });
+    const id = (await list.json()).data[0].id;
+    const full = (
+      await (await finance.get(`admin/price-calculations/${id}`)).json()
+    ).data;
+    expect(full.discountMinor).toBe(-shown('DISCOUNT').amountMinor);
+    expect(
+      full.finance.operatorPayableMinor +
+        full.finance.platformRevenueMinor +
+        full.taxMinor,
+    ).toBe(full.totalMinor);
+    expect(
+      full.appliedRules.map((rule: { type: string }) => rule.type),
+    ).toEqual(expect.arrayContaining(['MARKUP', 'SERVICE_FEE', 'DISCOUNT']));
+    await finance.dispose();
+  });
+
+  test('a platform discount can be ended, unlike tax', async ({
+    playwright,
+    baseURL,
+  }) => {
+    // At 0% it changes no price that other tests compute meanwhile.
+    const NAME = 'E2E zero offer';
+    const clear = () =>
+      withPrisma((prisma) =>
+        prisma.pricingRule.updateMany({
+          where: {
+            scope: 'PLATFORM',
+            type: 'DISCOUNT',
+            isActive: true,
+            config: { path: ['name'], equals: NAME },
+          },
+          data: { isActive: false, validTo: new Date() },
+        }),
+      );
+    await clear();
+    const finance = await as(playwright, baseURL, 'finance');
+    const created = await finance.post('admin/pricing-rules', {
+      headers: await csrfHeaders(finance),
+      data: {
+        type: 'DISCOUNT',
+        scope: 'PLATFORM',
+        config: { name: NAME, percent: 0 },
+        reason: 'Promotion shell',
+      },
+    });
+    expect(created.status()).toBe(201);
+    const ended = await finance.post(
+      `admin/pricing-rules/${(await created.json()).data.id}/deactivate`,
+      {
+        headers: await csrfHeaders(finance),
+        data: { reason: 'Promotion over' },
+      },
+    );
+    expect(ended.status()).toBe(200);
+    expect((await ended.json()).data.inForce).toBe(false);
+    await finance.dispose();
+    await clear();
   });
 
   test('only finance and super administrators manage commercial rules', async ({

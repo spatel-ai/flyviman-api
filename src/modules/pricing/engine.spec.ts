@@ -49,6 +49,7 @@ const AIRCRAFT = {
   id: 'ac1',
   operatorId: 'op1',
   category: 'LIGHT_JET' as const,
+  pricingModel: 'HOURLY' as 'HOURLY' | 'SECTOR' | 'FIXED_ROUTE',
   cruiseSpeedKmh: 600,
 };
 const A = point('A', 0, 0);
@@ -453,6 +454,422 @@ describe('round trips', () => {
 
   it('a one-way trip has no round-trip pricing', () => {
     expect(run(ALL).roundTrip).toBeNull();
+  });
+});
+
+describe('sector and fixed-route pricing (M5 4c)', () => {
+  const at = (iso: string) => new Date(iso);
+  const SECTOR = rule(
+    'SECTOR_RATE',
+    { amountMinor: 8_000_000, currency: 'INR' },
+    'AIRCRAFT',
+    'ac1',
+  );
+  const FIXED = rule(
+    'FIXED_ROUTE',
+    {
+      currency: 'INR',
+      routes: [{ originId: 'B', destinationId: 'A', amountMinor: 7_000_000 }],
+    },
+    'AIRCRAFT',
+    'ac1',
+  );
+  const model = (pricingModel: 'HOURLY' | 'SECTOR' | 'FIXED_ROUTE') => ({
+    aircraft: { ...AIRCRAFT, pricingModel, base: A },
+  });
+  const ruleIds = (result: ReturnType<typeof run>) =>
+    result.appliedRules.map((applied) => applied.id);
+
+  it('a sector aircraft pays its sector rate per flight, whatever the hours', () => {
+    const minimum = rule('MIN_BILLABLE_HOURS', { hours: 3 });
+    const result = run([RATE, SECTOR, minimum], model('SECTOR'));
+    expect(result.breakdown[0]).toMatchObject({
+      code: 'OPERATING',
+      amountMinor: 8_000_000,
+    });
+    expect(ruleIds(result)).toContain(SECTOR.id);
+    // Neither the hourly rate nor the minimum hours priced anything.
+    expect(ruleIds(result)).not.toContain(RATE.id);
+    expect(ruleIds(result)).not.toContain(minimum.id);
+    const back = run([SECTOR], {
+      ...model('SECTOR'),
+      returnAt: at('2026-12-05T08:00:00Z'),
+    });
+    expect(back.breakdown.slice(0, 2).map((l) => l.amountMinor)).toEqual([
+      8_000_000, 8_000_000,
+    ]);
+  });
+
+  it('each model reads only its own rate', () => {
+    expect(run([RATE], model('SECTOR')).priced).toBe(false);
+    expect(run([RATE], model('SECTOR')).warnings.join(' ')).toMatch(
+      /No sector rate/,
+    );
+    expect(run([SECTOR, FIXED], model('HOURLY')).priced).toBe(false);
+    expect(run([RATE, SECTOR], model('FIXED_ROUTE')).priced).toBe(false);
+  });
+
+  it('a fixed route is priced in either direction, and another route is on request', () => {
+    const out = run([FIXED], model('FIXED_ROUTE'));
+    expect(out.breakdown[0].amountMinor).toBe(7_000_000);
+    expect(ruleIds(out)).toEqual([FIXED.id]);
+    const C = point('C', 0, 3);
+    const other = run([FIXED], { ...model('FIXED_ROUTE'), destination: C });
+    expect(other.priced).toBe(false);
+    expect(other.warnings.join(' ')).toMatch(/No fixed price/);
+  });
+
+  it('positions at the hourly rate, or says it cannot without one', () => {
+    const C = point('C', 0, -3); // 300 km from A, 900 km from B
+    const positioning = rule('POSITIONING', { rateFactor: 0.5 });
+    const based = {
+      aircraft: { ...AIRCRAFT, pricingModel: 'SECTOR' as const, base: C },
+    };
+    const withRate = run([SECTOR, RATE, positioning], based);
+    expect(withRate.breakdown.map((l) => [l.code, l.amountMinor])).toEqual([
+      ['OPERATING', 8_000_000],
+      ['POSITIONING', 2_500_000],
+      ['REPOSITIONING', 7_500_000],
+    ]);
+    expect(ruleIds(withRate)).toContain(RATE.id);
+    const without = run([SECTOR, positioning], based);
+    expect(without.priced).toBe(true);
+    expect(without.breakdown.map((l) => l.code)).toEqual(['OPERATING']);
+    expect(without.warnings.join(' ')).toMatch(
+      /No hourly rate is set; positioning/,
+    );
+    expect(without.exclusions).toContain('Aircraft positioning');
+  });
+
+  it('a sector aircraft without an hourly rate does not return to base between flights', () => {
+    const result = run(
+      [
+        SECTOR,
+        rule('POSITIONING', { rateFactor: 0.5 }),
+        rule('OVERNIGHT', { amountMinor: 1 }),
+        rule('CREW', { amountMinor: 1 }),
+      ],
+      {
+        ...model('SECTOR'),
+        destination: B,
+        returnAt: at('2026-12-07T04:00:00Z'),
+      },
+    );
+    // Based at the origin A: returning to base would need the hourly rate.
+    expect(result.roundTrip?.options).toEqual([
+      expect.objectContaining({ strategy: 'WAIT', complete: true }),
+      expect.objectContaining({ strategy: 'RETURN_TO_BASE', complete: false }),
+    ]);
+    expect(result.roundTrip?.strategy).toBe('WAIT');
+  });
+
+  describe('every operator rate is normalised before commission and tax', () => {
+    const addOn = rule('COMMISSION', { percent: 10, mode: 'ADD_ON' });
+    const deducted = rule('COMMISSION', { percent: 10, mode: 'DEDUCTED' });
+    const gst = rule('TAX', { name: 'GST', percent: 18 });
+    // An exclusive 1,00,00,000 flight: with tax, plus 10%, or both.
+    const cases = [
+      { flags: {}, amount: 10_000_000 },
+      { flags: { taxInclusive: true }, amount: 11_800_000 },
+      { flags: { commissionInclusive: true }, amount: 11_000_000 },
+      {
+        flags: { taxInclusive: true, commissionInclusive: true },
+        amount: 12_980_000,
+      },
+    ];
+    const rates = (amountMinor: number, flags: object) => ({
+      HOURLY: rule(
+        'HOURLY_RATE',
+        { amountMinor, currency: 'INR', ...flags },
+        'AIRCRAFT',
+        'ac1',
+      ),
+      SECTOR: rule(
+        'SECTOR_RATE',
+        { amountMinor, currency: 'INR', ...flags },
+        'AIRCRAFT',
+        'ac1',
+      ),
+      FIXED_ROUTE: rule(
+        'FIXED_ROUTE',
+        {
+          currency: 'INR',
+          ...flags,
+          routes: [{ originId: 'A', destinationId: 'B', amountMinor }],
+        },
+        'AIRCRAFT',
+        'ac1',
+      ),
+    });
+
+    for (const pricingModel of ['HOURLY', 'SECTOR', 'FIXED_ROUTE'] as const) {
+      for (const { flags, amount } of cases) {
+        it(`${pricingModel} ${JSON.stringify(flags)}: commission and tax once`, () => {
+          const rate = rates(amount, flags)[pricingModel];
+          const result = run([rate, addOn, gst], model(pricingModel));
+          expect(result.baseMinor).toBe(10_000_000);
+          expect(result.feesMinor).toBe(1_000_000);
+          expect(result.taxMinor).toBe(1_980_000);
+          expect(result.totalMinor).toBe(12_980_000);
+        });
+      }
+      it(`${pricingModel}: under deducted commission only tax is taken out`, () => {
+        const rate = rates(11_800_000, {
+          taxInclusive: true,
+          commissionInclusive: true,
+        })[pricingModel];
+        const result = run([rate, deducted, gst], model(pricingModel));
+        expect(result.baseMinor).toBe(10_000_000);
+        expect(result.feesMinor).toBe(0);
+        expect(result.totalMinor).toBe(11_800_000);
+        expect(result.operatorPayableMinor).toBe(9_000_000);
+      });
+    }
+  });
+});
+
+describe('trip charges, parking and the per-day minimum (M5 4c)', () => {
+  const at = (iso: string) => new Date(iso);
+  const codes = (result: ReturnType<typeof run>) =>
+    Object.fromEntries(result.breakdown.map((l) => [l.code, l.amountMinor]));
+  const sum = (result: ReturnType<typeof run>) =>
+    result.breakdown.reduce((total, line) => total + line.amountMinor, 0);
+  const CHARGES = [
+    rule('FUEL_SURCHARGE', { amountMinor: 100_000 }, 'OPERATOR', 'op1'),
+    rule('PERMIT', { amountMinor: 50_000 }, 'OPERATOR', 'op1'),
+    rule('NAVIGATION', { amountMinor: 20_000 }, 'OPERATOR', 'op1'),
+    rule(
+      'OTHER',
+      { label: 'De-icing', amountMinor: 30_000 },
+      'OPERATOR',
+      'op1',
+    ),
+  ];
+
+  it('charges fuel, permits and navigation per flight and the other charge once', () => {
+    const one = run([RATE, ...CHARGES]);
+    expect(codes(one)).toMatchObject({
+      FUEL_SURCHARGE: 100_000,
+      PERMIT: 50_000,
+      NAVIGATION: 20_000,
+      OTHER: 30_000,
+    });
+    expect(one.breakdown.find((l) => l.code === 'OTHER')?.label).toBe(
+      'De-icing',
+    );
+    const both = run([RATE, ...CHARGES], {
+      returnAt: at('2026-12-05T05:30:00Z'),
+    });
+    expect(codes(both)).toMatchObject({
+      FUEL_SURCHARGE: 200_000,
+      PERMIT: 100_000,
+      NAVIGATION: 40_000,
+      OTHER: 30_000,
+    });
+  });
+
+  it('trip charges are exclusive amounts: an inclusive rate does not reduce them', () => {
+    const inclusive = rule(
+      'HOURLY_RATE',
+      {
+        amountMinor: 12_980_000,
+        currency: 'INR',
+        taxInclusive: true,
+        commissionInclusive: true,
+      },
+      'AIRCRAFT',
+      'ac1',
+    );
+    const result = run([
+      inclusive,
+      ...CHARGES,
+      rule('COMMISSION', { percent: 10, mode: 'ADD_ON' }),
+      rule('TAX', { name: 'GST', percent: 18 }),
+    ]);
+    // 1,00,00,000 flying + 2,00,000 charges, then 10% and 18% once each.
+    expect(result.baseMinor).toBe(10_200_000);
+    expect(result.feesMinor).toBe(1_020_000);
+    expect(result.taxMinor).toBe(2_019_600);
+    expect(result.totalMinor).toBe(13_239_600);
+    expect(result.totalMinor).toBe(sum(result));
+  });
+
+  it('a zero charge adds no line', () => {
+    const result = run([RATE, rule('PERMIT', { amountMinor: 0 })]);
+    expect(codes(result).PERMIT).toBeUndefined();
+  });
+
+  it('a per-day minimum bills the days together, not each flight', () => {
+    const perDay = rule('MIN_BILLABLE_HOURS', { hours: 2, per: 'DAY' });
+    // One way, 1 h flown, 2 h a day: 1 h short.
+    const one = run([RATE, perDay]);
+    expect(codes(one)).toMatchObject({
+      OPERATING: 10_000_000,
+      MIN_BILLABLE: 10_000_000,
+    });
+    // Same day out and back: 2 h flown covers the day.
+    const sameDay = run([RATE, perDay], {
+      returnAt: at('2026-12-05T08:00:00Z'),
+    });
+    expect(codes(sameDay).MIN_BILLABLE).toBeUndefined();
+    // 5 to 7 December is 3 days: 6 h billed, 2 h flown.
+    const threeDays = run([RATE, perDay], {
+      returnAt: at('2026-12-07T08:00:00Z'),
+    });
+    expect(codes(threeDays)).toMatchObject({
+      OPERATING: 10_000_000,
+      OPERATING_RETURN: 10_000_000,
+      MIN_BILLABLE: 40_000_000,
+    });
+    expect(threeDays.totalMinor).toBe(sum(threeDays));
+    // Per leg (no `per`), the same day bills 2 h on each flight.
+    const perLeg = run([RATE, rule('MIN_BILLABLE_HOURS', { hours: 2 })], {
+      returnAt: at('2026-12-05T08:00:00Z'),
+    });
+    expect(codes(perLeg)).toMatchObject({
+      OPERATING: 20_000_000,
+      OPERATING_RETURN: 20_000_000,
+    });
+  });
+
+  describe('parking', () => {
+    const parked = (parkingMinor: number) => ({
+      ...B,
+      charges: {
+        currency: 'INR',
+        categories: [
+          {
+            category: 'LIGHT_JET',
+            landingMinor: 0,
+            parkingMinor,
+            handlingMinor: 0,
+          },
+        ],
+      },
+    });
+    const WAITING = [
+      RATE,
+      rule('OVERNIGHT', { amountMinor: 1_000 }),
+      rule('CREW', { amountMinor: 1_000 }),
+      rule('WAITING', { amountMinor: 1_000, freeHours: 0 }),
+    ];
+
+    it('charges the destination parking per night the aircraft waits there', () => {
+      const result = run(WAITING, {
+        destination: parked(500_000),
+        returnAt: at('2026-12-07T04:00:00Z'),
+      });
+      expect(result.roundTrip?.strategy).toBe('WAIT');
+      expect(codes(result).PARKING).toBe(1_000_000);
+      expect(result.totalMinor).toBe(sum(result));
+    });
+
+    it('charges no parking on a same-day return', () => {
+      const result = run(WAITING, {
+        destination: parked(500_000),
+        returnAt: at('2026-12-05T09:00:00Z'),
+      });
+      expect(codes(result).PARKING).toBeUndefined();
+    });
+
+    it('parking not on record is a warning and an exclusion, not a lost strategy', () => {
+      const result = run(WAITING, { returnAt: at('2026-12-07T04:00:00Z') });
+      expect(result.roundTrip?.options[0]).toMatchObject({
+        strategy: 'WAIT',
+        complete: true,
+      });
+      expect(result.warnings.join(' ')).toMatch(/Parking charges at B/);
+      expect(result.exclusions).toContain('Parking at B');
+    });
+  });
+});
+
+describe('markup, service fee and discount (M5 4c)', () => {
+  const sum = (result: ReturnType<typeof run>) =>
+    result.breakdown.reduce((total, line) => total + line.amountMinor, 0);
+  const gst = rule('TAX', { name: 'GST', percent: 18 });
+  const PLATFORM = [
+    gst,
+    rule('MARKUP', { percent: 5 }),
+    rule('SERVICE_FEE', { amountMinor: 200_000 }),
+    rule('DISCOUNT', { name: 'Launch offer', percent: 10 }),
+  ];
+
+  it('adds markup and fee, takes the discount before tax, and Flyviman funds it', () => {
+    const result = run([
+      RATE,
+      rule('COMMISSION', { percent: 10, mode: 'ADD_ON' }),
+      ...PLATFORM,
+    ]);
+    expect(result.breakdown.map((l) => [l.code, l.amountMinor])).toEqual([
+      ['OPERATING', 10_000_000],
+      ['PLATFORM_FEE', 1_000_000],
+      ['MARKUP', 500_000],
+      ['SERVICE_FEE', 200_000],
+      ['DISCOUNT', -1_170_000],
+      ['TAX', 1_895_400],
+    ]);
+    expect(result.breakdown.find((l) => l.code === 'DISCOUNT')?.label).toBe(
+      'Launch offer',
+    );
+    expect(result).toMatchObject({
+      baseMinor: 10_000_000,
+      feesMinor: 1_700_000,
+      discountMinor: 1_170_000,
+      taxMinor: 1_895_400,
+      totalMinor: 12_425_400,
+      operatorPayableMinor: 10_000_000,
+      platformRevenueMinor: 530_000,
+    });
+    expect(result.totalMinor).toBe(sum(result));
+    expect(
+      result.operatorPayableMinor +
+        result.platformRevenueMinor +
+        result.taxMinor,
+    ).toBe(result.totalMinor);
+  });
+
+  it('holds under deducted commission too', () => {
+    const result = run([
+      RATE,
+      rule('COMMISSION', { percent: 10, mode: 'DEDUCTED' }),
+      ...PLATFORM,
+    ]);
+    expect(result).toMatchObject({
+      feesMinor: 700_000,
+      discountMinor: 1_070_000,
+      taxMinor: 1_733_400,
+      totalMinor: 11_363_400,
+      operatorPayableMinor: 9_000_000,
+      platformRevenueMinor: 630_000,
+    });
+    expect(result.totalMinor).toBe(sum(result));
+    expect(
+      result.operatorPayableMinor +
+        result.platformRevenueMinor +
+        result.taxMinor,
+    ).toBe(result.totalMinor);
+  });
+
+  it('a zero setting adds no line', () => {
+    const result = run([
+      RATE,
+      rule('MARKUP', { percent: 0 }),
+      rule('SERVICE_FEE', { amountMinor: 0 }),
+      rule('DISCOUNT', { name: 'Off', percent: 0 }),
+    ]);
+    expect(result.breakdown.map((l) => l.code)).toEqual(['OPERATING']);
+    expect(result.totalMinor).toBe(10_000_000);
+  });
+
+  it('an operator cannot set markup, a service fee or a discount', () => {
+    const result = run([
+      RATE,
+      rule('MARKUP', { percent: 20 }, 'OPERATOR', 'op1'),
+      rule('SERVICE_FEE', { amountMinor: 1 }, 'AIRCRAFT', 'ac1'),
+      rule('DISCOUNT', { name: 'Mine', percent: 20 }, 'OPERATOR', 'op1'),
+    ]);
+    expect(result.breakdown.map((l) => l.code)).toEqual(['OPERATING']);
   });
 });
 

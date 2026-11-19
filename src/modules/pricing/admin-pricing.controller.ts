@@ -95,7 +95,7 @@ export class AdminPricingRulesController {
   @ApiOperation({
     summary: 'End a pricing rule',
     description:
-      'Category rules only; the platform default then applies. Platform rules answer 409 `PRICING_RULE_REQUIRED`. Audited with the reason.',
+      'Category rules, after which the platform default applies, and platform `MARKUP`, `SERVICE_FEE` and `DISCOUNT` rules, which are optional. Other platform rules answer 409 `PRICING_RULE_REQUIRED`. Audited with the reason.',
   })
   @ApiOkResponse({ type: PricingRuleResponseDto })
   deactivate(

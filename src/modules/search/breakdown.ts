@@ -1,7 +1,11 @@
-/** Every flight line: the customer's legs, positioning and ferries. */
+/**
+ * Every flight line: the customer's legs (hourly, sector or fixed-route),
+ * the per-day minimum billable hours, positioning and ferries.
+ */
 const FLIGHT_LINES = new Set([
   'OPERATING',
   'OPERATING_RETURN',
+  'MIN_BILLABLE',
   'POSITIONING',
   'REPOSITIONING',
   'INTERIM_REPOSITIONING',

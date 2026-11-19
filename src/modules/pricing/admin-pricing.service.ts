@@ -18,6 +18,7 @@ import {
   checkRuleConfig,
   checkScopeRef,
   isAdminRuleType,
+  OPTIONAL_PLATFORM_TYPES,
   type AdminRuleType,
 } from './admin-rule-config.js';
 import type {
@@ -245,7 +246,10 @@ export class AdminPricingService {
   ): Promise<PricingRuleResponseDto> {
     const rule = await this.editableRule(id);
     if (!mayEdit(user.role, rule.type)) throw forbidden();
-    if (rule.scope === PricingRuleScope.PLATFORM) {
+    if (
+      rule.scope === PricingRuleScope.PLATFORM &&
+      !OPTIONAL_PLATFORM_TYPES.has(rule.type)
+    ) {
       throw new AppException(
         'PRICING_RULE_REQUIRED',
         'A platform rule cannot be ended, because every price relies on it. Change its value instead.',

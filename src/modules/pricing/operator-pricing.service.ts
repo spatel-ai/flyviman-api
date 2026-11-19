@@ -13,6 +13,8 @@ import { OperatorsService } from '../operators/operators.service.js';
 import type {
   AircraftPricingDto,
   AircraftPricingResponseDto,
+  FixedRouteDto,
+  MinHoursPer,
   OperatorPricingDto,
   OperatorPricingResponseDto,
 } from './dto/operator-pricing.dto.js';
@@ -28,11 +30,17 @@ const OPERATOR_TYPES = [
   PricingRuleType.WAITING,
   PricingRuleType.OVERNIGHT,
   PricingRuleType.CREW,
+  PricingRuleType.FUEL_SURCHARGE,
+  PricingRuleType.PERMIT,
+  PricingRuleType.NAVIGATION,
+  PricingRuleType.OTHER,
 ] as const;
 
 const AIRCRAFT_TYPES = [
   PricingRuleType.HOURLY_RATE,
   PricingRuleType.MIN_BILLABLE_HOURS,
+  PricingRuleType.SECTOR_RATE,
+  PricingRuleType.FIXED_ROUTE,
 ] as const;
 
 const RULE_SELECT = {
@@ -74,10 +82,6 @@ export class OperatorPricingService {
     const operatorId = await this.approvedOperatorOf(user);
     const desired = new Map<string, unknown>([
       [
-        PricingRuleType.MIN_BILLABLE_HOURS,
-        dto.minBillableHours == null ? null : { hours: dto.minBillableHours },
-      ],
-      [
         PricingRuleType.POSITIONING,
         dto.positioningRateFactor == null
           ? null
@@ -99,18 +103,18 @@ export class OperatorPricingService {
           : { amountMinor: dto.handlingFallbackMinor },
       ],
     ]);
-    // Round-trip charges: left out keeps what is in force; null clears.
-    if (dto.overnightMinor !== undefined) {
-      desired.set(
-        PricingRuleType.OVERNIGHT,
-        dto.overnightMinor == null ? null : { amountMinor: dto.overnightMinor },
-      );
-    }
-    if (dto.crewNightMinor !== undefined) {
-      desired.set(
-        PricingRuleType.CREW,
-        dto.crewNightMinor == null ? null : { amountMinor: dto.crewNightMinor },
-      );
+    // Optional charges: left out keeps what is in force; null clears.
+    const amounts = [
+      [PricingRuleType.OVERNIGHT, dto.overnightMinor],
+      [PricingRuleType.CREW, dto.crewNightMinor],
+      [PricingRuleType.FUEL_SURCHARGE, dto.fuelSurchargePerFlightMinor],
+      [PricingRuleType.PERMIT, dto.permitPerFlightMinor],
+      [PricingRuleType.NAVIGATION, dto.navigationPerFlightMinor],
+    ] as const;
+    for (const [type, amountMinor] of amounts) {
+      if (amountMinor !== undefined) {
+        desired.set(type, amountMinor == null ? null : { amountMinor });
+      }
     }
     await this.save(
       user,
@@ -120,13 +124,19 @@ export class OperatorPricingService {
       (current) => {
         // Read under the lock, so a field left out keeps the value in force
         // even when another save lands first.
-        const waiting = waitingConfig(
-          dto,
-          current.get(PricingRuleType.WAITING)?.config as
-            RuleConfigs['WAITING'] | undefined,
+        desired.set(
+          PricingRuleType.MIN_BILLABLE_HOURS,
+          minHoursConfig(
+            dto.minBillableHours,
+            dto.minBillableHoursPer,
+            storedConfig(current, 'MIN_BILLABLE_HOURS'),
+          ),
         );
+        const waiting = waitingConfig(dto, storedConfig(current, 'WAITING'));
         if (waiting !== undefined)
           desired.set(PricingRuleType.WAITING, waiting);
+        const other = otherConfig(dto, storedConfig(current, 'OTHER'));
+        if (other !== undefined) desired.set(PricingRuleType.OTHER, other);
         return desired;
       },
     );
@@ -138,10 +148,28 @@ export class OperatorPricingService {
     aircraftId: string,
   ): Promise<AircraftPricingResponseDto> {
     await this.ownAircraft(user, aircraftId);
-    return toAircraftDto(
+    const rules = await this.inForce(
+      PricingRuleScope.AIRCRAFT,
       aircraftId,
-      await this.inForce(PricingRuleScope.AIRCRAFT, aircraftId, AIRCRAFT_TYPES),
+      AIRCRAFT_TYPES,
     );
+    const routes = configOf(rules, 'FIXED_ROUTE')?.routes ?? [];
+    const names = new Map(
+      (
+        await this.prisma.location.findMany({
+          where: {
+            id: {
+              in: routes.flatMap((route) => [
+                route.originId,
+                route.destinationId,
+              ]),
+            },
+          },
+          select: { id: true, name: true },
+        })
+      ).map((location) => [location.id, location.name]),
+    );
+    return toAircraftDto(aircraftId, rules, names);
   }
 
   async setAircraft(
@@ -151,34 +179,104 @@ export class OperatorPricingService {
   ): Promise<AircraftPricingResponseDto> {
     await this.approvedOperatorOf(user);
     await this.ownAircraft(user, aircraftId);
-    const desired = new Map<string, unknown>([
-      [
-        PricingRuleType.HOURLY_RATE,
-        dto.hourlyRateMinor == null
-          ? null
-          : {
-              amountMinor: dto.hourlyRateMinor,
-              currency: 'INR',
-              taxInclusive: dto.taxInclusive,
-              commissionInclusive: dto.commissionInclusive,
-            },
-      ],
-      [
-        PricingRuleType.MIN_BILLABLE_HOURS,
-        dto.minBillableHours == null ? null : { hours: dto.minBillableHours },
-      ],
-    ]);
+    if (dto.fixedRoutes) await this.checkFixedRoutes(dto.fixedRoutes);
+    const flags = {
+      taxInclusive: dto.taxInclusive,
+      commissionInclusive: dto.commissionInclusive,
+    };
     await this.save(
       user,
       PricingRuleScope.AIRCRAFT,
       aircraftId,
       AIRCRAFT_TYPES,
-      () => desired,
+      (current) => {
+        // The flags belong to all the aircraft's rates: a rate left out is
+        // kept, under the flags sent.
+        const desired = new Map<string, unknown>([
+          [
+            PricingRuleType.HOURLY_RATE,
+            dto.hourlyRateMinor == null
+              ? null
+              : {
+                  amountMinor: dto.hourlyRateMinor,
+                  currency: 'INR',
+                  ...flags,
+                },
+          ],
+          [
+            PricingRuleType.MIN_BILLABLE_HOURS,
+            minHoursConfig(
+              dto.minBillableHours,
+              dto.minBillableHoursPer,
+              storedConfig(current, 'MIN_BILLABLE_HOURS'),
+            ),
+          ],
+        ]);
+        const sector =
+          dto.sectorRateMinor === undefined
+            ? storedConfig(current, 'SECTOR_RATE')?.amountMinor
+            : dto.sectorRateMinor;
+        if (sector !== undefined) {
+          desired.set(
+            PricingRuleType.SECTOR_RATE,
+            sector === null
+              ? null
+              : { amountMinor: sector, currency: 'INR', ...flags },
+          );
+        }
+        const routes =
+          dto.fixedRoutes === undefined
+            ? storedConfig(current, 'FIXED_ROUTE')?.routes
+            : dto.fixedRoutes;
+        if (routes !== undefined) {
+          desired.set(
+            PricingRuleType.FIXED_ROUTE,
+            routes === null || routes.length === 0
+              ? null
+              : {
+                  currency: 'INR',
+                  ...flags,
+                  routes: routes.map(
+                    ({ originId, destinationId, amountMinor }) => ({
+                      originId,
+                      destinationId,
+                      amountMinor,
+                    }),
+                  ),
+                },
+          );
+        }
+        return desired;
+      },
     );
     return this.getAircraft(user, aircraftId);
   }
 
   // --- Internals ----------------------------------------------------------
+
+  /** Each route between two different active locations, listed once. */
+  private async checkFixedRoutes(routes: FixedRouteDto[]): Promise<void> {
+    const ids = [
+      ...new Set(routes.flatMap((r) => [r.originId, r.destinationId])),
+    ];
+    const active = new Set(
+      (
+        await this.prisma.location.findMany({
+          where: { id: { in: ids }, isActive: true },
+          select: { id: true },
+        })
+      ).map((location) => location.id),
+    );
+    const problems = fixedRouteProblems(routes, active);
+    if (problems.length > 0) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'The fixed routes are not valid.',
+        HttpStatus.BAD_REQUEST,
+        problems,
+      );
+    }
+  }
 
   private async operatorOf(user: AuthUser): Promise<string> {
     const { operator } = await this.operators.accessFor(user);
@@ -336,6 +434,99 @@ export function waitingConfig(
   return { amountMinor, freeHours };
 }
 
+/**
+ * The minimum billable hours wanted: null clears; `per` left out keeps the
+ * stored one; `LEG` (or null) is stored as no `per`, so a rule saved
+ * unchanged stays equal and writes nothing.
+ */
+export function minHoursConfig(
+  hours: number | null,
+  per: MinHoursPer | null | undefined,
+  stored: RuleConfigs['MIN_BILLABLE_HOURS'] | undefined,
+): RuleConfigs['MIN_BILLABLE_HOURS'] | null {
+  if (hours == null) return null;
+  const wanted = per === undefined ? stored?.per : per;
+  return wanted === 'DAY' ? { hours, per: 'DAY' } : { hours };
+}
+
+/**
+ * The other charge wanted: undefined to leave it, null to clear it. Each of
+ * `otherChargeMinor` and `otherChargeLabel` left out keeps its stored
+ * value; a new charge needs a label. A label alone, with no charge on
+ * record, sets nothing.
+ */
+export function otherConfig(
+  dto: Pick<OperatorPricingDto, 'otherChargeMinor' | 'otherChargeLabel'>,
+  stored: RuleConfigs['OTHER'] | undefined,
+): RuleConfigs['OTHER'] | null | undefined {
+  if (dto.otherChargeMinor === null) return null;
+  if (
+    dto.otherChargeMinor === undefined &&
+    dto.otherChargeLabel === undefined
+  ) {
+    return undefined;
+  }
+  const amountMinor = dto.otherChargeMinor ?? stored?.amountMinor;
+  if (amountMinor === undefined) return undefined;
+  const label = dto.otherChargeLabel ?? stored?.label;
+  if (label === undefined) {
+    throw new AppException(
+      'VALIDATION_ERROR',
+      'The other charge needs a name.',
+      HttpStatus.BAD_REQUEST,
+      [
+        {
+          field: 'otherChargeLabel',
+          issue: 'is required with otherChargeMinor',
+        },
+      ],
+    );
+  }
+  return { label, amountMinor };
+}
+
+/** Problems with a list of fixed routes, given the active location ids. */
+export function fixedRouteProblems(
+  routes: FixedRouteDto[],
+  active: ReadonlySet<string>,
+): { field: string; issue: string }[] {
+  const problems: { field: string; issue: string }[] = [];
+  const seen = new Set<string>();
+  routes.forEach((route, index) => {
+    const at = `fixedRoutes[${index}]`;
+    for (const key of ['originId', 'destinationId'] as const) {
+      if (!active.has(route[key])) {
+        problems.push({
+          field: `${at}.${key}`,
+          issue: 'must be an active location',
+        });
+      }
+    }
+    if (route.originId === route.destinationId) {
+      problems.push({
+        field: `${at}.destinationId`,
+        issue: 'must differ from the origin',
+      });
+    }
+    const pair = [route.originId, route.destinationId].sort().join(':');
+    if (seen.has(pair)) {
+      problems.push({
+        field: at,
+        issue: 'lists a route already listed (either direction)',
+      });
+    }
+    seen.add(pair);
+  });
+  return problems;
+}
+
+function storedConfig<K extends keyof RuleConfigs>(
+  rules: Map<string, RuleRow>,
+  type: K,
+): RuleConfigs[K] | undefined {
+  return rules.get(type)?.config as RuleConfigs[K] | undefined;
+}
+
 function configOf<K extends keyof RuleConfigs>(
   rules: Map<string, RuleRow>,
   type: K,
@@ -348,9 +539,11 @@ function toOperatorDto(
 ): OperatorPricingResponseDto {
   const positioning = configOf(rules, 'POSITIONING');
   const waiting = configOf(rules, 'WAITING');
+  const minimum = configOf(rules, 'MIN_BILLABLE_HOURS');
+  const other = configOf(rules, 'OTHER');
   return {
     currency: 'INR',
-    minBillableHours: configOf(rules, 'MIN_BILLABLE_HOURS')?.hours ?? null,
+    minBillableHours: minimum?.hours ?? null,
     positioningRateFactor: positioning?.rateFactor ?? null,
     freeWithinKm: positioning ? (positioning.freeWithinKm ?? 0) : null,
     landingFallbackMinor: configOf(rules, 'LANDING')?.amountMinor ?? null,
@@ -359,20 +552,41 @@ function toOperatorDto(
     waitingFreeHours: waiting?.freeHours ?? null,
     overnightMinor: configOf(rules, 'OVERNIGHT')?.amountMinor ?? null,
     crewNightMinor: configOf(rules, 'CREW')?.amountMinor ?? null,
+    minBillableHoursPer: minimum ? (minimum.per ?? 'LEG') : null,
+    fuelSurchargePerFlightMinor:
+      configOf(rules, 'FUEL_SURCHARGE')?.amountMinor ?? null,
+    permitPerFlightMinor: configOf(rules, 'PERMIT')?.amountMinor ?? null,
+    navigationPerFlightMinor:
+      configOf(rules, 'NAVIGATION')?.amountMinor ?? null,
+    otherChargeMinor: other?.amountMinor ?? null,
+    otherChargeLabel: other?.label ?? null,
   };
 }
 
 function toAircraftDto(
   aircraftId: string,
   rules: Map<string, RuleRow>,
+  names: Map<string, string>,
 ): AircraftPricingResponseDto {
   const rate = configOf(rules, 'HOURLY_RATE');
+  const sector = configOf(rules, 'SECTOR_RATE');
+  const fixed = configOf(rules, 'FIXED_ROUTE');
+  const minimum = configOf(rules, 'MIN_BILLABLE_HOURS');
+  // Saved together, so any rate in force carries the aircraft's flags.
+  const flags = rate ?? sector ?? fixed;
   return {
     aircraftId,
     currency: 'INR',
     hourlyRateMinor: rate?.amountMinor ?? null,
-    taxInclusive: rate?.taxInclusive ?? false,
-    commissionInclusive: rate?.commissionInclusive ?? false,
-    minBillableHours: configOf(rules, 'MIN_BILLABLE_HOURS')?.hours ?? null,
+    taxInclusive: flags?.taxInclusive ?? false,
+    commissionInclusive: flags?.commissionInclusive ?? false,
+    minBillableHours: minimum?.hours ?? null,
+    minBillableHoursPer: minimum ? (minimum.per ?? 'LEG') : null,
+    sectorRateMinor: sector?.amountMinor ?? null,
+    fixedRoutes: (fixed?.routes ?? []).map((route) => ({
+      ...route,
+      originName: names.get(route.originId) ?? '',
+      destinationName: names.get(route.destinationId) ?? '',
+    })),
   };
 }
