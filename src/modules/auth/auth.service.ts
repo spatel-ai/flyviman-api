@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppException } from '../../common/errors/app.exception.js';
 import type { Prisma } from '../../generated/prisma/client.js';
@@ -9,6 +9,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { UserAccount, UsersService } from '../users/users.service.js';
 import type { SessionTokens } from './auth.cookies.js';
 import { LoginFailures } from './login-failures.js';
+import { RefreshSuccessors } from './refresh-successors.js';
 import { hashPassword, verifyPassword } from '../../common/crypto/password.js';
 import { TokenService } from './token.service.js';
 
@@ -33,9 +34,25 @@ function unauthenticated(): AppException {
   );
 }
 
+/**
+ * Longest a refresh waits on Redis for a kept pair. Redis only helps racing
+ * requests here, so a slow one must not hold the session row (the pair is
+ * kept inside the rotation's transaction) or the request.
+ */
+const SUCCESSOR_TIMEOUT_MS = 250;
+
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Timed out')), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** Sign-in, token rotation and sign-out. Owns the Session table. */
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   /** Verified when the email is unknown, so both cases take the same time. */
   private readonly decoyHash = hashPassword(randomUUID());
 
@@ -46,6 +63,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     private readonly failures: LoginFailures,
+    private readonly successors: RefreshSuccessors,
   ) {}
 
   async login(
@@ -113,25 +131,31 @@ export class AuthService {
     });
   }
 
-  /** Exchanges a refresh token for a new pair. Each token works once. */
+  /**
+   * Exchanges a refresh token for a new pair. Each token works once; a
+   * request that loses a race for it within the grace period receives the
+   * same pair as the winner (`RefreshSuccessors`).
+   */
   async refresh(
     refreshToken: string | undefined,
     client: ClientInfo,
   ): Promise<SessionTokens> {
     if (!refreshToken) throw unauthenticated();
 
+    const retiredHash = this.tokens.hashToken(refreshToken);
     const session = await this.prisma.session.findUnique({
-      where: { refreshTokenHash: this.tokens.hashToken(refreshToken) },
+      where: { refreshTokenHash: retiredHash },
     });
     if (!session) throw unauthenticated();
+    const graceMs =
+      this.config.getOrThrow<number>('REFRESH_ROTATION_GRACE_SECONDS') * 1000;
 
     if (session.revokedAt) {
       // A rotated token presented again within the grace period is treated
       // as two requests racing (two tabs, or the web server and the browser):
-      // it is refused but the sign-in survives. After that it is treated as
-      // stolen, and every session descended from that sign-in is ended.
-      const graceMs =
-        this.config.getOrThrow<number>('REFRESH_ROTATION_GRACE_SECONDS') * 1000;
+      // it gets the pair the winner was given, and the sign-in survives.
+      // After that it is treated as stolen, and every session descended from
+      // that sign-in is ended.
       const age = Date.now() - session.revokedAt.getTime();
       if (age >= graceMs) {
         await this.revokeFamily(session.familyId);
@@ -141,8 +165,9 @@ export class AuthService {
           entityId: session.userId,
           actor: null,
         });
+        throw unauthenticated();
       }
-      throw unauthenticated();
+      return this.replay(retiredHash, session);
     }
     if (session.expiresAt.getTime() <= Date.now()) throw unauthenticated();
 
@@ -154,15 +179,25 @@ export class AuthService {
 
     // Retiring the old token and creating the new one happen together, so
     // the sign-in is never without a live token. Only one of two concurrent
-    // requests can claim the old one.
-    return this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.session.updateMany({
-        where: { id: session.id, revokedAt: null },
-        data: { revokedAt: new Date() },
+    // requests can claim the old one. The new pair is kept for the losers
+    // before the claim commits, so none of them can miss it.
+    let tokens: SessionTokens | null;
+    try {
+      tokens = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.session.updateMany({
+          where: { id: session.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        if (claimed.count !== 1) return null;
+        const issued = await this.issue(user.id, session.familyId, client, tx);
+        await this.keepSuccessor(retiredHash, issued, graceMs);
+        return issued;
       });
-      if (claimed.count !== 1) throw unauthenticated();
-      return this.issue(user.id, session.familyId, client, tx);
-    });
+    } catch (error) {
+      await this.successors.forget(retiredHash).catch(() => undefined);
+      throw error;
+    }
+    return tokens ?? this.replay(retiredHash, session);
   }
 
   /**
@@ -200,6 +235,24 @@ export class AuthService {
     });
   }
 
+  /**
+   * True for a refresh token that is still live or was rotated within the
+   * grace period: a request presenting it either rotates it (once only) or
+   * receives the winner's pair, so it is not counted against the token's
+   * rate limit. Unknown and long-retired tokens are counted.
+   */
+  async isRefreshInPlay(refreshToken: string): Promise<boolean> {
+    const session = await this.prisma.session.findUnique({
+      where: { refreshTokenHash: this.tokens.hashToken(refreshToken) },
+      select: { revokedAt: true },
+    });
+    if (!session) return false;
+    if (!session.revokedAt) return true;
+    const graceMs =
+      this.config.getOrThrow<number>('REFRESH_ROTATION_GRACE_SECONDS') * 1000;
+    return Date.now() - session.revokedAt.getTime() < graceMs;
+  }
+
   /** True while the sign-in has at least one refresh token still in force. */
   async isFamilyActive(familyId: string): Promise<boolean> {
     const live = await this.prisma.session.findFirst({
@@ -235,6 +288,50 @@ export class AuthService {
       refreshToken,
       csrfToken: this.tokens.randomToken(),
     };
+  }
+
+  /**
+   * Best effort: if Redis cannot keep the pair, the winner still gets it and
+   * racing requests are refused as they were before replay existed.
+   */
+  private async keepSuccessor(
+    retiredHash: string,
+    tokens: SessionTokens,
+    ttlMs: number,
+  ): Promise<void> {
+    try {
+      await within(
+        this.successors.keep(retiredHash, tokens, ttlMs),
+        SUCCESSOR_TIMEOUT_MS,
+      );
+    } catch {
+      this.logger.warn(
+        'Could not keep a refreshed session for racing requests',
+      );
+    }
+  }
+
+  /** Hands a racing request the winner's pair, or refuses it. */
+  private async replay(
+    retiredHash: string,
+    session: { userId: string; familyId: string },
+  ): Promise<SessionTokens> {
+    // A sign-out or suspension in the meantime ends the sign-in for good.
+    if (!(await this.isFamilyActive(session.familyId))) throw unauthenticated();
+    // Unreadable (Redis down or slow), expired or used up: refused, never
+    // minted.
+    const tokens = await within(
+      this.successors.take(retiredHash),
+      SUCCESSOR_TIMEOUT_MS,
+    ).catch(() => null);
+    if (!tokens) throw unauthenticated();
+    await this.audit.record({
+      action: 'auth.refresh_replayed',
+      entityType: 'User',
+      entityId: session.userId,
+      actor: null,
+    });
+    return tokens;
   }
 
   private async revokeFamily(familyId: string): Promise<void> {

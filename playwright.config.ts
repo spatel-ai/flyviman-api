@@ -53,7 +53,8 @@ export default defineConfig({
       },
     },
     {
-      // Second server with the real limits, for the rate-limit tests only.
+      // Second server with the real limits and grace period, for the
+      // rate-limit tests and racing refreshes (e2e/auth.e2e.ts).
       command: `until [ -f dist/main.js ] && curl -sf ${ORIGIN}/api/v1/health >/dev/null; do sleep 1; done; npm run start:prod`,
       url: `${STRICT_ORIGIN}/api/v1/health`,
       reuseExistingServer: !process.env.CI,
