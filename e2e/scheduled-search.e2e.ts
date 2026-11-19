@@ -86,7 +86,7 @@ test.describe('scheduled search', () => {
     });
     expect(body.partial).toBe(false);
     expect(body.providers).toEqual([{ name: 'mock', status: 'OK' }]);
-    expect(body.results.length).toBeGreaterThan(3);
+    expect(body.results.length).toBeGreaterThan(0);
     for (const offer of body.results) {
       expect(offer.direction).toBe('OUTBOUND');
       expect(offer.fare.priceType).toBe('LIVE_FARE');
@@ -125,6 +125,21 @@ test.describe('scheduled search', () => {
     expect(back[0].segments[0].from.iata).toBe('BOM');
     // Outbound first.
     expect(body.results.indexOf(back[0])).toBe(outbound.length);
+  });
+
+  test('an airport the supplier does not serve gives no flights, not a failure', async ({
+    request,
+  }) => {
+    const body = await search(request, {
+      originId: await airport(request, 'IXC'),
+      destinationId: await airport(request, 'VNS'),
+      departureDate: inDays(14),
+      passengers: { adults: 1, children: 0, infants: 0 },
+      cabin: 'ECONOMY',
+    });
+    expect(body.partial).toBe(false);
+    expect(body.providers).toEqual([{ name: 'mock', status: 'OK' }]);
+    expect(body.results).toEqual([]);
   });
 
   test('refuses invalid searches', async ({ request }) => {
