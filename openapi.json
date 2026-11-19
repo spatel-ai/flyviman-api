@@ -4009,6 +4009,150 @@
           "enquiries"
         ]
       }
+    },
+    "/api/v1/admin/enquiries": {
+      "get": {
+        "description": "Newest first. Personal data: contact details and message are never logged.",
+        "operationId": "AdminEnquiriesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "handled",
+            "required": false,
+            "in": "query",
+            "description": "`true` for handled enquiries only, `false` for unhandled only.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "topic",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EnquiryTopic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminEnquiryResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List sales enquiries",
+        "tags": [
+          "admin: enquiries"
+        ]
+      }
+    },
+    "/api/v1/admin/enquiries/{id}": {
+      "get": {
+        "operationId": "AdminEnquiriesController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEnquiryResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One sales enquiry",
+        "tags": [
+          "admin: enquiries"
+        ]
+      }
+    },
+    "/api/v1/admin/enquiries/{id}/handle": {
+      "post": {
+        "description": "Sets `handledAt` and writes an audit record (topic and ids only). Repeating the call on a handled enquiry changes nothing and records nothing.",
+        "operationId": "AdminEnquiriesController_handle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEnquiryResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Mark an enquiry handled",
+        "tags": [
+          "admin: enquiries"
+        ]
+      }
     }
   },
   "info": {
@@ -8865,6 +9009,61 @@
         "required": [
           "reference",
           "receivedAt"
+        ]
+      },
+      "AdminEnquiryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-ENQ-7K2M9Q"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "topic": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnquiryTopic"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "handledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When operations marked it handled; null while unhandled."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "name",
+          "email",
+          "phone",
+          "topic",
+          "message",
+          "handledAt",
+          "createdAt"
         ]
       }
     }
