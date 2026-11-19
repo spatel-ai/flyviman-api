@@ -89,7 +89,11 @@ describe('clientAddressMiddleware', () => {
   function run(secret: string | undefined, header: string | undefined) {
     const request = fakeRequest(header);
     const next = vi.fn();
-    clientAddressMiddleware(secret)(request, {} as Response, next);
+    clientAddressMiddleware(secret, { warn: vi.fn() })(
+      request,
+      {} as Response,
+      next,
+    );
     expect(next).toHaveBeenCalledOnce();
     return request;
   }
@@ -122,5 +126,36 @@ describe('clientAddressMiddleware', () => {
 
   it('falls back to the connection address without a header', () => {
     expect(clientAddress(run(SECRET, undefined))).toBe('10.0.0.1');
+  });
+
+  it('warns once when a header fails verification, without its value', () => {
+    const logger = { warn: vi.fn() };
+    const middleware = clientAddressMiddleware(SECRET, logger);
+    const forged = `203.0.113.7 ${Math.floor(Date.now() / 1000)} forged`;
+    for (const header of [forged, forged, undefined]) {
+      const request = fakeRequest(header);
+      middleware(request, {} as Response, vi.fn());
+      expect(clientAddress(request)).toBe('10.0.0.1');
+    }
+    expect(logger.warn).toHaveBeenCalledOnce();
+    const message = String(logger.warn.mock.calls[0][0]);
+    expect(message).not.toContain('203.0.113.7');
+    expect(message).not.toContain(SECRET);
+  });
+
+  it('does not warn for valid headers, or with no secret', () => {
+    const logger = { warn: vi.fn() };
+    const signed = clientAddressMiddleware(SECRET, logger);
+    signed(
+      fakeRequest(signClientAddress('203.0.113.7', SECRET)),
+      {} as Response,
+      vi.fn(),
+    );
+    clientAddressMiddleware(undefined, logger)(
+      fakeRequest('203.0.113.7 1 forged'),
+      {} as Response,
+      vi.fn(),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

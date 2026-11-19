@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { normalizeIp } from '@nestjs/throttler';
 import type { Redis } from 'ioredis';
 import { AppException } from '../../common/errors/app.exception.js';
 import { REDIS } from '../../redis/redis.module.js';
@@ -14,6 +15,18 @@ export const LOGIN_MAX_FAILURES = 10;
  */
 export const LOGIN_MAX_FAILURES_ANY_ADDRESS = 100;
 export const LOGIN_LOCK_SECONDS = 15 * 60;
+
+/**
+ * The address part of a lockout key: an IPv6 address becomes its /64, as
+ * the rate limiter counts it (`@nestjs/throttler`'s `normalizeIp`), so one
+ * visitor cannot sidestep the lockout by rotating through its own subnet.
+ * IPv4 and IPv4-mapped addresses are kept exactly as they are (D-123).
+ */
+export function lockoutAddress(ipAddress: string | null): string {
+  if (!ipAddress) return 'unknown';
+  const normalised = normalizeIp(ipAddress);
+  return normalised.endsWith('/64') ? normalised : ipAddress;
+}
 
 const COUNT = `
 local n = redis.call('INCR', KEYS[1])
@@ -81,6 +94,6 @@ export class LoginFailures {
   }
 
   private pairKey(email: string, ipAddress: string | null): string {
-    return `${this.emailKey(email)}:${ipAddress ?? 'unknown'}`;
+    return `${this.emailKey(email)}:${lockoutAddress(ipAddress)}`;
   }
 }

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
+import { Logger } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 
 /**
@@ -63,13 +64,28 @@ const verified = new WeakMap<object, string>();
  * Records the signed visitor address of each request whose header verifies.
  * Without a secret (local development, tests) the header is never trusted,
  * so behaviour is exactly as before: the socket address (`request.ip`).
+ *
+ * A header that fails to verify is ignored too, with one warning per
+ * process (D-123): it usually means the two hosts' secrets or clocks
+ * differ, which silently puts every visitor back on one shared identity.
+ * The warning never includes the header's value or the secret.
  */
-export function clientAddressMiddleware(secret: string | undefined) {
+export function clientAddressMiddleware(
+  secret: string | undefined,
+  logger: Pick<Logger, 'warn'> = new Logger('ClientAddress'),
+) {
+  let warned = false;
   return (request: Request, _response: Response, next: NextFunction): void => {
-    const address = secret
-      ? verifyClientAddress(request.header(CLIENT_ADDRESS_HEADER), secret)
-      : null;
-    if (address) verified.set(request, address);
+    const header = secret ? request.header(CLIENT_ADDRESS_HEADER) : undefined;
+    const address = header ? verifyClientAddress(header, secret!) : null;
+    if (address) {
+      verified.set(request, address);
+    } else if (header && !warned) {
+      warned = true;
+      logger.warn(
+        `A ${CLIENT_ADDRESS_HEADER} header failed verification and was ignored; check that WEB_PROXY_SECRET matches on both hosts and their clocks agree. Further failures are not logged.`,
+      );
+    }
     next();
   };
 }
