@@ -14,8 +14,8 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
+import { WebhookRateLimit } from '../../common/rate-limit/rate-limit.js';
 import { Public, SkipCsrf } from '../auth/auth.decorators.js';
 import { WebhookAckResponseDto } from './dto/webhook-ack-response.dto.js';
 import { PaymentWebhooksService } from './payment-webhooks.service.js';
@@ -23,12 +23,14 @@ import { PaymentWebhooksService } from './payment-webhooks.service.js';
 /**
  * Called by the payment gateway, not by a browser: authorised by the
  * signature over the raw body (app.setup.ts keeps it unparsed), so no
- * session, no CSRF check and no per-address limit.
+ * session and no CSRF check. Limited per address on its own, generous tier
+ * (`RATE_LIMIT_WEBHOOK_PER_MINUTE`), so a flood of forged calls is cut off
+ * before the signature is computed.
  */
 @ApiTags('webhooks')
 @Public()
 @SkipCsrf()
-@SkipThrottle()
+@WebhookRateLimit()
 @Controller('webhooks/payments')
 export class PaymentWebhooksController {
   constructor(private readonly webhooks: PaymentWebhooksService) {}
@@ -38,7 +40,7 @@ export class PaymentWebhooksController {
   @ApiOperation({
     summary: 'Gateway notification',
     description:
-      'For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet.',
+      'For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).',
   })
   @ApiHeader({ name: 'x-razorpay-signature', required: true })
   @ApiHeader({ name: 'x-razorpay-event-id', required: true })

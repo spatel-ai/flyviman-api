@@ -6,6 +6,7 @@ import {
   registerCustomer,
   uniqueEmail,
 } from './support/data.js';
+import { withPrisma } from './support/db.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
 test.describe('GET /admin/users', () => {
@@ -98,6 +99,48 @@ test.describe('PATCH /admin/users/:id/status', () => {
     });
     expect((await reinstate.json()).data.status).toBe('ACTIVE');
     await customer.dispose();
+  });
+
+  test('a suspension ends every session at once, so none survives a reinstatement', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const customer = await playwright.request.newContext({ baseURL });
+    const { id, email } = await registerCustomer(customer);
+    // A second sign-in on another device.
+    const other = await playwright.request.newContext({ baseURL });
+    const login = await other.post('auth/login', {
+      data: { email, password: PASSWORD },
+    });
+    expect(login.status()).toBe(200);
+
+    await signIn(request, 'superAdmin');
+    const headers = await csrfHeaders(request);
+    const suspend = await request.patch(`admin/users/${id}/status`, {
+      headers,
+      data: { status: 'SUSPENDED', reason: 'Account takeover suspected.' },
+    });
+    expect(suspend.status()).toBe(200);
+
+    const live = await withPrisma((prisma) =>
+      prisma.session.count({ where: { userId: id, revokedAt: null } }),
+    );
+    expect(live).toBe(0);
+
+    // Reinstated: the refresh tokens held before the suspension stay dead.
+    const reinstate = await request.patch(`admin/users/${id}/status`, {
+      headers,
+      data: { status: 'ACTIVE', reason: 'Owner verified.' },
+    });
+    expect(reinstate.status()).toBe(200);
+    for (const device of [customer, other]) {
+      const refreshed = await device.post('auth/refresh', {
+        headers: await csrfHeaders(device),
+      });
+      expect(refreshed.status()).toBe(401);
+    }
+    await Promise.all([customer, other].map((device) => device.dispose()));
   });
 
   test('needs a reason and an allowed status', async ({

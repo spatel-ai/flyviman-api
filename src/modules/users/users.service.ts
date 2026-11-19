@@ -46,6 +46,12 @@ export const STAFF_ROLES: Role[] = [
 
 export type Identifier = { email: string } | { phone: string };
 
+/** Ends every sign-in of a user, inside the caller's transaction. */
+export type SessionRevoker = (
+  userId: string,
+  db: Prisma.TransactionClient,
+) => Promise<void>;
+
 const ACCOUNT = {
   id: true,
   email: true,
@@ -71,6 +77,9 @@ function notFound(): AppException {
 /** Owns the User table. Other modules read users only through this service. */
 @Injectable()
 export class UsersService {
+  /** Set by `auth`, which owns sessions (a registration, not a dependency). */
+  private sessionRevoker: SessionRevoker | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -78,6 +87,11 @@ export class UsersService {
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {}
+
+  /** Registered by the auth module, so a suspension ends every sign-in. */
+  registerSessionRevoker(revoke: SessionRevoker): void {
+    this.sessionRevoker = revoke;
+  }
 
   /** For sign-in only: the one place a password hash leaves the table. */
   findCredentialsByEmail(email: string): Promise<UserCredentials | null> {
@@ -215,7 +229,8 @@ export class UsersService {
   /**
    * The one place an administrator changes a user's status. Allowed:
    * ACTIVE to SUSPENDED and back. Writes the audit record in the same
-   * transaction. Suspension takes effect on the user's next request.
+   * transaction. A suspension ends every sign-in of the account in that
+   * transaction too, so no refresh token outlives it.
    */
   async setStatus(
     actor: AuthUser,
@@ -284,6 +299,13 @@ export class UsersService {
         },
         tx,
       );
+      if (suspending) {
+        // Never suspend without signing out: refuse rather than skip.
+        if (!this.sessionRevoker) {
+          throw new Error('No session revoker registered');
+        }
+        await this.sessionRevoker(id, tx);
+      }
       return tx.user.findUniqueOrThrow({
         where: { id },
         omit: { passwordHash: true },

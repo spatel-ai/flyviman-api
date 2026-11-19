@@ -5,12 +5,14 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
 import type { LoginFailures } from './login-failures.js';
+import type { RefreshRotations } from './refresh-rotations.js';
 import type { RefreshSuccessors } from './refresh-successors.js';
 import { hashPassword } from '../../common/crypto/password.js';
 import type { TokenService } from './token.service.js';
 
 const CLIENT = { userAgent: 'vitest', ipAddress: '127.0.0.1' };
 const GRACE_SECONDS = 10;
+const ROTATIONS_PER_MINUTE = 30;
 
 function setup() {
   const session = {
@@ -36,12 +38,18 @@ function setup() {
     randomToken: vi.fn().mockReturnValue('random'),
     hashToken: (token: string) => `hash:${token}`,
   };
-  const config = { getOrThrow: () => GRACE_SECONDS };
+  const config = {
+    getOrThrow: (name: string) =>
+      name === 'REFRESH_ROTATIONS_PER_MINUTE'
+        ? ROTATIONS_PER_MINUTE
+        : GRACE_SECONDS,
+  };
   const successors = {
     keep: vi.fn().mockResolvedValue(undefined),
     take: vi.fn().mockResolvedValue(null),
     forget: vi.fn().mockResolvedValue(undefined),
   };
+  const rotations = { count: vi.fn().mockResolvedValue(1) };
   const service = new AuthService(
     {
       session,
@@ -53,8 +61,11 @@ function setup() {
     config as unknown as ConfigService,
     failures as unknown as LoginFailures,
     successors as unknown as RefreshSuccessors,
+    rotations as unknown as RefreshRotations,
   );
-  return { service, session, users, audit, failures, successors };
+  // Replays check the account; it is active unless a test says otherwise.
+  users.findAccount.mockResolvedValue(ACTIVE);
+  return { service, session, users, audit, failures, successors, rotations };
 }
 
 const ACTIVE = {
@@ -263,7 +274,7 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
       storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
     );
     session.findFirst.mockResolvedValue({ id: 'session-2' });
-    successors.take.mockResolvedValue(PAIR);
+    successors.take.mockResolvedValue({ tokens: PAIR, first: true });
 
     await expect(service.refresh('old', CLIENT)).resolves.toEqual(PAIR);
     // Never a new pair, and the sign-in is not ended.
@@ -283,7 +294,7 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
     users.findAccount.mockResolvedValue(ACTIVE);
     session.updateMany.mockResolvedValue({ count: 0 });
     session.findFirst.mockResolvedValue({ id: 'session-2' });
-    successors.take.mockResolvedValue(PAIR);
+    successors.take.mockResolvedValue({ tokens: PAIR, first: true });
 
     await expect(service.refresh('old', CLIENT)).resolves.toEqual(PAIR);
     expect(session.create).not.toHaveBeenCalled();
@@ -297,7 +308,7 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
         revokedAt: new Date(Date.now() - GRACE_SECONDS * 1000),
       }),
     );
-    successors.take.mockResolvedValue(PAIR);
+    successors.take.mockResolvedValue({ tokens: PAIR, first: true });
 
     await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
       code: 'UNAUTHENTICATED',
@@ -315,7 +326,7 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
       storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
     );
     session.findFirst.mockResolvedValue(null);
-    successors.take.mockResolvedValue(PAIR);
+    successors.take.mockResolvedValue({ tokens: PAIR, first: true });
 
     await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
       code: 'UNAUTHENTICATED',
@@ -405,5 +416,121 @@ describe('AuthService.isRefreshInPlay (rate limit, D-111)', () => {
     const { service, session } = setup();
     session.findUnique.mockResolvedValue(null);
     await expect(service.isRefreshInPlay('made-up')).resolves.toBe(false);
+  });
+});
+
+describe('AuthService.refresh, replay audit and suspension', () => {
+  const PAIR = {
+    accessToken: 'winner-access',
+    refreshToken: 'winner-refresh',
+    csrfToken: 'winner-csrf',
+  };
+
+  function racing() {
+    const context = setup();
+    context.session.findUnique.mockResolvedValue(
+      storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
+    );
+    context.session.findFirst.mockResolvedValue({ id: 'session-2' });
+    return context;
+  }
+
+  it('audits only the first hand-out of a rotation', async () => {
+    const { service, audit, successors } = racing();
+    successors.take.mockResolvedValue({ tokens: PAIR, first: false });
+
+    await expect(service.refresh('old', CLIENT)).resolves.toEqual(PAIR);
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it.each([UserStatus.SUSPENDED, UserStatus.PENDING_VERIFICATION])(
+    'refuses to replay to a %s user and ends the sign-in',
+    async (status) => {
+      const { service, session, users, successors } = racing();
+      users.findAccount.mockResolvedValue({ ...ACTIVE, status });
+      successors.take.mockResolvedValue({ tokens: PAIR, first: true });
+
+      await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+      });
+      expect(successors.take).not.toHaveBeenCalled();
+      expect(session.updateMany).toHaveBeenCalledWith({
+        where: { familyId: 'family-1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    },
+  );
+
+  it('refuses to replay to a deleted user', async () => {
+    const { service, users, successors } = racing();
+    users.findAccount.mockResolvedValue(null);
+    await expect(service.refresh('old', CLIENT)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(successors.take).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.refresh, rotations per sign-in', () => {
+  it('counts each rotation against the sign-in', async () => {
+    const { service, session, rotations } = setup();
+    session.findUnique.mockResolvedValue(storedSession());
+    rotations.count.mockResolvedValue(ROTATIONS_PER_MINUTE);
+
+    await expect(service.refresh('old', CLIENT)).resolves.toMatchObject({
+      refreshToken: 'random',
+    });
+    expect(rotations.count).toHaveBeenCalledWith('family-1');
+  });
+
+  it('refuses a rotation over the limit with 429, leaving the token live', async () => {
+    const { service, session, rotations } = setup();
+    session.findUnique.mockResolvedValue(storedSession());
+    rotations.count.mockResolvedValue(ROTATIONS_PER_MINUTE + 1);
+
+    const error = await service.refresh('old', CLIENT).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'RATE_LIMITED' });
+    expect((error as { getStatus(): number }).getStatus()).toBe(429);
+    // Not claimed, not revoked: it works again after the minute.
+    expect(session.updateMany).not.toHaveBeenCalled();
+    expect(session.create).not.toHaveBeenCalled();
+  });
+
+  it('allows the rotation when Redis cannot count it', async () => {
+    const { service, session, rotations } = setup();
+    session.findUnique.mockResolvedValue(storedSession());
+    rotations.count.mockRejectedValue(new Error('connection refused'));
+
+    await expect(service.refresh('old', CLIENT)).resolves.toMatchObject({
+      refreshToken: 'random',
+    });
+  });
+
+  it('does not count replays or refused tokens', async () => {
+    const { service, session, successors, rotations } = setup();
+    session.findUnique.mockResolvedValue(
+      storedSession({ revokedAt: new Date(Date.now() - 1_000) }),
+    );
+    session.findFirst.mockResolvedValue({ id: 'session-2' });
+    successors.take.mockResolvedValue(null);
+    await service.refresh('old', CLIENT).catch(() => undefined);
+    session.findUnique.mockResolvedValue(null);
+    await service.refresh('made-up', CLIENT).catch(() => undefined);
+    expect(rotations.count).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.isRefreshKnown (rate limit)', () => {
+  it.each([
+    ['a token with a session', { id: 'session-1' }, true],
+    ['a made-up token', null, false],
+  ])('%s', async (_name, row, expected) => {
+    const { service, session } = setup();
+    session.findUnique.mockResolvedValue(row);
+    await expect(service.isRefreshKnown('token')).resolves.toBe(expected);
+    expect(session.findUnique).toHaveBeenCalledWith({
+      where: { refreshTokenHash: 'hash:token' },
+      select: { id: true },
+    });
   });
 });

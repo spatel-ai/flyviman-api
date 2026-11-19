@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHmac, hkdfSync, randomUUID } from 'node:crypto';
 import {
   CallHandler,
   createParamDecorator,
@@ -30,6 +30,28 @@ const UUID =
 export const IDEMPOTENCY_WINDOW_SECONDS = 24 * 60 * 60;
 /** Claims tried before answering "still in progress" (each loss is a race). */
 const CLAIM_ATTEMPTS = 3;
+
+/** Label that derives the request-hash key from DATA_ENCRYPTION_KEY. */
+const HASH_KEY_INFO = 'flyviman:idempotency-request-hash:v1';
+
+/**
+ * The scope a key is claimed in: the caller, the method, the route template
+ * (`/api/v1/bookings/:id`, never the literal URL, so `/X` and `/x/` share a
+ * scope) and the path parameters, sorted by name.
+ */
+export function idempotencyScope(request: Request): string {
+  const owner = request.user?.id ?? 'anonymous';
+  const route = (request.route as { path?: unknown } | undefined)?.path;
+  const template =
+    typeof route === 'string'
+      ? `${request.baseUrl}${route}`
+      : `${request.baseUrl}${request.path}`;
+  const params = Object.entries(request.params ?? {}).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  const scope = `${owner}:${request.method}:${template}`;
+  return params.length ? `${scope}:${JSON.stringify(params)}` : scope;
+}
 
 /** The claim each request holds, read by `@IdempotencyClaimParam()`. */
 const claims = new WeakMap<Request, IdempotencyClaim>();
@@ -81,6 +103,11 @@ type Outcome =
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   private readonly lockMs: number;
+  /**
+   * Keys the stored request hash (HMAC-SHA256), so a copy of the table
+   * cannot be used to confirm a guess at what a request contained.
+   */
+  private readonly hashKey: Buffer;
 
   constructor(
     private readonly reflector: Reflector,
@@ -88,6 +115,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
     config: ConfigService,
   ) {
     this.lockMs = config.getOrThrow<number>('IDEMPOTENCY_LOCK_SECONDS') * 1000;
+    this.hashKey = Buffer.from(
+      hkdfSync(
+        'sha256',
+        Buffer.from(config.getOrThrow<string>('DATA_ENCRYPTION_KEY'), 'base64'),
+        Buffer.alloc(0),
+        HASH_KEY_INFO,
+        32,
+      ),
+    );
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -115,9 +151,8 @@ export class IdempotencyInterceptor implements NestInterceptor {
     // user, so every caller shares the "anonymous" scope there: a replay
     // still needs the same random key and the same body, and returns only
     // what that request returned (for enquiries, a reference and a time).
-    const owner = request.user?.id ?? 'anonymous';
-    const scope = `${owner}:${request.method}:${request.baseUrl}${request.path}`;
-    const requestHash = createHash('sha256')
+    const scope = idempotencyScope(request);
+    const requestHash = createHmac('sha256', this.hashKey)
       .update(JSON.stringify(request.body ?? null))
       .digest('hex');
 

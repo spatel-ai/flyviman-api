@@ -5,8 +5,10 @@ import {
   type APIResponse,
   type PlaywrightWorkerArgs,
 } from '@playwright/test';
-import { uniqueEmail } from './support/data.js';
+import { createHash } from 'node:crypto';
+import { registerCustomer, uniqueEmail } from './support/data.js';
 import { ACCOUNTS, STRICT_BASE_URL } from './support/accounts.js';
+import { withPrisma } from './support/db.js';
 import { cookie, csrfHeaders, signIn } from './support/session.js';
 
 test.describe('POST /auth/login', () => {
@@ -366,5 +368,103 @@ test.describe('POST /auth/refresh, racing requests (D-111)', () => {
 
     expect((await late.post('auth/refresh')).status()).toBe(401);
     await late.dispose();
+  });
+
+  test('audits one replay per rotation, however many racing requests it serves', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const customer = await playwright.request.newContext({ baseURL });
+    const { id } = await registerCustomer(customer);
+    const old = await cookie(customer, 'refresh_token');
+    const csrf = await cookie(customer, 'csrf_token');
+    const late = await holder(playwright, old, csrf);
+
+    expect((await late.post('auth/refresh')).status()).toBe(204);
+    for (let replay = 0; replay < 5; replay += 1) {
+      expect((await late.post('auth/refresh')).status()).toBe(204);
+    }
+
+    await signIn(request, 'superAdmin');
+    const audit = await request.get('admin/audit-logs', {
+      params: {
+        entityType: 'User',
+        entityId: id,
+        action: 'auth.refresh_replayed',
+      },
+    });
+    expect((await audit.json()).data).toHaveLength(1);
+    await Promise.all([customer, late].map((context) => context.dispose()));
+  });
+
+  test("never replays a pair to a user suspended since the winner's refresh", async ({
+    playwright,
+    baseURL,
+  }) => {
+    const customer = await playwright.request.newContext({ baseURL });
+    const { id } = await registerCustomer(customer);
+    const old = await cookie(customer, 'refresh_token');
+    const csrf = await cookie(customer, 'csrf_token');
+    const late = await holder(playwright, old, csrf);
+    const winner = await late.post('auth/refresh');
+    expect(winner.status()).toBe(204);
+
+    // Suspended without its sessions being ended (as a direct database
+    // change would): only the replay's own status check can refuse.
+    await withPrisma((prisma) =>
+      prisma.user.update({
+        where: { id },
+        data: { status: 'SUSPENDED', suspendedBy: 'PLATFORM' },
+      }),
+    );
+    const refused = await late.post('auth/refresh');
+    expect(refused.status()).toBe(401);
+    expect((await refused.json()).error.code).toBe('UNAUTHENTICATED');
+
+    // The whole sign-in is ended, the successor pair included.
+    const live = await withPrisma((prisma) =>
+      prisma.session.count({ where: { userId: id, revokedAt: null } }),
+    );
+    expect(live).toBe(0);
+    await Promise.all([customer, late].map((context) => context.dispose()));
+  });
+
+  test('refuses rotations of one sign-in beyond 30 a minute, leaving its token usable', async ({
+    playwright,
+    baseURL,
+  }) => {
+    const customer = await playwright.request.newContext({ baseURL });
+    await registerCustomer(customer);
+    // The same cookies, on the server with the real limits.
+    const strict = await playwright.request.newContext({
+      baseURL: STRICT_BASE_URL,
+      storageState: await customer.storageState(),
+    });
+
+    const statuses: number[] = [];
+    let refused: APIResponse | undefined;
+    for (let rotation = 1; rotation <= 31; rotation += 1) {
+      const response = await strict.post('auth/refresh', {
+        headers: await csrfHeaders(strict),
+      });
+      statuses.push(response.status());
+      if (response.status() !== 204) refused = response;
+    }
+    expect(statuses.slice(0, 30)).toEqual(Array(30).fill(204));
+    expect(statuses[30]).toBe(429);
+    expect((await refused!.json()).error.code).toBe('RATE_LIMITED');
+
+    // Not claimed: the refused token is still the sign-in's live one.
+    const token = await cookie(strict, 'refresh_token');
+    const session = await withPrisma((prisma) =>
+      prisma.session.findUnique({
+        where: {
+          refreshTokenHash: createHash('sha256').update(token!).digest('hex'),
+        },
+      }),
+    );
+    expect(session?.revokedAt).toBeNull();
+    await Promise.all([customer, strict].map((context) => context.dispose()));
   });
 });

@@ -6,6 +6,8 @@ import {
   MOCK_SIGNATURE_HEADER,
 } from '../src/integrations/payment/mock-payment-gateway.provider.js';
 import { hmacSha256Hex } from '../src/integrations/payment/payment-signature.js';
+import { STRICT_BASE_URL } from './support/accounts.js';
+import { asVisitor, visitorAddress } from './support/visitor.js';
 
 const PATH = 'webhooks/payments/mock';
 
@@ -33,7 +35,7 @@ function headersFor(
 }
 
 test.describe('POST /webhooks/payments/:provider', () => {
-  test('a correctly signed event is acknowledged, with no session, CSRF token or rate limit', async ({
+  test('a correctly signed event is acknowledged, with no session or CSRF token', async ({
     request,
   }) => {
     const body = capturedBody();
@@ -48,7 +50,8 @@ test.describe('POST /webhooks/payments/:provider', () => {
 
     expect(response.status()).toBe(200);
     expect((await response.json()).data).toEqual({ received: true });
-    expect(response.headers()['ratelimit-limit']).toBeUndefined();
+    // Limited per address on its own tier (lifted on this test server).
+    expect(response.headers()['ratelimit-limit']).toBe('100000');
   });
 
   test('the signature covers the exact bytes: the same event re-spaced is refused', async ({
@@ -162,5 +165,28 @@ test.describe('raw webhook bodies leave other routes alone', () => {
 
     expect(response.status()).toBe(401);
     expect((await response.json()).error.code).toBe('AUTH_INVALID_CREDENTIALS');
+  });
+});
+
+test.describe('POST /webhooks/payments/:provider, rate limit', () => {
+  test('allows 120 calls a minute from one address, then refuses with 429', async ({
+    playwright,
+  }) => {
+    // The server with the real limits, from a fresh address.
+    const request = await playwright.request.newContext({
+      baseURL: STRICT_BASE_URL,
+      extraHTTPHeaders: asVisitor(visitorAddress()),
+    });
+    const first = await request.post(PATH, { data: '{}' });
+    expect(first.headers()['ratelimit-limit']).toBe('120');
+
+    const statuses = [first.status()];
+    for (let call = 1; call <= 120; call += 1) {
+      statuses.push((await request.post(PATH, { data: '{}' })).status());
+    }
+    // Unsigned, so refused as invalid until the limit is reached.
+    expect(statuses.slice(0, 120)).toEqual(Array(120).fill(400));
+    expect(statuses[120]).toBe(429);
+    await request.dispose();
   });
 });
