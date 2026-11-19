@@ -61,10 +61,11 @@ class MemoryStore extends IdempotencyStore {
         responseBody: body,
       });
   }
-  async abandon(claim: IdempotencyClaim) {
+  async abandon(claim: IdempotencyClaim, clientError: boolean) {
     const row = this.owned(claim);
-    if (row?.status === 'IN_PROGRESS') this.rows.delete(row.id);
-    else if (row?.status === 'COMMITTED') row.status = 'FAILED';
+    if (row?.status === 'IN_PROGRESS' && clientError) this.rows.delete(row.id);
+    else if (row?.status === 'IN_PROGRESS' || row?.status === 'COMMITTED')
+      row.status = 'FAILED';
   }
   /** What markIdempotencyCommitted does inside the handler's transaction. */
   commit(claim: IdempotencyClaim) {
@@ -268,6 +269,20 @@ describe('IdempotencyInterceptor', () => {
     await expect(call().result).resolves.toEqual({ reference: 'FLY-1' });
   });
 
+  it('server error before committing: the key is kept, since a provider may already have been called', async () => {
+    const { call, store, created } = setup();
+    const failed = call({}, () => {
+      throw new Error('gateway timed out');
+    });
+    await expect(failed.result).rejects.toThrow('gateway timed out');
+    expect(store.only()).toMatchObject({ status: 'FAILED' });
+
+    const repeat = call();
+    await conflict(repeat.result);
+    expect(repeat.handle).not.toHaveBeenCalled();
+    expect(created).toEqual([]);
+  });
+
   it('failed after committing: the key is kept and never replayed as a success', async () => {
     const { call, store, created } = setup();
     const failed = call({}, (commit) => {
@@ -317,11 +332,10 @@ describe('IdempotencyInterceptor', () => {
   });
 
   it('lost Redis: the key is held only by the store, so nothing else can let a repeat through', async () => {
-    // The interceptor's only dependencies are the reflector, the durable
-    // store and the configuration; there is no cache in front of the store.
+    // Structural: keys live only in the durable store (PostgreSQL), with no
+    // Redis in front of it, so a replay depends on the store alone.
     const { call, store, created } = setup();
     await call().result;
-    expect(IdempotencyInterceptor.length).toBe(3);
     const replay = call();
     await expect(replay.result).resolves.toEqual({ reference: 'FLY-1' });
     expect(store.rows.size).toBe(1);

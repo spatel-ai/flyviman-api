@@ -61,10 +61,15 @@ export abstract class IdempotencyStore {
   ): Promise<void>;
 
   /**
-   * After an error. Nothing committed (IN_PROGRESS): frees the key so a
-   * retry can run. Changes committed (COMMITTED): keeps it as FAILED.
+   * After an error. A refusal (`clientError`, a 4xx) before anything
+   * committed frees the key so a corrected retry can run. Anything else
+   * keeps it as FAILED: a server error may follow a provider call or a
+   * commit, and running it again could repeat that.
    */
-  abstract abandon(claim: IdempotencyClaim): Promise<void>;
+  abstract abandon(
+    claim: IdempotencyClaim,
+    clientError: boolean,
+  ): Promise<void>;
 }
 
 @Injectable()
@@ -143,12 +148,22 @@ export class PrismaIdempotencyStore extends IdempotencyStore {
     });
   }
 
-  async abandon(claim: IdempotencyClaim) {
-    await this.prisma.idempotencyKey.deleteMany({
-      where: { ...claim, status: IdempotencyKeyStatus.IN_PROGRESS },
-    });
+  async abandon(claim: IdempotencyClaim, clientError: boolean) {
+    if (clientError) {
+      await this.prisma.idempotencyKey.deleteMany({
+        where: { ...claim, status: IdempotencyKeyStatus.IN_PROGRESS },
+      });
+    }
     await this.prisma.idempotencyKey.updateMany({
-      where: { ...claim, status: IdempotencyKeyStatus.COMMITTED },
+      where: {
+        ...claim,
+        status: {
+          in: [
+            IdempotencyKeyStatus.IN_PROGRESS,
+            IdempotencyKeyStatus.COMMITTED,
+          ],
+        },
+      },
       data: { status: IdempotencyKeyStatus.FAILED },
     });
   }

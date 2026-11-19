@@ -3,6 +3,7 @@ import {
   CallHandler,
   createParamDecorator,
   ExecutionContext,
+  HttpException,
   HttpStatus,
   Injectable,
   NestInterceptor,
@@ -66,12 +67,15 @@ type Outcome =
  * - COMMITTED (changes made, response not stored yet): 409 with
  *   `Retry-After` while the lock holds; after that, as FAILED.
  * - COMPLETED: the stored response, with `Idempotent-Replayed: true`.
- * - FAILED (an error after the changes committed): 409 every time. Never
+ * - FAILED (a server error, or any error after the changes committed):
+ *   409 every time. Never
  *   replayed as a success and never run again; the client checks the
  *   outcome and uses a new key.
  * - Past `expiresAt` (24 hours): treated as unused.
  *
- * An error before anything committed frees the key, so a retry can run.
+ * A refusal (4xx) before anything committed frees the key, so a corrected
+ * retry can run. A server error keeps it as FAILED, committed or not: the
+ * handler may already have called a provider.
  * The same key with a different body is 409 `IDEMPOTENCY_CONFLICT`.
  */
 @Injectable()
@@ -134,7 +138,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
             return body;
           }),
           catchError(async (error: unknown) => {
-            await this.store.abandon(claim);
+            const clientError =
+              error instanceof HttpException && error.getStatus() < 500;
+            await this.store.abandon(claim, clientError);
             throw error;
           }),
         );
