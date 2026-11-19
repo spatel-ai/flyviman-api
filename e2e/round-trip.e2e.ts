@@ -1,4 +1,5 @@
 import { APIRequestContext, expect, test } from '@playwright/test';
+import { withPrisma } from './support/db.js';
 import { inDays, listedJet } from './support/pricing.js';
 import { csrfHeaders } from './support/session.js';
 
@@ -77,6 +78,16 @@ async function detail(
   return (await response.json()).data;
 }
 
+/** The full stored calculation's line codes, as the admin viewer sees them. */
+async function storedCodes(searchId: string, aircraftId: string) {
+  const calculation = await withPrisma((prisma) =>
+    prisma.priceCalculation.findFirstOrThrow({
+      where: { searchId, aircraftId },
+    }),
+  );
+  return (calculation.breakdown as { code: string }[]).map((line) => line.code);
+}
+
 test.describe('round trips', () => {
   test('a same-day return waits at the destination, with both flights and the wait in the breakdown', async ({
     request,
@@ -106,10 +117,14 @@ test.describe('round trips', () => {
 
     const shown = await detail(request, search.searchId, result.resultId);
     const codes = shown.breakdown.map((line: { code: string }) => line.code);
-    expect(codes).toEqual(
+    expect(codes).toEqual(expect.arrayContaining(['FLYING', 'WAITING']));
+    expect(codes).not.toContain('OPERATING_RETURN');
+    expect(await storedCodes(search.searchId, trip.aircraftId)).toEqual(
       expect.arrayContaining(['OPERATING', 'OPERATING_RETURN', 'WAITING']),
     );
-    expect(codes).not.toContain('INTERIM_REPOSITIONING');
+    expect(await storedCodes(search.searchId, trip.aircraftId)).not.toContain(
+      'INTERIM_REPOSITIONING',
+    );
     const sum = shown.breakdown.reduce(
       (total: number, line: { amountMinor: number }) =>
         total + line.amountMinor,
@@ -148,11 +163,21 @@ test.describe('round trips', () => {
     const { search, result } = await roundTrip(request, trip, inDays(4, 20));
     expect(result.roundTripStrategy).toBe('RETURN_TO_BASE');
     const shown = await detail(request, search.searchId, result.resultId);
+    // The customer sees one "Flying" line, without the base's name; the
+    // stored calculation keeps the flights back to base and out again.
     const codes = shown.breakdown.map((line: { code: string }) => line.code);
-    expect(codes).toEqual(
+    expect(codes.filter((code: string) => code === 'FLYING')).toHaveLength(1);
+    expect(codes).not.toContain('INTERIM_REPOSITIONING');
+    expect(codes).not.toContain('OVERNIGHT');
+    const sum = shown.breakdown.reduce(
+      (total: number, line: { amountMinor: number }) =>
+        total + line.amountMinor,
+      0,
+    );
+    expect(sum).toBe(shown.price.amountMinor);
+    expect(await storedCodes(search.searchId, trip.aircraftId)).toEqual(
       expect.arrayContaining(['INTERIM_REPOSITIONING', 'INTERIM_POSITIONING']),
     );
-    expect(codes).not.toContain('OVERNIGHT');
     expect(shown.assumptions.join(' ')).toMatch(/returns to .* between/i);
   });
 

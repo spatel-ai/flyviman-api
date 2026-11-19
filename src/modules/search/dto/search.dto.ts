@@ -233,7 +233,11 @@ export class SearchResponseDto {
 }
 
 export class BreakdownLineDto {
-  @ApiProperty({ example: 'OPERATING' })
+  @ApiProperty({
+    example: 'FLYING',
+    description:
+      '`FLYING` is every flight (the legs, positioning and any return to base between them) in one line; other codes as the engine sets them (`WAITING`, `OVERNIGHT`, `CREW`, `LANDING_HANDLING`, `MIN_CHARGE`, `PLATFORM_FEE`, `TAX`).',
+  })
   code: string;
 
   @ApiProperty()

@@ -20,6 +20,7 @@ import {
 } from '../pricing/engine.js';
 import { resolveRules } from '../pricing/rules.js';
 import { PricingService } from '../pricing/pricing.service.js';
+import { customerBreakdown } from './breakdown.js';
 import { calendarDepartures, monthInRange } from './calendar.js';
 import type {
   FareCalendarQueryDto,
@@ -305,16 +306,13 @@ export class SearchService {
       searchId: search.id,
       legs: search.legs as unknown as SearchLegDto[],
       passengerCount: search.passengerCount,
-      // An explicit allowlist: nothing added to a stored line later reaches
-      // customers by accident, and the `basis` wording (hours × rate) stays
-      // out, so an operator's hourly rate cannot be worked out (D-099).
-      breakdown: (
+      breakdown: customerBreakdown(
         (calculation?.breakdown ?? []) as {
           code: string;
           label: string;
           amountMinor: number;
-        }[]
-      ).map(({ code, label, amountMinor }) => ({ code, label, amountMinor })),
+        }[],
+      ),
       assumptions: (calculation?.assumptions ?? []) as string[],
       exclusions: (calculation?.exclusions ?? []) as string[],
       bookingMode: 'REQUEST',

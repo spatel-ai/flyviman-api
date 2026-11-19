@@ -120,13 +120,34 @@ test.describe('charter search', () => {
       0,
     );
     expect(sum).toBe(detail.price.amountMinor);
-    expect(detail.breakdown.map((line: { code: string }) => line.code)).toEqual(
-      expect.arrayContaining([
-        'OPERATING',
-        'REPOSITIONING',
-        'PLATFORM_FEE',
-        'TAX',
-      ]),
+    // Flights are one "Flying" line: no per-leg hours × rate, no base name
+    // (D-099). The stored calculation keeps each line.
+    const codes = detail.breakdown.map((line: { code: string }) => line.code);
+    expect(codes).toEqual(
+      expect.arrayContaining(['FLYING', 'PLATFORM_FEE', 'TAX']),
+    );
+    expect(codes.filter((code: string) => code === 'FLYING')).toHaveLength(1);
+    expect(codes).not.toContain('OPERATING');
+    expect(codes).not.toContain('REPOSITIONING');
+    const calculation = await withPrisma((prisma) =>
+      prisma.priceCalculation.findFirstOrThrow({
+        where: { searchId: search.searchId, aircraftId },
+      }),
+    );
+    const storedLines = calculation.breakdown as {
+      code: string;
+      amountMinor: number;
+    }[];
+    expect(storedLines.map((line) => line.code)).toEqual(
+      expect.arrayContaining(['OPERATING', 'REPOSITIONING']),
+    );
+    expect(
+      detail.breakdown.find((line: { code: string }) => line.code === 'FLYING')
+        .amountMinor,
+    ).toBe(
+      storedLines
+        .filter((line) => ['OPERATING', 'REPOSITIONING'].includes(line.code))
+        .reduce((total, line) => total + line.amountMinor, 0),
     );
     expect(detail.bookingMode).toBe('REQUEST');
     expect(detail.cancellationNote).toBeTruthy();
