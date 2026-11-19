@@ -160,8 +160,22 @@ export class RateLimitGuard extends ThrottlerGuard {
     );
   }
 
-  protected async getTracker(request: Record<string, any>): Promise<string> {
-    const identity = await this.identity.identify(request);
+  /**
+   * The webhook tier counts by address only: a gateway carries no session,
+   * so identifying it would only spend a lookup on every callback.
+   */
+  protected async getTracker(
+    request: Record<string, any>,
+    context?: ExecutionContext,
+  ): Promise<string> {
+    const tier =
+      context &&
+      this.reflector.getAllAndOverride<RateTier | undefined>(RATE_TIER, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+    const identity =
+      tier === 'webhook' ? null : await this.identity.identify(request);
     if (identity) return identity;
     // Behind the web host's proxy, the visitor's verified address; normalised
     // (IPv6 to its subnet) exactly as the connection's address would be.

@@ -13,6 +13,17 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
+    // `migrate dev` replays every migration in a shadow database that has no
+    // "_prisma_migrations" table, so the REVOKE on it in
+    // 20261119130000_app_role_privileges would fail there. An empty stand-in
+    // lets the replay run; Prisma ignores the table when it compares schemas.
+    // An applied migration is never edited (its checksum would change).
+    initShadowDb: 'CREATE TABLE "_prisma_migrations" ("id" VARCHAR(36) PRIMARY KEY);',
+  },
+  // Required by Prisma for `migrations.initShadowDb`; no external tables are
+  // declared, so nothing else changes.
+  experimental: {
+    externalTables: true,
   },
   // Migrations (and `prisma db execute`) run as the owner of the tables. The
   // API itself connects with DATABASE_URL as the restricted role. Without

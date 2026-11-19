@@ -236,6 +236,13 @@ export class ScheduledSearchResponseDto {
   providers: ScheduledProviderStatusDto[];
 
   @ApiProperty({
+    type: ScheduledPassengersDto,
+    description:
+      'The party searched for: every fare is the total for all of them.',
+  })
+  passengers: ScheduledPassengersDto;
+
+  @ApiProperty({
     type: [ScheduledOfferDto],
     description:
       'Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party; an offer found sold out at revalidation is left out.',

@@ -11,6 +11,7 @@ import {
 } from 'class-validator';
 import {
   AircraftCategory,
+  BookingMode,
   PriceType,
   ServiceCategory,
 } from '../../../generated/prisma/enums.js';
@@ -270,10 +271,12 @@ export class SearchResultDetailDto extends SearchResultDto {
   exclusions: string[];
 
   @ApiProperty({
-    enum: ['REQUEST'],
-    description: 'Charter is confirmed only after the operator accepts.',
+    enum: BookingMode,
+    enumName: 'BookingMode',
+    description:
+      "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator.",
   })
-  bookingMode: 'REQUEST';
+  bookingMode: BookingMode;
 
   @ApiProperty({ type: [String] })
   confirmationRequirements: string[];

@@ -239,34 +239,30 @@ export class AuthService {
   }
 
   /**
-   * True for a refresh token that is still live or was rotated within the
-   * grace period: a request presenting it either rotates it (once only) or
-   * receives the winner's pair, so it is not counted against the token's
-   * rate limit. Unknown and long-retired tokens are counted.
+   * What the rate limiter needs to know about a refresh token, from one
+   * lookup (it is asked twice per request):
+   * - `known`: it belongs to a session, live or not. An unknown (invented)
+   *   token is counted against the caller's address, so making up a new
+   *   one each time gains nothing.
+   * - `inPlay`: still live or rotated within the grace period: a request
+   *   presenting it either rotates it (once only) or receives the winner's
+   *   pair, so it is not counted against the token's rate limit (D-111).
    */
-  async isRefreshInPlay(refreshToken: string): Promise<boolean> {
+  async refreshTokenState(
+    refreshToken: string,
+  ): Promise<{ known: boolean; inPlay: boolean }> {
     const session = await this.prisma.session.findUnique({
       where: { refreshTokenHash: this.tokens.hashToken(refreshToken) },
       select: { revokedAt: true },
     });
-    if (!session) return false;
-    if (!session.revokedAt) return true;
+    if (!session) return { known: false, inPlay: false };
+    if (!session.revokedAt) return { known: true, inPlay: true };
     const graceMs =
       this.config.getOrThrow<number>('REFRESH_ROTATION_GRACE_SECONDS') * 1000;
-    return Date.now() - session.revokedAt.getTime() < graceMs;
-  }
-
-  /**
-   * True for a refresh token that belongs to a session, live or not. An
-   * unknown (invented) token is counted against the caller's address by the
-   * rate limiter, so making up a new one each time gains nothing.
-   */
-  async isRefreshKnown(refreshToken: string): Promise<boolean> {
-    const session = await this.prisma.session.findUnique({
-      where: { refreshTokenHash: this.tokens.hashToken(refreshToken) },
-      select: { id: true },
-    });
-    return session !== null;
+    return {
+      known: true,
+      inPlay: Date.now() - session.revokedAt.getTime() < graceMs,
+    };
   }
 
   /** True while the sign-in has at least one refresh token still in force. */

@@ -151,6 +151,24 @@ test.describe('charter search', () => {
     );
     expect(detail.bookingMode).toBe('REQUEST');
     expect(detail.cancellationNote).toBeTruthy();
+
+    // The booking mode is the category's configuration with this operator's
+    // override (C2), not a fixed REQUEST.
+    await withPrisma(async (prisma) => {
+      const aircraft = await prisma.aircraft.findUniqueOrThrow({
+        where: { id: aircraftId },
+      });
+      await prisma.operator.update({
+        where: { id: aircraft.operatorId },
+        data: { bookingMode: { PRIVATE_CHARTER: 'INSTANT' } },
+      });
+    });
+    const instant = (
+      await (
+        await request.get(`search/${search.searchId}/results/${ours.resultId}`)
+      ).json()
+    ).data;
+    expect(instant.bookingMode).toBe('INSTANT');
     // Operator costs and Flyviman's revenue are never in a customer answer.
     const text = JSON.stringify(detail);
     expect(text).not.toMatch(/operatorPayable|platformRevenue|calculationId/);

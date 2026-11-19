@@ -146,6 +146,18 @@ describe('validateEnv', () => {
     ).toBe(5);
   });
 
+  it('only warns about an unrestricted database role unless asked to refuse', () => {
+    expect(validateEnv(valid).REQUIRE_RESTRICTED_DB_ROLE).toBe(false);
+    expect(
+      validateEnv({ ...valid, REQUIRE_RESTRICTED_DB_ROLE: 'true' })
+        .REQUIRE_RESTRICTED_DB_ROLE,
+    ).toBe(true);
+    expect(
+      validateEnv({ ...valid, REQUIRE_RESTRICTED_DB_ROLE: 'false' })
+        .REQUIRE_RESTRICTED_DB_ROLE,
+    ).toBe(false);
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     expect(() => validateEnv({})).toThrow(/Invalid environment configuration/);
   });

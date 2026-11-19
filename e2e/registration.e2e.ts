@@ -570,7 +570,9 @@ test.describe('cross-site requests', () => {
   test('a sign-in from the web origin is accepted', async ({ request }) => {
     const { email, password } = ACCOUNTS.customer;
     const response = await request.post('auth/login', {
-      headers: { Origin: 'http://localhost:3000' },
+      // The API's configured web origin (.env), with its default: a slot
+      // runs its web app on another port.
+      headers: { Origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000' },
       data: { email, password },
     });
     expect(response.status()).toBe(200);

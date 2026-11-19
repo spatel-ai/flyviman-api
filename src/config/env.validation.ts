@@ -54,6 +54,15 @@ export class EnvironmentVariables {
   @IsString()
   MIGRATION_DATABASE_URL?: string;
 
+  /**
+   * Refuse to start when DATABASE_URL owns the tables or may delete audit
+   * records, instead of only warning. Off until a host has been moved to
+   * the restricted role (docs/deployment.md); then set it to true.
+   */
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  REQUIRE_RESTRICTED_DB_ROLE: boolean = false;
+
   /** Origin of flyviman-web, allowed by CORS with credentials. */
   @IsString()
   @IsNotEmpty()

@@ -222,13 +222,14 @@ export class ScheduledSearchService {
         providerStatus: providers as unknown as Prisma.InputJsonValue,
       },
     });
-    return response(searchId, providers, results);
+    return response(searchId, stored.passengers, providers, results);
   }
 
   async get(searchId: string): Promise<ScheduledSearchResponseDto> {
-    const { search, results } = await this.find(searchId);
+    const { search, query, results } = await this.find(searchId);
     return response(
       search.id,
+      query.passengers,
       search.providerStatus as unknown as ScheduledProviderStatusDto[],
       results,
     );
@@ -440,6 +441,7 @@ function summary(location: LocationSummary): LocationSummary {
 /** Drops the supplier references from each stored offer. */
 function response(
   searchId: string,
+  passengers: StoredQuery['passengers'],
   providers: ScheduledProviderStatusDto[],
   results: StoredOffer[],
 ): ScheduledSearchResponseDto {
@@ -447,6 +449,11 @@ function response(
     searchId,
     partial: providers.some((p) => p.status !== 'OK'),
     providers,
+    passengers: {
+      adults: passengers.adults,
+      children: passengers.children,
+      infants: passengers.infants,
+    },
     results: results
       .filter((offer) => !offer.soldOut)
       .map(

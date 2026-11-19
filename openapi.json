@@ -4638,6 +4638,37 @@
         ]
       }
     },
+    "/api/v1/admin/category-config": {
+      "get": {
+        "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
+        "operationId": "AdminCategoryConfigController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Service category configuration",
+        "tags": [
+          "admin: configuration"
+        ]
+      }
+    },
     "/api/v1/operator/pricing": {
       "get": {
         "operationId": "OperatorPricingController_getOperator",
@@ -5337,37 +5368,6 @@
         "summary": "One of the caller’s bookings: itinerary, price, statuses, terms",
         "tags": [
           "bookings"
-        ]
-      }
-    },
-    "/api/v1/admin/category-config": {
-      "get": {
-        "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
-        "operationId": "AdminCategoryConfigController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "Service category configuration",
-        "tags": [
-          "admin: configuration"
         ]
       }
     },
@@ -10507,6 +10507,14 @@
               "$ref": "#/components/schemas/ScheduledProviderStatusDto"
             }
           },
+          "passengers": {
+            "description": "The party searched for: every fare is the total for all of them.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledPassengersDto"
+              }
+            ]
+          },
           "results": {
             "description": "Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party; an offer found sold out at revalidation is left out.",
             "type": "array",
@@ -10519,6 +10527,7 @@
           "searchId",
           "partial",
           "providers",
+          "passengers",
           "results"
         ]
       },
@@ -11065,6 +11074,14 @@
           "amountMinor"
         ]
       },
+      "BookingMode": {
+        "type": "string",
+        "enum": [
+          "INSTANT",
+          "REQUEST"
+        ],
+        "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator."
+      },
       "SearchResultDetailDto": {
         "type": "object",
         "properties": {
@@ -11162,11 +11179,12 @@
             }
           },
           "bookingMode": {
-            "type": "string",
-            "enum": [
-              "REQUEST"
-            ],
-            "description": "Charter is confirmed only after the operator accepts."
+            "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
           },
           "confirmationRequirements": {
             "type": "array",
@@ -11200,6 +11218,62 @@
           "bookingMode",
           "confirmationRequirements",
           "cancellationNote"
+        ]
+      },
+      "PaymentModel": {
+        "type": "string",
+        "enum": [
+          "A_INSTANT",
+          "B_OPERATOR_CONFIRMED",
+          "C_DEPOSIT"
+        ],
+        "description": "Platform setting. Operators may override it per category."
+      },
+      "CategoryConfigResponseDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "region": {
+            "type": "string",
+            "example": "IN"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "bookingMode": {
+            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "paymentModel": {
+            "description": "Platform setting. Operators may override it per category.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentModel"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "category",
+          "region",
+          "isEnabled",
+          "bookingMode",
+          "paymentModel",
+          "updatedAt"
         ]
       },
       "OperatorPricingResponseDto": {
@@ -12625,70 +12699,6 @@
           "specialRequests",
           "passengers",
           "createdAt",
-          "updatedAt"
-        ]
-      },
-      "BookingMode": {
-        "type": "string",
-        "enum": [
-          "INSTANT",
-          "REQUEST"
-        ],
-        "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST."
-      },
-      "PaymentModel": {
-        "type": "string",
-        "enum": [
-          "A_INSTANT",
-          "B_OPERATOR_CONFIRMED",
-          "C_DEPOSIT"
-        ],
-        "description": "Platform setting. Operators may override it per category."
-      },
-      "CategoryConfigResponseDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ServiceCategory"
-              }
-            ]
-          },
-          "region": {
-            "type": "string",
-            "example": "IN"
-          },
-          "isEnabled": {
-            "type": "boolean"
-          },
-          "bookingMode": {
-            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/BookingMode"
-              }
-            ]
-          },
-          "paymentModel": {
-            "description": "Platform setting. Operators may override it per category.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PaymentModel"
-              }
-            ]
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "category",
-          "region",
-          "isEnabled",
-          "bookingMode",
-          "paymentModel",
           "updatedAt"
         ]
       },
