@@ -151,6 +151,25 @@ export class CustomersService implements OnApplicationBootstrap {
     return rows.map((row) => this.present(row));
   }
 
+  /**
+   * The caller's own saved passengers with these ids, decrypted, in the
+   * order asked for. 404 if any is not theirs or was removed.
+   */
+  async passengersByIds(
+    userId: string,
+    ids: string[],
+  ): Promise<PassengerRecord[]> {
+    const rows = await this.prisma.passenger.findMany({
+      where: { id: { in: ids }, customer: { userId }, deletedAt: null },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return ids.map((id) => {
+      const row = byId.get(id);
+      if (!row) throw notFound();
+      return this.present(row);
+    });
+  }
+
   async addPassenger(
     userId: string,
     input: PassengerInput & { firstName: string; lastName: string },

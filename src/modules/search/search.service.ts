@@ -11,8 +11,15 @@ import {
 import { RoutingProvider } from '../../integrations/routing/routing.provider.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LocationsService } from '../locations/locations.service.js';
-import { MatchingService } from '../matching/matching.service.js';
-import { calculatePrice, type PricePoint } from '../pricing/engine.js';
+import {
+  type Candidate,
+  MatchingService,
+} from '../matching/matching.service.js';
+import {
+  calculatePrice,
+  type EngineResult,
+  type PricePoint,
+} from '../pricing/engine.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { customerBreakdown } from './breakdown.js';
 import { calendarDepartures, monthInRange } from './calendar.js';
@@ -40,12 +47,42 @@ const MIN_RETURN_GAP_MINUTES = 60;
 /** And within this many days of it. */
 const MAX_RETURN_DAYS = 30;
 
-const CANCELLATION_NOTE =
+/**
+ * Shown with every result before the customer commits, and snapshotted on a
+ * booking made from it as its cancellation terms (business rule 9).
+ */
+export const CANCELLATION_NOTE =
   'Cancellation conditions are set by the operator and shown with its quote, before you commit to anything.';
 
 /** What is stored per result in `Search.results`: customer-safe only. */
 interface StoredResult extends SearchResultDto {
   calculationId: string | null;
+}
+
+/** A stored result checked again (`SearchService.revalidate`). */
+export interface Revalidation {
+  searchId: string;
+  resultId: string;
+  category: 'PRIVATE_CHARTER' | 'HELICOPTER';
+  legs: SearchLegDto[];
+  passengerCount: number;
+  /** As the search offered it (customer-safe fields only). */
+  result: ResultFields;
+  /** Null when the aircraft can no longer fly the trip. */
+  current:
+    | null
+    | { operatorId: string; priced: false }
+    | {
+        operatorId: string;
+        priced: true;
+        totalMinor: number;
+        currency: string;
+        validUntil: Date;
+        /** The time the aircraft is busy with this trip. */
+        hold: { startsAt: Date; endsAt: Date };
+        /** Stores this price as an immutable calculation. */
+        saveCalculation: (tx: Prisma.TransactionClient) => Promise<string>;
+      };
 }
 
 @Injectable()
@@ -154,47 +191,18 @@ export class SearchService {
       const stored: StoredResult[] = [];
       for (const candidate of candidates) {
         const { aircraft } = candidate;
-        const result = calculatePrice({
-          now,
-          origin,
-          destination,
-          departureAt,
-          returnAt,
-          aircraft: {
-            id: aircraft.id,
-            operatorId: aircraft.operatorId,
-            category: aircraft.category,
-            cruiseSpeedKmh: aircraft.cruiseSpeedKmh,
-            base: candidate.base,
-          },
-          rules: candidate.rules,
-          rawDistanceKm: distance,
-        });
+        const { result, inputs } = priceCandidate(
+          { origin, destination, departureAt, returnAt, tripType, now },
+          dto.passengerCount,
+          candidate,
+          distance,
+        );
         const calculationId = result.priced
           ? await this.pricing.saveCalculation(tx, {
               searchId,
               aircraftId: aircraft.id,
               operatorId: aircraft.operatorId,
-              inputs: {
-                leg: {
-                  originId: leg.originId,
-                  destinationId: leg.destinationId,
-                  departureAt: leg.departureAt,
-                },
-                tripType,
-                returnAt: returnAt?.toISOString() ?? null,
-                roundTrip: result.roundTrip as unknown as Prisma.InputJsonValue,
-                passengerCount: dto.passengerCount,
-                aircraft: {
-                  category: aircraft.category,
-                  cruiseSpeedKmh: aircraft.cruiseSpeedKmh,
-                  baseId: candidate.base?.id ?? null,
-                },
-                distanceKm: result.distanceKm,
-                flightMinutes: result.flightMinutes,
-                positioningMinutes: result.positioningMinutes,
-                repositioningMinutes: result.repositioningMinutes,
-              },
+              inputs,
               result,
               availabilityCheckedAt: now,
             })
@@ -307,6 +315,107 @@ export class SearchService {
         'Availability and price are checked again before you pay',
       ],
       cancellationNote: CANCELLATION_NOTE,
+    };
+  }
+
+  /**
+   * Checks a stored result again before a booking is made from it (business
+   * rule 3): matching is run afresh for that aircraft at the search's times
+   * and the trip priced again exactly as the search priced it. `current` is
+   * null when the aircraft can no longer fly the trip.
+   */
+  async revalidate(searchId: string, resultId: string): Promise<Revalidation> {
+    const search = await this.find(searchId);
+    const stored = (search.results as unknown as StoredResult[]).find(
+      (entry) => entry.resultId === resultId,
+    );
+    if (!stored) throw notFound('Result');
+    const legs = search.legs as unknown as SearchLegDto[];
+    const category = search.category as 'PRIVATE_CHARTER' | 'HELICOPTER';
+    const result = publicResult(stored);
+    const base = {
+      searchId: search.id,
+      resultId,
+      category,
+      legs,
+      passengerCount: search.passengerCount,
+      result,
+    };
+
+    const now = new Date();
+    const departureAt = new Date(legs[0].departureAt);
+    const returnAt = legs[1] ? new Date(legs[1].departureAt) : null;
+    if (departureAt.getTime() < now.getTime() + MIN_NOTICE_MINUTES * 60_000) {
+      return { ...base, current: null };
+    }
+    const points = await this.locations.pricingPoints([
+      legs[0].originId,
+      legs[0].destinationId,
+    ]);
+    const origin = points.get(legs[0].originId);
+    const destination = points.get(legs[0].destinationId);
+    if (!origin || !destination) return { ...base, current: null };
+    const { candidates } = await this.matching.match(
+      {
+        categories: [stored.aircraft.category],
+        origin,
+        destination,
+        passengerCount: search.passengerCount,
+        rules: await this.pricing.activeRules(now),
+      },
+      departureAt,
+      now,
+      returnAt,
+    );
+    const candidate = candidates.find(
+      (entry) => entry.aircraft.id === stored.aircraft.id,
+    );
+    if (!candidate) return { ...base, current: null };
+
+    const { result: price, inputs } = priceCandidate(
+      {
+        origin,
+        destination,
+        departureAt,
+        returnAt,
+        tripType: result.tripType,
+        now,
+      },
+      search.passengerCount,
+      candidate,
+      (a, b) => this.routing.distanceKm(a, b),
+    );
+    const operatorId = candidate.aircraft.operatorId;
+    if (!price.priced) {
+      return { ...base, current: { operatorId, priced: false } };
+    }
+    // Busy from leaving base to landing at the destination, or back at the
+    // origin after a round trip: the window matching checked.
+    const legMs = (candidate.legMinutes ?? 60) * 60_000;
+    return {
+      ...base,
+      current: {
+        operatorId,
+        priced: true,
+        totalMinor: price.totalMinor,
+        currency: price.currency,
+        validUntil: price.validUntil,
+        hold: {
+          startsAt: new Date(
+            departureAt.getTime() - candidate.positioningMinutes * 60_000,
+          ),
+          endsAt: new Date((returnAt ?? departureAt).getTime() + legMs),
+        },
+        saveCalculation: (tx) =>
+          this.pricing.saveCalculation(tx, {
+            searchId: search.id,
+            aircraftId: candidate.aircraft.id,
+            operatorId,
+            inputs,
+            result: price,
+            availabilityCheckedAt: now,
+          }),
+      },
     };
   }
 
@@ -436,6 +545,68 @@ const CALENDAR_CACHE_SIZE = 500;
 const CALENDAR_MONTHS_AHEAD = 12;
 const PRICE_ON_REQUEST =
   'The operator prices this aircraft on request. Send a request and our team will come back to you.';
+
+/** The trip a candidate is priced for. */
+interface PricedTrip {
+  origin: PricePoint;
+  destination: PricePoint;
+  departureAt: Date;
+  returnAt: Date | null;
+  tripType: SearchTripType;
+  now: Date;
+}
+
+/**
+ * Prices one matched aircraft and the inputs its calculation records. Shared
+ * by search and revalidation, so a booking is priced exactly as the search
+ * that offered it.
+ */
+function priceCandidate(
+  trip: PricedTrip,
+  passengerCount: number,
+  candidate: Candidate,
+  distance: (a: PricePoint, b: PricePoint) => number,
+): { result: EngineResult; inputs: Prisma.InputJsonValue } {
+  const { aircraft } = candidate;
+  const { origin, destination, departureAt, returnAt, now } = trip;
+  const result = calculatePrice({
+    now,
+    origin,
+    destination,
+    departureAt,
+    returnAt,
+    aircraft: {
+      id: aircraft.id,
+      operatorId: aircraft.operatorId,
+      category: aircraft.category,
+      cruiseSpeedKmh: aircraft.cruiseSpeedKmh,
+      base: candidate.base,
+    },
+    rules: candidate.rules,
+    rawDistanceKm: distance,
+  });
+  const inputs: Prisma.InputJsonValue = {
+    leg: {
+      originId: origin.id,
+      destinationId: destination.id,
+      departureAt: departureAt.toISOString(),
+    },
+    tripType: trip.tripType,
+    returnAt: returnAt?.toISOString() ?? null,
+    roundTrip: result.roundTrip as unknown as Prisma.InputJsonValue,
+    passengerCount,
+    aircraft: {
+      category: aircraft.category,
+      cruiseSpeedKmh: aircraft.cruiseSpeedKmh,
+      baseId: candidate.base?.id ?? null,
+    },
+    distanceKm: result.distanceKm,
+    flightMinutes: result.flightMinutes,
+    positioningMinutes: result.positioningMinutes,
+    repositioningMinutes: result.repositioningMinutes,
+  };
+  return { result, inputs };
+}
 
 function categoriesFor(
   category: 'PRIVATE_CHARTER' | 'HELICOPTER',
