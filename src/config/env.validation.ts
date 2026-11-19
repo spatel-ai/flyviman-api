@@ -180,6 +180,30 @@ export class EnvironmentVariables {
   RATE_LIMIT_ENQUIRY_WINDOW_SECONDS: number = 600;
 
   /**
+   * Booking requests (`POST /bookings`) one customer may send per window, on
+   * top of the default tier. Test servers lift it.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RATE_LIMIT_BOOKING_PER_WINDOW: number = 10;
+
+  /** The booking request window, in seconds (10 minutes by default). */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  RATE_LIMIT_BOOKING_WINDOW_SECONDS: number = 600;
+
+  /**
+   * Open booking requests (`REQUESTED` or `OPERATOR_PENDING`) one customer
+   * may have at once, each holding an aircraft while the operator answers.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  BOOKING_MAX_OPEN_PER_CUSTOMER: number = 5;
+
+  /**
    * Payment gateway notifications (`POST /webhooks/payments/:provider`) per
    * minute, per address. Generous: the gateway retries and bursts.
    */

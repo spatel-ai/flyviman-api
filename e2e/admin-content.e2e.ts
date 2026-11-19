@@ -81,6 +81,18 @@ test.describe('banners and questions', () => {
       data: { title: '', body: 'x' },
     });
     expect(empty.status()).toBe(400);
+    // Hidden characters could make text read differently from what is stored.
+    const hidden = await request.post('admin/content/faqs', {
+      headers,
+      data: { title: 'Refunds \u202Eenil', body: 'x' },
+    });
+    expect(hidden.status()).toBe(400);
+    expect((await hidden.json()).error.code).toBe('VALIDATION_ERROR');
+    const bell = await request.post('admin/content/banners', {
+      headers,
+      data: { title: 'Sale', body: 'Ring \u0007' },
+    });
+    expect(bell.status()).toBe(400);
     const missing = await request.patch(
       'admin/content/faqs/00000000-0000-4000-8000-000000000000',
       { headers, data: { title: 'x' } },
@@ -175,6 +187,21 @@ test.describe('policies', () => {
     expect(audit).toHaveLength(2);
     expect(audit[0].before).toMatchObject({ version: '2026-01-01' });
     expect(audit[0].after).toMatchObject({ version: one.version });
+
+    // Paragraphs are separated by blank lines; other hidden characters are refused.
+    const hidden = await request.put(`admin/content/policies/${slug}`, {
+      headers,
+      data: { title: 'New title', body: 'Fees \u202Eapply.' },
+    });
+    expect(hidden.status()).toBe(400);
+    const paragraphs = await request.put(`admin/content/policies/${slug}`, {
+      headers,
+      data: { title: 'New title', body: 'First paragraph.\n\nSecond.' },
+    });
+    expect(paragraphs.status()).toBe(200);
+    expect((await paragraphs.json()).data.body).toBe(
+      'First paragraph.\n\nSecond.',
+    );
 
     const bad = await request.put('admin/content/policies/Bad_Slug', {
       headers,

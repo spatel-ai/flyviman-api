@@ -12,6 +12,7 @@ import {
   IdempotencyClaimParam,
 } from '../../common/idempotency/idempotency.interceptor.js';
 import type { IdempotencyClaim } from '../../common/idempotency/idempotency.store.js';
+import { BookingRateLimit } from '../../common/rate-limit/rate-limit.js';
 import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
@@ -33,10 +34,11 @@ export class BookingsController {
 
   @Post()
   @Idempotent()
+  @BookingRateLimit()
   @ApiOperation({
     summary: 'Request a booking from a charter or helicopter search result',
     description:
-      'Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); 422 `BOOKING_PRICE_ON_REQUEST` for a result without a price; 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search, result or passenger that is not found or not the caller’s. Holds the aircraft for 24 hours (or until the trip ends) while the operator answers. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.',
+      'Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); 422 `BOOKING_PRICE_ON_REQUEST` for a result without a price; 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search or result that is not found (searches are public: any customer may book from one), or a passenger that is not found or not the caller’s; 409 `BOOKING_DUPLICATE` when the caller already has an open request (`REQUESTED` or `OPERATOR_PENDING`) for this aircraft at an overlapping time; 409 `BOOKING_LIMIT_REACHED` when the caller already has the most open requests allowed (5 by default, `BOOKING_MAX_OPEN_PER_CUSTOMER`). Limited per caller (10 per 10 minutes by default; 429 `RATE_LIMITED`). Holds the aircraft for 24 hours (or until the trip ends) while the operator answers. `specialRequests` is stored encrypted. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.',
   })
   @ApiHeader({
     name: 'Idempotency-Key',

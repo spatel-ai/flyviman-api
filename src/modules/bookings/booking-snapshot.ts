@@ -131,7 +131,11 @@ export function passengerSnapshot(
   };
 }
 
-/** The last four characters of a document number, for display. */
+/**
+ * The last four characters of a document number, for display. A number of
+ * four characters or fewer is fully masked: its last four would be all of it.
+ */
 export function lastFour(documentNumber: string | null): string | null {
-  return documentNumber === null ? null : documentNumber.slice(-4);
+  if (documentNumber === null) return null;
+  return documentNumber.length <= 4 ? '••••' : documentNumber.slice(-4);
 }

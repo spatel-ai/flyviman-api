@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { FieldCipher } from '../../common/crypto/field-cipher.js';
+import { ConfigService } from '@nestjs/config';
+import { FieldCipher, isEncrypted } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import {
   type IdempotencyClaim,
@@ -45,6 +46,12 @@ import type {
 /** Attempts at a fresh reference before giving up (31^6 codes). */
 const REFERENCE_ATTEMPTS = 5;
 
+/** Requests still waiting on the operator, each holding an aircraft. */
+const OPEN_STATUSES: BookingStatus[] = [
+  BookingStatus.REQUESTED,
+  BookingStatus.OPERATOR_PENDING,
+];
+
 /** The fields a status change is decided on, read with the booking. */
 type TransitionRow = Pick<
   Prisma.BookingGetPayload<object>,
@@ -83,6 +90,7 @@ export class BookingsService {
     private readonly categories: CategoryConfigService,
     private readonly customers: CustomersService,
     private readonly cipher: FieldCipher,
+    private readonly config: ConfigService,
   ) {}
 
   async create(
@@ -112,6 +120,11 @@ export class BookingsService {
       user.id,
       passengerIds,
     );
+    // Before the price and availability checks: the caller's own hold takes
+    // the aircraft out of matching, which would read as unavailable.
+    const aircraftId = revalidation.result.aircraft.id;
+    const trip = tripSpan(revalidation.legs);
+    await this.assertNoDuplicate(this.prisma, user.id, aircraftId, trip);
 
     const outcome = revalidationOutcome(revalidation.current, {
       totalMinor: input.expectedTotalMinor,
@@ -158,12 +171,34 @@ export class BookingsService {
     const snapshots = passengers.map((passenger) =>
       passengerSnapshot(passenger, (plain) => this.cipher.encrypt(plain)),
     );
-    const aircraftId = revalidation.result.aircraft.id;
+    const specialRequests =
+      input.specialRequests === undefined
+        ? null
+        : this.cipher.encrypt(input.specialRequests);
+    const maxOpen = this.config.getOrThrow<number>(
+      'BOOKING_MAX_OPEN_PER_CUSTOMER',
+    );
 
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.prisma.$transaction(async (tx) => {
           await markIdempotencyCommitted(tx, claim);
+          // One request per customer at a time past this point, so two at
+          // once cannot both slip under the cap. Always before the
+          // aircraft's lock (`placeBookingHold`), never after.
+          const key = `booking_customer:${user.id}`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+          await this.assertNoDuplicate(tx, user.id, aircraftId, trip);
+          const open = await tx.booking.count({
+            where: { customerId: user.id, status: { in: OPEN_STATUSES } },
+          });
+          if (open >= maxOpen) {
+            throw new AppException(
+              'BOOKING_LIMIT_REACHED',
+              `You already have ${maxOpen} booking requests waiting for an answer. Wait for one to be answered or cancel one before sending another.`,
+              HttpStatus.CONFLICT,
+            );
+          }
           const now = new Date();
           const calculationId = await current.saveCalculation(tx);
           const booking = await tx.booking.create({
@@ -185,7 +220,7 @@ export class BookingsService {
                 CANCELLATION_NOTE,
                 now,
               ) as unknown as Prisma.InputJsonValue,
-              specialRequests: input.specialRequests ?? null,
+              specialRequests,
             },
           });
           if (snapshots.length > 0) {
@@ -293,7 +328,7 @@ export class BookingsService {
       },
       itinerary: parseItinerary(booking.itinerary),
       cancellationTerms: parseCancellationTerms(booking.cancellationTerms),
-      specialRequests: booking.specialRequests,
+      specialRequests: this.revealLegacy(booking.specialRequests),
       passengers: booking.passengers.map((passenger) => ({
         firstName: passenger.firstName,
         lastName: passenger.lastName,
@@ -385,10 +420,65 @@ export class BookingsService {
     return to;
   }
 
+  /**
+   * 409 `BOOKING_DUPLICATE` when the customer already has an open request
+   * for this aircraft whose hold overlaps the trip, lapsed hold or not.
+   */
+  private async assertNoDuplicate(
+    db: Pick<Prisma.TransactionClient, 'booking'>,
+    customerId: string,
+    aircraftId: string,
+    trip: { startsAt: Date; endsAt: Date },
+  ): Promise<void> {
+    const duplicate = await db.booking.findFirst({
+      where: {
+        customerId,
+        aircraftId,
+        status: { in: OPEN_STATUSES },
+        holds: {
+          some: {
+            startsAt: { lte: trip.endsAt },
+            endsAt: { gt: trip.startsAt },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new AppException(
+        'BOOKING_DUPLICATE',
+        'You have already requested this aircraft for this time. The operator is answering that request.',
+        HttpStatus.CONFLICT,
+      );
+    }
+  }
+
   /** Decrypts a snapshot field (always written encrypted). */
   private reveal(stored: string | null): string | null {
     return stored === null ? null : this.cipher.decrypt(stored);
   }
+
+  /** Decrypts a field that requests made before it was encrypted stored in plain text. */
+  private revealLegacy(stored: string | null): string | null {
+    return stored === null || !isEncrypted(stored)
+      ? stored
+      : this.cipher.decrypt(stored);
+  }
+}
+
+/**
+ * From the first departure to the last (the return's, on a round trip). The
+ * hold placed for the trip always covers this span, so an existing hold that
+ * meets it overlaps the new one.
+ */
+function tripSpan(legs: { departureAt: string }[]): {
+  startsAt: Date;
+  endsAt: Date;
+} {
+  return {
+    startsAt: new Date(legs[0].departureAt),
+    endsAt: new Date(legs[legs.length - 1].departureAt),
+  };
 }
 
 /** The status machine's view of a booking before anything else is known. */

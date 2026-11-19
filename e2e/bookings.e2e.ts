@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { APIRequestContext, expect, test } from '@playwright/test';
 import { isEncrypted } from '../src/common/crypto/field-cipher.js';
+import { STRICT_BASE_URL } from './support/accounts.js';
 import { registerCustomer } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
+import { asVisitor, visitorAddress } from './support/visitor.js';
 
 /** Booking requests from a charter search result (M8, W2-5). */
 
@@ -199,6 +201,7 @@ test.describe('POST /bookings', () => {
     expect(snapshot.passengerId).toBe(passengerId);
     expect(isEncrypted(snapshot.documentNumber!)).toBe(true);
     expect(isEncrypted(snapshot.specialAssistance!)).toBe(true);
+    expect(isEncrypted(stored.row.specialRequests!)).toBe(true);
     // A soft hold on the aircraft for this booking, lapsing within a day.
     expect(stored.row.holds).toHaveLength(1);
     const [hold] = stored.row.holds;
@@ -336,6 +339,146 @@ test.describe('POST /bookings', () => {
     expect(removed.status()).toBe(409);
   });
 
+  test('the same customer cannot request the same aircraft for the same time twice', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const trip = await pricedJet(contexts);
+    const searched = await searchFor(request, trip);
+    const { customer, userId } = await newCustomer(contexts);
+
+    expect((await book(customer, bodyFor(searched))).status()).toBe(201);
+    const again = await book(customer, bodyFor(searched));
+    expect(again.status()).toBe(409);
+    expect((await again.json()).error.code).toBe('BOOKING_DUPLICATE');
+
+    // Still a duplicate once the hold has lapsed: the request is open.
+    await withPrisma((prisma) =>
+      prisma.availabilityBlock.updateMany({
+        where: { booking: { customerId: userId } },
+        data: { expiresAt: new Date(Date.now() - 60_000) },
+      }),
+    );
+    const lapsed = await book(customer, bodyFor(searched));
+    expect(lapsed.status()).toBe(409);
+    expect((await lapsed.json()).error.code).toBe('BOOKING_DUPLICATE');
+    expect(
+      await withPrisma((prisma) =>
+        prisma.booking.count({ where: { customerId: userId } }),
+      ),
+    ).toBe(1);
+  });
+
+  test('a customer may have at most 5 open requests', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const trip = await pricedJet(contexts);
+    const searched = await searchFor(request, trip);
+    const { customer, userId } = await newCustomer(contexts);
+    const statuses = [
+      'REQUESTED',
+      'OPERATOR_PENDING',
+      'OPERATOR_PENDING',
+      'OPERATOR_PENDING',
+      'OPERATOR_PENDING',
+      // Answered or closed requests do not count.
+      'CANCELLED',
+      'OPERATOR_UNAVAILABLE',
+    ] as const;
+    const ids = await withPrisma((prisma) =>
+      Promise.all(
+        statuses.map(async (status) => {
+          const row = await prisma.booking.create({
+            data: {
+              reference: `FLY-BK-${randomUUID().slice(0, 6).toUpperCase()}`,
+              customerId: userId,
+              status,
+              category: 'PRIVATE_CHARTER',
+              bookingMode: 'REQUEST',
+              paymentModel: 'B_OPERATOR_CONFIRMED',
+              itinerary: {},
+              totalMinor: 1_000_000n,
+              currency: 'INR',
+              priceType: 'ESTIMATE',
+              cancellationTerms: {},
+            },
+          });
+          return row.id;
+        }),
+      ),
+    );
+
+    const refused = await book(customer, bodyFor(searched));
+    expect(refused.status()).toBe(409);
+    expect((await refused.json()).error.code).toBe('BOOKING_LIMIT_REACHED');
+    const held = await withPrisma((prisma) =>
+      prisma.availabilityBlock.count({
+        where: { aircraftId: trip.aircraftId, bookingId: { not: null } },
+      }),
+    );
+    expect(held).toBe(0);
+
+    // Once one is answered, there is room again.
+    await withPrisma((prisma) =>
+      prisma.booking.update({
+        where: { id: ids[0] },
+        data: { status: 'CANCELLED' },
+      }),
+    );
+    expect((await book(customer, bodyFor(searched))).status()).toBe(201);
+  });
+
+  test('an operator’s calendar edit waits for the aircraft’s lock, like a hold', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const trip = await listedJet({ request, playwright, baseURL });
+    const headers = await csrfHeaders(request);
+    const day = 24 * 3_600_000;
+    const at = (days: number) =>
+      new Date(Date.now() + days * day).toISOString();
+    const key = `availability_hold:${trip.aircraftId}`;
+    let block: Promise<Awaited<ReturnType<APIRequestContext['post']>>>;
+    let slot: Promise<Awaited<ReturnType<APIRequestContext['post']>>>;
+    await withPrisma((prisma) =>
+      prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+          block = request.post(
+            `operator/aircraft/${trip.aircraftId}/availability/blocks`,
+            {
+              headers,
+              data: { startsAt: at(10), endsAt: at(11), reason: 'MAINTENANCE' },
+            },
+          );
+          slot = request.post(
+            `operator/aircraft/${trip.aircraftId}/availability/slots`,
+            {
+              headers,
+              data: { startsAt: at(12), endsAt: at(13), kind: 'OPEN' },
+            },
+          );
+          const settled = await Promise.race([
+            Promise.any([block, slot]).then(() => 'answered'),
+            new Promise((resolve) =>
+              setTimeout(() => resolve('waiting'), 1500),
+            ),
+          ]);
+          expect(settled).toBe('waiting');
+        },
+        { timeout: 20_000 },
+      ),
+    );
+    expect((await block!).status()).toBe(201);
+    expect((await slot!).status()).toBe(201);
+  });
+
   test('refuses bad input, another customer’s passenger and other roles', async ({
     request,
     playwright,
@@ -450,6 +593,38 @@ test.describe('POST /bookings', () => {
         );
     });
     expect(refused).toContain('Booking_air_ambulance_not_instant');
+  });
+});
+
+test.describe('POST /bookings rate limit', () => {
+  test('one caller can send 10 booking requests in 10 minutes', async ({
+    playwright,
+  }) => {
+    // The strict server runs the real limits. The limit is counted before
+    // anything else, so a signed-out request with an empty body is enough;
+    // a visitor address of its own keeps earlier runs out of the count.
+    const request = await playwright.request.newContext({
+      baseURL: STRICT_BASE_URL,
+      extraHTTPHeaders: asVisitor(visitorAddress()),
+    });
+    const statuses: number[] = [];
+    let blocked;
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      const response = await request.post('bookings', { data: {} });
+      statuses.push(response.status());
+      if (attempt === 0) {
+        expect(response.headers()['ratelimit-limit-booking']).toBe('10');
+      }
+      if (response.status() === 429) {
+        blocked = response;
+        break;
+      }
+    }
+    expect(statuses.slice(0, 10)).not.toContain(429);
+    expect(blocked, `statuses: ${statuses.join(', ')}`).toBeDefined();
+    expect((await blocked!.json()).error.code).toBe('RATE_LIMITED');
+    expect(Number(blocked!.headers()['retry-after'])).toBeGreaterThan(0);
+    await request.dispose();
   });
 });
 

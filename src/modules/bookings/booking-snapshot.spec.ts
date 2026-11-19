@@ -172,7 +172,14 @@ describe('passengerSnapshot', () => {
 
   it('shows only the last four characters of a document number', () => {
     expect(lastFour('P1234567')).toBe('4567');
+    expect(lastFour('A1234')).toBe('1234');
     expect(lastFour(null)).toBeNull();
+  });
+
+  it('never shows the whole of a number of four characters or fewer', () => {
+    for (const short of ['1', '12', '123', '1234']) {
+      expect(lastFour(short)).toBe('••••');
+    }
   });
 });
 

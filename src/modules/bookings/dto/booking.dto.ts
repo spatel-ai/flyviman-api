@@ -247,7 +247,8 @@ export class BookingPassengerDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: 'The document number’s last four characters only.',
+    description:
+      'The document number’s last four characters only; `••••` for a number of four characters or fewer.',
   })
   documentNumberLast4: string | null;
 

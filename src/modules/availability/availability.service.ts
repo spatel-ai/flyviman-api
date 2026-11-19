@@ -251,6 +251,7 @@ export class AvailabilityService {
     await this.assertOrigin(input.originId);
     await this.assertRoom(aircraft.id);
     return this.prisma.$transaction(async (tx) => {
+      await lockAircraft(tx, aircraft.id);
       const row = await tx.availabilitySlot.create({
         data: {
           aircraftId: aircraft.id,
@@ -295,6 +296,7 @@ export class AvailabilityService {
     notOver(endsAt);
     if (input.originId !== undefined) await this.assertOrigin(input.originId);
     return this.prisma.$transaction(async (tx) => {
+      await lockAircraft(tx, aircraft.id);
       const row = await tx.availabilitySlot.update({
         where: { id: slot.id },
         data: {
@@ -329,6 +331,7 @@ export class AvailabilityService {
     });
     if (!slot) throw notFound('Slot');
     await this.prisma.$transaction(async (tx) => {
+      await lockAircraft(tx, aircraft.id);
       await tx.availabilitySlot.delete({ where: { id: slot.id } });
       await this.audit.record(
         {
@@ -405,6 +408,7 @@ export class AvailabilityService {
     await this.assertRoom(aircraft.id);
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await lockAircraft(tx, aircraft.id);
         const row = await tx.availabilityBlock.create({
           data: {
             aircraftId: aircraft.id,
@@ -463,6 +467,7 @@ export class AvailabilityService {
       );
     }
     await this.prisma.$transaction(async (tx) => {
+      await lockAircraft(tx, aircraft.id);
       // Conditional, so a block that became a booking hold is never removed.
       const { count } = await tx.availabilityBlock.deleteMany({
         where: {
@@ -614,8 +619,7 @@ export class AvailabilityService {
       expiresAt: Date;
     },
   ): Promise<boolean> {
-    const key = `availability_hold:${hold.aircraftId}`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    await lockAircraft(tx, hold.aircraftId);
     const clash = await tx.availabilityBlock.findFirst({
       where: {
         aircraftId: hold.aircraftId,
@@ -697,4 +701,18 @@ export class AvailabilityService {
     }
     return error;
   }
+}
+
+/**
+ * The per-aircraft lock every calendar write takes first in its transaction
+ * (operator slots and blocks, and booking holds), so a hold's check for
+ * anything in the way and an operator's edit never interleave. Released at
+ * commit or rollback.
+ */
+async function lockAircraft(
+  tx: Prisma.TransactionClient,
+  aircraftId: string,
+): Promise<void> {
+  const key = `availability_hold:${aircraftId}`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
 }

@@ -45,6 +45,16 @@ const ENQUIRY_LIMIT = 'enquiryLimit';
  */
 export const EnquiryRateLimit = () => SetMetadata(ENQUIRY_LIMIT, true);
 
+const BOOKING_LIMIT = 'bookingLimit';
+
+/**
+ * Adds a second, longer-window limit to booking requests, each of which
+ * holds an aircraft: `RATE_LIMIT_BOOKING_PER_WINDOW` requests per
+ * `RATE_LIMIT_BOOKING_WINDOW_SECONDS`, per caller, on top of the default
+ * tier. Response headers carry the `-booking` suffix.
+ */
+export const BookingRateLimit = () => SetMetadata(BOOKING_LIMIT, true);
+
 @Injectable()
 export class RateLimitConfig implements ThrottlerOptionsFactory {
   constructor(
@@ -67,7 +77,23 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
     const enquiryWindowMs =
       this.config.getOrThrow<number>('RATE_LIMIT_ENQUIRY_WINDOW_SECONDS') *
       1000;
+    const bookingLimit = this.config.getOrThrow<number>(
+      'RATE_LIMIT_BOOKING_PER_WINDOW',
+    );
+    const bookingWindowMs =
+      this.config.getOrThrow<number>('RATE_LIMIT_BOOKING_WINDOW_SECONDS') *
+      1000;
     return [
+      {
+        name: 'booking',
+        ttl: bookingWindowMs,
+        limit: bookingLimit,
+        skipIf: (context: ExecutionContext) =>
+          !this.reflector.getAllAndOverride<boolean | undefined>(
+            BOOKING_LIMIT,
+            [context.getHandler(), context.getClass()],
+          ),
+      },
       {
         name: 'enquiry',
         ttl: enquiryWindowMs,

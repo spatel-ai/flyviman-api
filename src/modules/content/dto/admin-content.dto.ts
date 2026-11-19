@@ -11,6 +11,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../common/dto/optional.js';
+import { IsPlainText } from '../../../common/validation/text.js';
 import { NotificationChannel } from '../../../generated/prisma/enums.js';
 
 export class ContentItemResponseDto {
@@ -49,12 +50,14 @@ export class CreateContentItemDto {
   @IsString()
   @MinLength(1)
   @MaxLength(200)
+  @IsPlainText()
   title: string;
 
   @ApiProperty({ maxLength: 5000 })
   @IsString()
   @MinLength(1)
   @MaxLength(5000)
+  @IsPlainText()
   body: string;
 
   @ApiPropertyOptional({ maxLength: 8, example: 'IN' })
@@ -84,6 +87,7 @@ export class UpdateContentItemDto {
   @IsString()
   @MinLength(1)
   @MaxLength(200)
+  @IsPlainText()
   title?: string;
 
   @ApiPropertyOptional({ maxLength: 5000 })
@@ -91,6 +95,7 @@ export class UpdateContentItemDto {
   @IsString()
   @MinLength(1)
   @MaxLength(5000)
+  @IsPlainText()
   body?: string;
 
   @ApiPropertyOptional({ nullable: true, type: String, maxLength: 8 })
@@ -141,6 +146,7 @@ export class PublishPolicyDto {
   @IsString()
   @MinLength(1)
   @MaxLength(200)
+  @IsPlainText()
   title: string;
 
   @ApiProperty({
@@ -150,6 +156,7 @@ export class PublishPolicyDto {
   @IsString()
   @MinLength(1)
   @MaxLength(50000)
+  @IsPlainText()
   body: string;
 }
 
