@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import type { RequestHandler } from 'express';
+import type { IncomingMessage } from 'node:http';
 import * as helmetModule from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -51,6 +52,13 @@ function toDetails(errors: ValidationError[], parent = ''): ErrorDetail[] {
   });
 }
 
+const PAYMENT_WEBHOOK_PATH = `/${API_PREFIX}/webhooks/payments/`;
+
+/** Requests to `POST /webhooks/payments/:provider` (Express matches paths case-insensitively). */
+function isPaymentWebhook(request: IncomingMessage): boolean {
+  return (request.url ?? '').toLowerCase().startsWith(PAYMENT_WEBHOOK_PATH);
+}
+
 export function buildOpenApiConfig() {
   return new DocumentBuilder()
     .setTitle('Flyviman API')
@@ -80,6 +88,13 @@ export function configureApp(app: INestApplication): void {
   // header signed with WEB_PROXY_SECRET; it is used only when it verifies.
   app.use(clientAddressMiddleware(config.get<string>('WEB_PROXY_SECRET')));
   app.use(requestIdMiddleware);
+  // Webhook signatures are computed over the exact bytes sent, so payment
+  // webhooks get the body unparsed, as a Buffer. Registered before Nest's
+  // JSON parser, which then leaves these requests alone; every other route
+  // is parsed as before.
+  (app as NestExpressApplication).useBodyParser('raw', {
+    type: isPaymentWebhook,
+  });
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors({

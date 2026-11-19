@@ -166,4 +166,21 @@ describe('validateEnv', () => {
       /Invalid environment configuration/,
     );
   });
+  it('accepts only the mock payment gateway and manual settlement', () => {
+    const env = validateEnv(valid);
+    expect(env.PAYMENT_PROVIDER).toBe('mock');
+    expect(env.SETTLEMENT_MODE).toBe('manual');
+
+    for (const provider of ['razorpay', 'stripe', '']) {
+      expect(() =>
+        validateEnv({ ...valid, PAYMENT_PROVIDER: provider }),
+      ).toThrow(/PAYMENT_PROVIDER must be mock/);
+    }
+    expect(() =>
+      validateEnv({ ...valid, SETTLEMENT_MODE: 'razorpay_route' }),
+    ).toThrow(/SETTLEMENT_MODE=razorpay_route is not built yet/);
+    expect(() =>
+      validateEnv({ ...valid, SETTLEMENT_MODE: 'automatic' }),
+    ).toThrow(/SETTLEMENT_MODE/);
+  });
 });

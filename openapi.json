@@ -3966,6 +3966,60 @@
         ]
       }
     },
+    "/api/v1/webhooks/payments/{provider}": {
+      "post": {
+        "description": "For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet.",
+        "operationId": "PaymentWebhooksController_receive",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-razorpay-event-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-razorpay-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAckResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`WEBHOOK_SIGNATURE_INVALID`, or `VALIDATION_ERROR` for a signed body that is not a well-formed event"
+          },
+          "404": {
+            "description": "Not the configured gateway"
+          }
+        },
+        "summary": "Gateway notification",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/api/v1/enquiries": {
       "post": {
         "description": "Charter, aircraft sales or consultancy. Needs an email address or a phone number, or both. Operations are emailed; the answer is a reference and never repeats what was sent. Limited per caller (5 per 10 minutes by default; 429 `RATE_LIMITED`). A repeat with the same `Idempotency-Key` and body returns the first answer; with a different body, 409 `IDEMPOTENCY_CONFLICT`.",
@@ -8933,6 +8987,18 @@
           "ipAddress",
           "requestId",
           "createdAt"
+        ]
+      },
+      "WebhookAckResponseDto": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "received"
         ]
       },
       "EnquiryTopic": {
