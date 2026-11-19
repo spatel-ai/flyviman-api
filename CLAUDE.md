@@ -17,7 +17,7 @@ Workspace rules, the business rules that must never be broken, and the index of 
 | API reference | `@nestjs/swagger`, served at `/api/docs` (JSON at `/api/docs-json`) |
 | Configuration | `@nestjs/config`, validated at start-up in `src/config/env.validation.ts` |
 | Sessions | `@nestjs/jwt` access tokens and rotating opaque refresh tokens in cookies; passwords hashed with `argon2` |
-| Redis | `ioredis` (`src/redis`): one-time codes, reset and invitation tokens, idempotency keys, sign-in failure counts |
+| Redis | `ioredis` (`src/redis`): one-time codes, reset and invitation tokens, sign-in failure counts (idempotency keys are in PostgreSQL) |
 | Rate limiting | `@nestjs/throttler` (in-memory counters) |
 | Logging | `nestjs-pino`, structured JSON with the request ID |
 | Unit tests | Vitest, `*.spec.ts` next to the code |
@@ -84,7 +84,7 @@ The module map, with what each module owns and may depend on, is in `../docs/arc
 - **Routes are private by default.** Mark a public route `@Public()`. Every other route needs `@Roles(...)` or `@AnyRole()`; a private route with neither is refused. Get the caller with `@CurrentUser()`. All in `src/modules/auth/auth.decorators.ts`. Check ownership in the service with the caller's own ID.
 - **State-changing requests are CSRF-checked** by a global guard. Only requests authorised by something other than the session use `@SkipCsrf()`: provider webhooks (signature) and the storage mock's signed URLs.
 - **Audit** material actions with `AuditService.record()` (pass the transaction client so the record commits with the change), or `@Audited()` on a handler when the route itself says what happened. Never put personal data, secrets or medical details in `before`, `after` or `reason`.
-- **Money-moving and booking-creating routes** are marked `@Idempotent()` (`src/common/idempotency`).
+- **Money-moving and booking-creating routes** are marked `@Idempotent()` (`src/common/idempotency`), take `@IdempotencyClaimParam()` and call `markIdempotencyCommitted(tx, claim)` inside the transaction that makes the change.
 - **Optional but not nullable** fields in update DTOs use `@OptionalNotNull()`, not `@IsOptional()`, which lets `null` through to the database.
 - **Controllers are thin.** Validate with DTOs, authorise, call a service, return a response DTO. One controller per audience (`/…`, `/operator/…`, `/admin/…`).
 - **Never return a Prisma entity.** Map to a response DTO.

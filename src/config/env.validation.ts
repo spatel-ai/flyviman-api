@@ -48,12 +48,24 @@ export class EnvironmentVariables {
   WEB_ORIGIN: string = 'http://localhost:3000';
 
   /**
-   * One-time codes, reset and invitation tokens, sign-in failure counts and
-   * idempotency keys. (Rate-limit counters are in memory, per instance.)
+   * One-time codes, reset and invitation tokens and sign-in failure counts.
+   * (Rate-limit counters are in memory, per instance; idempotency keys are
+   * in PostgreSQL.)
    */
   @IsString()
   @IsNotEmpty()
   REDIS_URL: string = 'redis://localhost:6379';
+
+  /**
+   * How long an idempotent request holds its key before a repeat may take
+   * it over. Longer than the slowest provider call a handler makes; a
+   * request that outruns it is rolled back, not run twice.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(30)
+  @Max(3600)
+  IDEMPOTENCY_LOCK_SECONDS: number = 300;
 
   /** Signs access tokens (HS256). At least 32 characters. */
   @IsString()
