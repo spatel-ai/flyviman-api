@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { expect, test } from '@playwright/test';
+import { PrismaClient } from '../src/generated/prisma/client.js';
 import { withPrisma } from './support/db.js';
 
 /**
@@ -185,5 +188,29 @@ test.describe('The API database role', () => {
     });
     expect(output).not.toContain('Refusing to start');
     expect(output).toContain('API listening');
+  });
+
+  test('the local role script aborts over the network', async () => {
+    const owner = process.env.MIGRATION_DATABASE_URL;
+    test.skip(!owner, 'needs MIGRATION_DATABASE_URL, the owner connection');
+    const prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: owner! }),
+    });
+    try {
+      const [{ local }] = await prisma.$queryRaw<{ local: boolean }[]>`
+        SELECT inet_server_addr() IS NULL
+          OR inet_server_addr() <<= ANY (ARRAY['127.0.0.0/8', '::1/128']::inet[]) AS local`;
+      // A server reached on its own loopback is local: the script may run.
+      test.skip(local, 'the database is reached on loopback here');
+      const error = await prisma
+        .$executeRawUnsafe(
+          readFileSync('docker/postgres-init/10-app-role.sql', 'utf8'),
+        )
+        .then(() => undefined)
+        .catch((caught: unknown) => String(caught));
+      expect(error).toContain('runs only on a local development server');
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 });
