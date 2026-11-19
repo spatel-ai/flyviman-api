@@ -6,6 +6,19 @@ const VERSION = 'v1';
 const TAG_BYTES = 16;
 
 /**
+ * The shape `FieldCipher.encrypt` writes: version, 12-byte IV, 16-byte tag
+ * and body, base64url. Also a PostgreSQL regular expression, so a data
+ * migration can find the rows still in plain text.
+ */
+export const ENCRYPTED_PATTERN =
+  '^v1\\.[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]*$';
+
+/** Whether a stored value is already ciphertext rather than plain text. */
+export function isEncrypted(stored: string): boolean {
+  return new RegExp(ENCRYPTED_PATTERN).test(stored);
+}
+
+/**
  * Application-level encryption for sensitive columns (AES-256-GCM). Columns
  * that use it are listed in docs/architecture/security-rbac.md.
  */

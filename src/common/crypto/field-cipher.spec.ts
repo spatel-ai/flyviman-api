@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { FieldCipher } from './field-cipher.js';
+import { FieldCipher, isEncrypted } from './field-cipher.js';
 
 function cipher(fill: number) {
   const key = Buffer.alloc(32, fill).toString('base64');
@@ -25,5 +25,19 @@ describe('FieldCipher', () => {
     expect(() => cipher(1).decrypt(tampered)).toThrow();
     expect(() => cipher(2).decrypt(stored)).toThrow();
     expect(() => cipher(1).decrypt('plain text')).toThrow();
+  });
+
+  it('tells ciphertext from plain text', () => {
+    const c = cipher(1);
+    expect(isEncrypted(c.encrypt('Wheelchair'))).toBe(true);
+    expect(isEncrypted(c.encrypt(''))).toBe(true);
+    expect(isEncrypted('Wheelchair to the aircraft')).toBe(false);
+    expect(isEncrypted('v1.looks.like.it')).toBe(false);
+    expect(isEncrypted('')).toBe(false);
+  });
+
+  it('round-trips an empty value', () => {
+    const c = cipher(1);
+    expect(c.decrypt(c.encrypt(''))).toBe('');
   });
 });

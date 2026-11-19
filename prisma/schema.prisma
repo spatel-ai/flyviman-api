@@ -200,8 +200,10 @@ enum IdentityDocumentType {
   OTHER
 }
 
-/// A traveller saved by a customer. `documentNumber` is encrypted by the
-/// application (docs/architecture/security-rbac.md). Removal is a soft delete
+/// A traveller saved by a customer. `documentNumber` and `specialAssistance`
+/// are encrypted by the application (docs/architecture/security-rbac.md);
+/// plain-text `specialAssistance` saved earlier is encrypted when the API
+/// starts (src/modules/customers/special-assistance-backfill.ts). Removal is a soft delete
 /// because bookings will refer to passengers.
 model Passenger {
   id                String                @id @default(uuid()) @db.Uuid

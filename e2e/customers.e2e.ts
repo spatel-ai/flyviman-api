@@ -1,5 +1,9 @@
+import type { ConfigService } from '@nestjs/config';
 import { expect, test } from '@playwright/test';
+import { FieldCipher, isEncrypted } from '../src/common/crypto/field-cipher.js';
+import { encryptLegacySpecialAssistance } from '../src/modules/customers/special-assistance-backfill.js';
 import { registerCustomer } from './support/data.js';
+import { withPrisma } from './support/db.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
 const PASSENGER = {
@@ -109,6 +113,59 @@ test.describe('saved passengers', () => {
       headers,
     });
     expect(again.status()).toBe(404);
+  });
+
+  test('keeps special assistance encrypted at rest, plain-text notes saved earlier included', async ({
+    request,
+  }) => {
+    await registerCustomer(request);
+    const created = await request.post('me/passengers', {
+      headers: await csrfHeaders(request),
+      data: PASSENGER,
+    });
+    const { id } = (await created.json()).data;
+    const stored = () =>
+      withPrisma((prisma) =>
+        prisma.passenger.findUniqueOrThrow({
+          where: { id },
+          select: { specialAssistance: true },
+        }),
+      ).then((row) => row.specialAssistance!);
+
+    const saved = await stored();
+    expect(saved).not.toContain('Wheelchair');
+    expect(isEncrypted(saved)).toBe(true);
+
+    // A note saved in plain text before encryption, as the API's start-up
+    // data migration finds it.
+    await withPrisma((prisma) =>
+      prisma.passenger.update({
+        where: { id },
+        data: { specialAssistance: 'Oxygen on board' },
+      }),
+    );
+    // Read as it is until the next start encrypts it.
+    const before = await (await request.get('me/passengers')).json();
+    expect(before.data[0].specialAssistance).toBe('Oxygen on board');
+
+    const cipher = new FieldCipher({
+      getOrThrow: () => process.env.DATA_ENCRYPTION_KEY,
+    } as unknown as ConfigService);
+    const migrate = () =>
+      withPrisma((prisma) =>
+        encryptLegacySpecialAssistance(prisma, (plain) =>
+          cipher.encrypt(plain),
+        ),
+      );
+    expect(await migrate()).toBeGreaterThanOrEqual(1);
+    const migrated = await stored();
+    expect(migrated).not.toContain('Oxygen');
+    expect(isEncrypted(migrated)).toBe(true);
+    await migrate();
+    expect(await stored()).toBe(migrated);
+
+    const list = await (await request.get('me/passengers')).json();
+    expect(list.data[0].specialAssistance).toBe('Oxygen on board');
   });
 
   test('another customer cannot see, change or remove it', async ({
