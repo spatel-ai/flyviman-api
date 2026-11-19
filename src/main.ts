@@ -47,11 +47,10 @@ async function bootstrap() {
   );
   await reachable('Redis (REDIS_URL)', () => app.get<Redis>(REDIS).ping());
 
-  await app.listen(port);
-
   const logger = new Logger('Bootstrap');
   // The API should connect as the restricted role, which can neither delete
-  // audit records nor disable the trigger that guards them.
+  // audit records nor disable the trigger that guards them. Checked before
+  // listening: with REQUIRE_RESTRICTED_DB_ROLE the API refuses to start.
   const [{ unrestricted }] = await app.get(PrismaService).$queryRaw<
     { unrestricted: boolean }[]
   >`SELECT EXISTS (
@@ -59,10 +58,16 @@ async function bootstrap() {
         AND (has_table_privilege(c.oid, 'DELETE') OR pg_has_role(c.relowner, 'USAGE'))
     ) AS unrestricted`;
   if (unrestricted) {
-    logger.warn(
-      'DATABASE_URL connects as a role that owns the tables or may delete audit records. Connect as the restricted role and give migrations MIGRATION_DATABASE_URL (docs/deployment.md).',
-    );
+    const reason =
+      'DATABASE_URL connects as a role that owns the tables or may delete audit records. Connect as the restricted role and give migrations MIGRATION_DATABASE_URL (docs/deployment.md).';
+    if (config.get<boolean>('REQUIRE_RESTRICTED_DB_ROLE')) {
+      throw new Error(`${reason} Refusing to start (REQUIRE_RESTRICTED_DB_ROLE).`);
+    }
+    logger.warn(reason);
   }
+
+  await app.listen(port);
+
   // A proof-of-concept host must not be mistaken for production (D-064).
   if (config.get<string>('MESSAGING_PROVIDER') === 'sink') {
     logger.warn(

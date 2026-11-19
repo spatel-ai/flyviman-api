@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { spawn } from 'node:child_process';
 import { expect, test } from '@playwright/test';
 import { withPrisma } from './support/db.js';
 
@@ -139,5 +140,50 @@ test.describe('The API database role', () => {
     await refused('DROP TABLE "AuditLog"', /must be owner/);
     await refused('CREATE TABLE "Intruder" (id int)', /permission denied/);
     await refused('DELETE FROM "_prisma_migrations"', /permission denied/);
+  });
+
+  /**
+   * Starts the built API (dist/main.js, built by the main test server) with
+   * the given environment and resolves with its exit code and output once
+   * it exits, or once it reports it is listening (then it is stopped).
+   */
+  function startApi(env: Record<string, string>) {
+    return new Promise<{ code: number | null; output: string }>((resolve) => {
+      const child = spawn(process.execPath, ['dist/main.js'], {
+        env: { ...process.env, NODE_ENV: 'test', ...env },
+      });
+      let output = '';
+      const collect = (chunk: Buffer) => {
+        output += chunk.toString();
+        if (output.includes('API listening')) child.kill();
+      };
+      child.stdout.on('data', collect);
+      child.stderr.on('data', collect);
+      child.on('exit', (code) => resolve({ code, output }));
+    });
+  }
+
+  test('REQUIRE_RESTRICTED_DB_ROLE refuses to start as the tables owner', async () => {
+    const owner = process.env.MIGRATION_DATABASE_URL;
+    test.skip(!owner, 'needs MIGRATION_DATABASE_URL, the owner connection');
+    // Never reaches listen, so the port is not taken.
+    const { code, output } = await startApi({
+      DATABASE_URL: owner!,
+      REQUIRE_RESTRICTED_DB_ROLE: 'true',
+      PORT: '1',
+    });
+    expect(code).not.toBe(0);
+    expect(output).toContain('Refusing to start (REQUIRE_RESTRICTED_DB_ROLE)');
+    expect(output).not.toContain('API listening');
+  });
+
+  test('REQUIRE_RESTRICTED_DB_ROLE starts as the restricted role', async () => {
+    const { output } = await startApi({
+      REQUIRE_RESTRICTED_DB_ROLE: 'true',
+      // A port next to this slot's three test servers.
+      PORT: String(Number(process.env.PORT ?? 4000) + 3),
+    });
+    expect(output).not.toContain('Refusing to start');
+    expect(output).toContain('API listening');
   });
 });
