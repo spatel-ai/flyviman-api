@@ -1,9 +1,9 @@
+import type { AircraftRestrictions } from '../../common/restrictions/restrictions.js';
 import type {
   AircraftCategory,
   LocationType,
   WingType,
 } from '../../generated/prisma/enums.js';
-import type { AircraftRestrictions } from '../aircraft/aircraft-json.js';
 import type { RuleRow } from '../pricing/rules.js';
 
 /**

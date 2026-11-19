@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsObject, ValidateIf, ValidateNested } from 'class-validator';
-import { AircraftRestrictionsDto } from '../../aircraft/dto/aircraft-json.dto.js';
+import { AircraftRestrictionsDto } from '../../../common/restrictions/restrictions.dto.js';
 
 /**
  * Operator-wide restrictions, in the shape of an aircraft's (D-104).

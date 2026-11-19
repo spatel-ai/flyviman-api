@@ -1,6 +1,10 @@
 import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Paginated } from '../../common/dto/paginated.js';
 import { AppException } from '../../common/errors/app.exception.js';
+import {
+  parseRestrictions,
+  type AircraftRestrictions,
+} from '../../common/restrictions/restrictions.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import {
   DocumentVerificationStatus,
@@ -38,10 +42,6 @@ import {
   staffAccess,
 } from './operator-access.js';
 import type { ExpiryCandidate } from '../compliance/expiry.js';
-import {
-  parseRestrictions,
-  type AircraftRestrictions,
-} from '../aircraft/aircraft-json.js';
 import { nextOperatorStatus, OperatorAction } from './operator-transitions.js';
 
 export type OperatorRecord = Prisma.OperatorGetPayload<object>;

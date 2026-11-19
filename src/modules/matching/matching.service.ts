@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type { Aircraft } from '../../generated/prisma/client.js';
 import type { AircraftCategory } from '../../generated/prisma/enums.js';
+import { parseRestrictions } from '../../common/restrictions/restrictions.js';
 import { RoutingProvider } from '../../integrations/routing/routing.provider.js';
-import { parseRestrictions } from '../aircraft/aircraft-json.js';
 import { searchBlockers } from '../aircraft/aircraft-search.js';
 import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AvailabilityService } from '../availability/availability.service.js';
@@ -23,6 +23,7 @@ import {
   routeChecks,
   staticChecks,
   timeChecks,
+  tripLimitIssue,
   windowFree,
   type AircraftWindows,
   type CombinedRestrictions,
@@ -89,6 +90,16 @@ export class MatchingService {
     private readonly availability: AvailabilityService,
     private readonly routing: RoutingProvider,
   ) {}
+
+  /**
+   * The trip-wide notice or leg-length limit every searched category fails,
+   * or `null` (pricing-engine.md, step 1). See `tripLimitIssue` in criteria.
+   */
+  tripLimitIssue(
+    input: Parameters<typeof tripLimitIssue>[0],
+  ): ReturnType<typeof tripLimitIssue> {
+    return tripLimitIssue(input);
+  }
 
   /** `returnAt`: a round trip's return departure from the destination. */
   async match(

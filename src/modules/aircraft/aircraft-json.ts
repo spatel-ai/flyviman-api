@@ -1,4 +1,14 @@
+import {
+  isIntIn as isInt,
+  jsonRecord as record,
+  RESTRICTION_LIMITS,
+} from '../../common/restrictions/restrictions.js';
 import { hasHiddenCharacter } from '../../common/validation/text.js';
+
+export {
+  parseRestrictions,
+  type AircraftRestrictions,
+} from '../../common/restrictions/restrictions.js';
 
 /**
  * The shapes of the aircraft JSON columns `restrictions`, `specifications`
@@ -7,12 +17,12 @@ import { hasHiddenCharacter } from '../../common/validation/text.js';
  * `parse…` functions, which keep only well-formed known fields, so a row
  * written before the shapes existed, or changed by hand, never reaches a
  * response or a matching rule malformed (as `parsePermissions` does).
+ * `restrictions` is shared with operators, so its shape and parser live in
+ * `common/restrictions` and are re-exported here.
  */
 
 export const JSON_LIMITS = {
-  /** A week: longer notice is a booking policy, not an aircraft limit. */
-  maxNoticeMinutes: 10_080,
-  maxExcludedLocations: 100,
+  ...RESTRICTION_LIMITS,
   maxTextLength: 500,
   maxAmenities: 20,
   maxAmenityLength: 40,
@@ -21,27 +31,9 @@ export const JSON_LIMITS = {
   maxInfusionPumps: 10,
 } as const;
 
-/** 24-hour local time, `HH:MM`. */
-export const LOCAL_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** The newest year of manufacture accepted: next year's models are sold now. */
 export function maxYearOfManufacture(now = new Date()): number {
   return now.getUTCFullYear() + 1;
-}
-
-export interface AircraftRestrictions {
-  /**
-   * When the aircraft may depart and arrive, in the local time of each
-   * location (every location has an IANA time zone). An `end` before
-   * `start` spans midnight.
-   */
-  operatingHours?: { start: string; end: string };
-  /** Locations the aircraft does not fly to or from. */
-  excludedLocationIds?: string[];
-  /** Notice the operator needs before departure, beyond the platform's. */
-  minimumNoticeMinutes?: number;
 }
 
 export interface AircraftSpecifications {
@@ -60,34 +52,6 @@ export interface AircraftMedicalEquipment {
   incubator?: boolean;
   infusionPumps?: number;
   notes?: string;
-}
-
-export function parseRestrictions(raw: unknown): AircraftRestrictions | null {
-  const source = record(raw);
-  if (!source) return null;
-  const result: AircraftRestrictions = {};
-  const hours = record(source.operatingHours);
-  if (
-    hours &&
-    isLocalTime(hours.start) &&
-    isLocalTime(hours.end) &&
-    hours.start !== hours.end
-  ) {
-    result.operatingHours = { start: hours.start, end: hours.end };
-  }
-  if (Array.isArray(source.excludedLocationIds)) {
-    result.excludedLocationIds = [
-      ...new Set(
-        source.excludedLocationIds.filter(
-          (id): id is string => typeof id === 'string' && UUID.test(id),
-        ),
-      ),
-    ].slice(0, JSON_LIMITS.maxExcludedLocations);
-  }
-  if (isInt(source.minimumNoticeMinutes, 0, JSON_LIMITS.maxNoticeMinutes)) {
-    result.minimumNoticeMinutes = source.minimumNoticeMinutes;
-  }
-  return result;
 }
 
 export function parseSpecifications(
@@ -142,24 +106,6 @@ export function parseMedicalEquipment(
     result.notes = source.notes;
   }
   return result;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function isLocalTime(value: unknown): value is string {
-  return typeof value === 'string' && LOCAL_TIME.test(value);
-}
-
-function isInt(value: unknown, min: number, max: number): value is number {
-  return (
-    Number.isInteger(value) &&
-    (value as number) >= min &&
-    (value as number) <= max
-  );
 }
 
 function isText(value: unknown, max: number): value is string {

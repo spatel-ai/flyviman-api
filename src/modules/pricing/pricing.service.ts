@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
-import { PriceType } from '../../generated/prisma/enums.js';
+import {
+  type AircraftCategory,
+  PriceType,
+} from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { EngineResult } from './engine.js';
-import type { RuleRow } from './rules.js';
+import { legMetrics, type EngineResult } from './engine.js';
+import { resolveRules, type RuleRow } from './rules.js';
 
 @Injectable()
 export class PricingService {
@@ -29,6 +32,22 @@ export class PricingService {
       // A fixed order, so resolving rules never depends on row order.
       orderBy: [{ scope: 'asc' }, { type: 'asc' }, { version: 'desc' }],
     });
+  }
+
+  /**
+   * A leg's distance in kilometres for a category, after its routing factor,
+   * from the platform and category rules alone (no aircraft or operator).
+   */
+  categoryLegKm(
+    rules: RuleRow[],
+    category: AircraftCategory,
+    rawKm: number,
+  ): number {
+    return legMetrics(
+      resolveRules(rules, { aircraftId: '', operatorId: '', category }),
+      rawKm,
+      null,
+    ).distanceKm;
   }
 
   /** Stores a priced result. Immutable from here on. */

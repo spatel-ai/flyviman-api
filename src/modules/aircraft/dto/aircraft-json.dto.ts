@@ -9,7 +9,6 @@ import {
   IsInt,
   IsObject,
   IsString,
-  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -22,17 +21,19 @@ import {
   hasHiddenCharacter,
   IsPlainText,
 } from '../../../common/validation/text.js';
-import {
-  JSON_LIMITS,
-  LOCAL_TIME,
-  maxYearOfManufacture,
-} from '../aircraft-json.js';
+import { JSON_LIMITS, maxYearOfManufacture } from '../aircraft-json.js';
+
+export {
+  AircraftRestrictionsDto,
+  OperatingHoursDto,
+} from '../../../common/restrictions/restrictions.dto.js';
 
 /**
  * Typed shapes of the aircraft JSON columns (D-104), used for both requests
  * and responses. Every field is optional and none may be `null`; unknown
  * keys are refused by the global `forbidNonWhitelisted`. Reads go through
- * the matching `parse…` functions in `aircraft-json.ts`.
+ * the matching `parse…` functions in `aircraft-json.ts`. Restrictions are
+ * shared with operators and live in `common/restrictions`.
  */
 
 const NOT_BLANK = /\S/;
@@ -45,68 +46,6 @@ const IsText = (max: number) =>
     MaxLength(max),
     IsPlainText(),
   );
-
-export class OperatingHoursDto {
-  @ApiProperty({ example: '06:00', description: 'Local time, HH:MM (24 h).' })
-  @Matches(LOCAL_TIME, {
-    message: '$property must be a time in the form HH:MM',
-  })
-  start: string;
-
-  @ApiProperty({
-    example: '20:00',
-    description: 'Local time, HH:MM (24 h). Before `start` spans midnight.',
-  })
-  @Matches(LOCAL_TIME, {
-    message: '$property must be a time in the form HH:MM',
-  })
-  @ValidateBy({
-    name: 'differsFromStart',
-    validator: {
-      validate: (value, args) =>
-        value !== (args?.object as OperatingHoursDto | undefined)?.start,
-      defaultMessage: () => 'end must differ from start',
-    },
-  })
-  end: string;
-}
-
-export class AircraftRestrictionsDto {
-  @ApiPropertyOptional({
-    type: OperatingHoursDto,
-    description:
-      'When the aircraft may depart and arrive, in the local time of each location.',
-  })
-  @OptionalNotNull()
-  @IsObject()
-  @ValidateNested()
-  @Type(() => OperatingHoursDto)
-  operatingHours?: OperatingHoursDto;
-
-  @ApiPropertyOptional({
-    type: [String],
-    format: 'uuid',
-    maxItems: JSON_LIMITS.maxExcludedLocations,
-    description: 'Locations the aircraft does not fly to or from.',
-  })
-  @OptionalNotNull()
-  @IsArray()
-  @ArrayMaxSize(JSON_LIMITS.maxExcludedLocations)
-  @ArrayUnique()
-  @IsUUID('all', { each: true })
-  excludedLocationIds?: string[];
-
-  @ApiPropertyOptional({
-    minimum: 0,
-    maximum: JSON_LIMITS.maxNoticeMinutes,
-    description: 'Notice needed before departure, in minutes.',
-  })
-  @OptionalNotNull()
-  @IsInt()
-  @Min(0)
-  @Max(JSON_LIMITS.maxNoticeMinutes)
-  minimumNoticeMinutes?: number;
-}
 
 export class AircraftSpecificationsDto {
   @ApiPropertyOptional({

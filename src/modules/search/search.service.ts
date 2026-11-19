@@ -11,14 +11,8 @@ import {
 import { RoutingProvider } from '../../integrations/routing/routing.provider.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LocationsService } from '../locations/locations.service.js';
-import { tripLimitIssue } from '../matching/criteria.js';
 import { MatchingService } from '../matching/matching.service.js';
-import {
-  calculatePrice,
-  legMetrics,
-  type PricePoint,
-} from '../pricing/engine.js';
-import { resolveRules } from '../pricing/rules.js';
+import { calculatePrice, type PricePoint } from '../pricing/engine.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { customerBreakdown } from './breakdown.js';
 import { calendarDepartures, monthInRange } from './calendar.js';
@@ -93,20 +87,12 @@ export class SearchService {
     const rules = await this.pricing.activeRules(now);
     const categories = categoriesFor(category, dto.category);
     const rawKm = this.routing.distanceKm(origin, destination);
-    const issue = tripLimitIssue({
+    const issue = this.matching.tripLimitIssue({
       rules,
       categories,
       // Only platform and category rules resolve without an aircraft.
       distanceKm: (aircraftCategory) =>
-        legMetrics(
-          resolveRules(rules, {
-            aircraftId: '',
-            operatorId: '',
-            category: aircraftCategory,
-          }),
-          rawKm,
-          null,
-        ).distanceKm,
+        this.pricing.categoryLegKm(rules, aircraftCategory, rawKm),
       departureAt,
       now,
     });
