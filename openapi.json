@@ -9502,21 +9502,6 @@
           "createdAt"
         ]
       },
-      "BookingMode": {
-        "type": "string",
-        "enum": [
-          "INSTANT",
-          "REQUEST"
-        ]
-      },
-      "PaymentModel": {
-        "type": "string",
-        "enum": [
-          "A_INSTANT",
-          "B_OPERATOR_CONFIRMED",
-          "C_DEPOSIT"
-        ]
-      },
       "ItineraryLegDto": {
         "type": "object",
         "properties": {
@@ -9803,18 +9788,21 @@
             ]
           },
           "bookingMode": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/BookingMode"
-              }
-            ]
+            "type": "string",
+            "enum": [
+              "INSTANT",
+              "REQUEST"
+            ],
+            "description": "As resolved when the booking was made."
           },
           "paymentModel": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PaymentModel"
-              }
-            ]
+            "type": "string",
+            "enum": [
+              "A_INSTANT",
+              "B_OPERATOR_CONFIRMED",
+              "C_DEPOSIT"
+            ],
+            "description": "As resolved when the booking was made."
           },
           "price": {
             "$ref": "#/components/schemas/BookingPriceDto"
@@ -9859,6 +9847,23 @@
           "createdAt",
           "updatedAt"
         ]
+      },
+      "BookingMode": {
+        "type": "string",
+        "enum": [
+          "INSTANT",
+          "REQUEST"
+        ],
+        "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST."
+      },
+      "PaymentModel": {
+        "type": "string",
+        "enum": [
+          "A_INSTANT",
+          "B_OPERATOR_CONFIRMED",
+          "C_DEPOSIT"
+        ],
+        "description": "Platform setting. Operators may override it per category."
       },
       "CategoryConfigResponseDto": {
         "type": "object",

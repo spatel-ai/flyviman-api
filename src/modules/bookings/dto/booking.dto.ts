@@ -276,10 +276,17 @@ export class BookingResponseDto {
   })
   paymentStatus: BookingPaymentStatus;
 
-  @ApiProperty({ enum: BookingMode, enumName: 'BookingMode' })
+  // Not `enumName`: that would replace the shared schema's description.
+  @ApiProperty({
+    enum: BookingMode,
+    description: 'As resolved when the booking was made.',
+  })
   bookingMode: BookingMode;
 
-  @ApiProperty({ enum: PaymentModel, enumName: 'PaymentModel' })
+  @ApiProperty({
+    enum: PaymentModel,
+    description: 'As resolved when the booking was made.',
+  })
   paymentModel: PaymentModel;
 
   @ApiProperty({ type: BookingPriceDto })

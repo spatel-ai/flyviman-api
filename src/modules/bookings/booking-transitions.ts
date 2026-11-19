@@ -152,8 +152,10 @@ export const EDGES: readonly Edge[] = [
   {
     from: S.OPERATOR_PENDING,
     to: S.PRICE_CONFIRMED,
-    // The operator accepts the price, or the customer accepts a revised quote.
-    by: ['OPERATOR', 'CUSTOMER'],
+    // The operator accepts the proposed price. The doc's "or the customer
+    // accepts a revised quote" waits for quotes (M8), which will decide how
+    // a customer's acceptance is recorded; until then only the operator.
+    by: ['OPERATOR'],
   },
   {
     from: S.OPERATOR_PENDING,
