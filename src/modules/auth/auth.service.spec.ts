@@ -398,24 +398,35 @@ describe('AuthService.refresh, racing requests (D-111)', () => {
   });
 });
 
-describe('AuthService.isRefreshInPlay (rate limit, D-111)', () => {
+describe('AuthService.refreshTokenState (rate limit, D-111)', () => {
   it.each([
     ['a live token', null, true],
     ['a token rotated moments ago', 1_000, true],
     ['a token retired past the grace period', GRACE_SECONDS * 1000, false],
-  ])('%s', async (_name, revokedAgoMs, expected) => {
+  ])('%s', async (_name, revokedAgoMs, inPlay) => {
     const { service, session } = setup();
     session.findUnique.mockResolvedValue({
       revokedAt:
         revokedAgoMs === null ? null : new Date(Date.now() - revokedAgoMs),
     });
-    await expect(service.isRefreshInPlay('old')).resolves.toBe(expected);
+    await expect(service.refreshTokenState('old')).resolves.toEqual({
+      known: true,
+      inPlay,
+    });
+    expect(session.findUnique).toHaveBeenCalledTimes(1);
+    expect(session.findUnique).toHaveBeenCalledWith({
+      where: { refreshTokenHash: 'hash:old' },
+      select: { revokedAt: true },
+    });
   });
 
   it('an unknown token', async () => {
     const { service, session } = setup();
     session.findUnique.mockResolvedValue(null);
-    await expect(service.isRefreshInPlay('made-up')).resolves.toBe(false);
+    await expect(service.refreshTokenState('made-up')).resolves.toEqual({
+      known: false,
+      inPlay: false,
+    });
   });
 });
 
@@ -517,20 +528,5 @@ describe('AuthService.refresh, rotations per sign-in', () => {
     session.findUnique.mockResolvedValue(null);
     await service.refresh('made-up', CLIENT).catch(() => undefined);
     expect(rotations.count).not.toHaveBeenCalled();
-  });
-});
-
-describe('AuthService.isRefreshKnown (rate limit)', () => {
-  it.each([
-    ['a token with a session', { id: 'session-1' }, true],
-    ['a made-up token', null, false],
-  ])('%s', async (_name, row, expected) => {
-    const { service, session } = setup();
-    session.findUnique.mockResolvedValue(row);
-    await expect(service.isRefreshKnown('token')).resolves.toBe(expected);
-    expect(session.findUnique).toHaveBeenCalledWith({
-      where: { refreshTokenHash: 'hash:token' },
-      select: { id: true },
-    });
   });
 });

@@ -7,7 +7,7 @@ function setup() {
     hashToken: (token: string) => `hash:${token}`,
     verifyAccessToken: vi.fn().mockResolvedValue(null),
   };
-  const auth = { isRefreshKnown: vi.fn(), isRefreshInPlay: vi.fn() };
+  const auth = { refreshTokenState: vi.fn() };
   const identity = new SessionRateLimitIdentity(
     tokens as unknown as TokenService,
     auth as unknown as AuthService,
@@ -23,7 +23,7 @@ const refresh = (token?: string) => ({
 describe('SessionRateLimitIdentity for refreshes', () => {
   it('counts a token that belongs to a session against that token', async () => {
     const { identity, auth } = setup();
-    auth.isRefreshKnown.mockResolvedValue(true);
+    auth.refreshTokenState.mockResolvedValue({ known: true, inPlay: false });
     await expect(identity.identify(refresh('real'))).resolves.toBe(
       'refresh:hash:real',
     );
@@ -31,13 +31,13 @@ describe('SessionRateLimitIdentity for refreshes', () => {
 
   it('counts a made-up token by address', async () => {
     const { identity, auth } = setup();
-    auth.isRefreshKnown.mockResolvedValue(false);
+    auth.refreshTokenState.mockResolvedValue({ known: false, inPlay: false });
     await expect(identity.identify(refresh('made-up'))).resolves.toBe(null);
   });
 
   it('counts by address when the lookup fails', async () => {
     const { identity, auth } = setup();
-    auth.isRefreshKnown.mockRejectedValue(new Error('database down'));
+    auth.refreshTokenState.mockRejectedValue(new Error('database down'));
     await expect(identity.identify(refresh('any'))).resolves.toBe(null);
   });
 
@@ -48,12 +48,29 @@ describe('SessionRateLimitIdentity for refreshes', () => {
 
   it('exempts a racing refresh of a token in play, and nothing else', async () => {
     const { identity, auth } = setup();
-    auth.isRefreshInPlay.mockResolvedValue(true);
+    auth.refreshTokenState.mockResolvedValue({ known: true, inPlay: true });
     await expect(identity.exempt(refresh('real'))).resolves.toBe(true);
     await expect(identity.exempt(refresh())).resolves.toBe(false);
     await expect(identity.exempt({ path: '/api/v1/me' })).resolves.toBe(false);
-    auth.isRefreshInPlay.mockRejectedValue(new Error('redis down'));
+    auth.refreshTokenState.mockRejectedValue(new Error('redis down'));
     await expect(identity.exempt(refresh('real'))).resolves.toBe(false);
+  });
+
+  it('looks the session up once per request for exempt and identify', async () => {
+    const { identity, auth } = setup();
+    auth.refreshTokenState.mockResolvedValue({ known: true, inPlay: false });
+    const request = refresh('retired');
+    await expect(identity.exempt(request)).resolves.toBe(false);
+    await expect(identity.identify(request)).resolves.toBe(
+      'refresh:hash:retired',
+    );
+    await expect(identity.identify(request)).resolves.toBe(
+      'refresh:hash:retired',
+    );
+    expect(auth.refreshTokenState).toHaveBeenCalledTimes(1);
+    // A different request looks again.
+    await identity.identify(refresh('retired'));
+    expect(auth.refreshTokenState).toHaveBeenCalledTimes(2);
   });
 });
 

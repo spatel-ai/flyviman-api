@@ -5,6 +5,7 @@ import { AuthService } from './auth.service.js';
 import { TokenService } from './token.service.js';
 
 type Cookies = Record<string, string | undefined>;
+type RefreshState = { known: boolean; inPlay: boolean };
 
 /** How the rate limiter recognises a session (see `RateLimitGuard`). */
 @Injectable()
@@ -17,6 +18,27 @@ export class SessionRateLimitIdentity extends RateLimitIdentity {
   }
 
   /**
+   * The guard asks `exempt` and then `identify` about the same refresh:
+   * both answers come from one session lookup per request. A failed lookup
+   * reads as an unknown token (counted by address, never exempt).
+   */
+  private readonly refreshStates = new WeakMap<object, Promise<RefreshState>>();
+
+  private refreshState(
+    request: Record<string, any>,
+    refresh: string,
+  ): Promise<RefreshState> {
+    let state = this.refreshStates.get(request);
+    if (!state) {
+      state = this.auth
+        .refreshTokenState(refresh)
+        .catch(() => ({ known: false, inPlay: false }));
+      this.refreshStates.set(request, state);
+    }
+    return state;
+  }
+
+  /**
    * Racing refreshes of one token (a page's link prefetches after an idle
    * spell) are not counted: only one can rotate it, and the rest receive
    * the same pair, at most REFRESH_REPLAY_MAX times (D-111). A refresh
@@ -25,9 +47,7 @@ export class SessionRateLimitIdentity extends RateLimitIdentity {
   async exempt(request: Record<string, any>): Promise<boolean> {
     if (!String(request.path ?? '').endsWith('/auth/refresh')) return false;
     const refresh = ((request.cookies ?? {}) as Cookies)[REFRESH_COOKIE];
-    return refresh
-      ? this.auth.isRefreshInPlay(refresh).catch(() => false)
-      : false;
+    return refresh ? (await this.refreshState(request, refresh)).inPlay : false;
   }
 
   /**
@@ -45,7 +65,7 @@ export class SessionRateLimitIdentity extends RateLimitIdentity {
     if (path.endsWith('/auth/refresh')) {
       const refresh = cookies[REFRESH_COOKIE];
       if (!refresh) return null;
-      const known = await this.auth.isRefreshKnown(refresh).catch(() => false);
+      const { known } = await this.refreshState(request, refresh);
       return known ? `refresh:${this.tokens.hashToken(refresh)}` : null;
     }
     if (path.includes('/auth/')) return null;
