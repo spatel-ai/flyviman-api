@@ -1,8 +1,12 @@
+import type { LineCode } from '../pricing/engine.js';
+
 /**
  * Every flight line: the customer's legs (hourly, sector or fixed-route),
- * the per-day minimum billable hours, positioning and ferries.
+ * the per-day minimum billable hours, positioning and ferries. Every engine
+ * line code is in exactly one of this set and `SHOWN_LINES`
+ * (`breakdown.spec.ts`).
  */
-const FLIGHT_LINES = new Set([
+export const FLIGHT_LINES: ReadonlySet<string> = new Set<LineCode>([
   'OPERATING',
   'OPERATING_RETURN',
   'MIN_BILLABLE',
@@ -12,6 +16,28 @@ const FLIGHT_LINES = new Set([
   'REPOSITIONING',
   'INTERIM_REPOSITIONING',
   'INTERIM_POSITIONING',
+]);
+
+/**
+ * Lines a customer sees as they are. Their labels name no base: waiting,
+ * overnight and parking name the customer's own destination, and `OTHER`
+ * carries the operator's own label.
+ */
+export const SHOWN_LINES: ReadonlySet<string> = new Set<LineCode>([
+  'WAITING',
+  'OVERNIGHT',
+  'CREW',
+  'PARKING',
+  'FUEL_SURCHARGE',
+  'PERMIT',
+  'NAVIGATION',
+  'OTHER',
+  'LANDING_HANDLING',
+  'MIN_CHARGE',
+  'PLATFORM_FEE',
+  'SERVICE_FEE',
+  'DISCOUNT',
+  'TAX',
 ]);
 
 /**

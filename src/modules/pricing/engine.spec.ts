@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePrice,
+  DEFAULT_TURNAROUND_MINUTES,
   localNights,
+  percentOf,
   type EngineInput,
   type PricePoint,
 } from './engine.js';
@@ -280,7 +282,13 @@ describe('round trips', () => {
   const WAITING = rule('WAITING', { amountMinor: 1_000_000, freeHours: 1 });
   const OVERNIGHT = rule('OVERNIGHT', { amountMinor: 3_000_000 });
   const CREW = rule('CREW', { amountMinor: 2_000_000 });
-  const ALL = [RATE, POSITIONING, WAITING, OVERNIGHT, CREW];
+  // Landing and handling on record (at nothing), so returning to base
+  // between the flights can be complete.
+  const ON_RECORD = [
+    rule('LANDING', { amountMinor: 0 }),
+    rule('HANDLING', { amountMinor: 0 }),
+  ];
+  const ALL = [RATE, POSITIONING, WAITING, OVERNIGHT, CREW, ...ON_RECORD];
   const codes = (result: ReturnType<typeof run>) =>
     Object.fromEntries(result.breakdown.map((l) => [l.code, l.amountMinor]));
   const sum = (result: ReturnType<typeof run>) =>
@@ -355,6 +363,7 @@ describe('round trips', () => {
         WAITING,
         CREW,
         rule('OVERNIGHT', { amountMinor: 9_000_000 }),
+        ...ON_RECORD,
       ],
       { returnAt: at('2026-12-07T04:00:00Z') },
     );
@@ -370,10 +379,25 @@ describe('round trips', () => {
 
   it('keeps the waiting price when it is cheaper, and WAIT on a tie', () => {
     const result = run(ALL, { returnAt: at('2026-12-07T04:00:00Z') });
-    // WAIT 10,00,000 × 2 nights = 1,00,00,000 = RETURN_TO_BASE: a tie.
+    // WAIT 50,00,000 × 2 nights = 1,00,00,000 = RETURN_TO_BASE: a tie.
     expect(result.roundTrip?.strategy).toBe('WAIT');
     expect(result.assumptions.join(' ')).toMatch(
-      /waits 2 nights at B .* priced below returning to A/,
+      /waits 2 nights at B until the return flight; returning to A between the flights costs the same, so waiting was kept/,
+    );
+    expect(result.assumptions.join(' ')).not.toMatch(/priced below/);
+    const cheaper = run(
+      [
+        RATE,
+        POSITIONING,
+        rule('OVERNIGHT', { amountMinor: 1_000_000 }),
+        CREW,
+        ...ON_RECORD,
+      ],
+      { returnAt: at('2026-12-07T04:00:00Z') },
+    );
+    expect(cheaper.roundTrip?.strategy).toBe('WAIT');
+    expect(cheaper.assumptions.join(' ')).toMatch(
+      /waits 2 nights at B until the return flight, priced below returning to A/,
     );
   });
 
@@ -390,7 +414,7 @@ describe('round trips', () => {
 
   it('a strategy with an input not on record loses to a complete one', () => {
     // No overnight or crew rule: waiting 2 nights cannot be fully priced.
-    const result = run([RATE, POSITIONING], {
+    const result = run([RATE, POSITIONING, ...ON_RECORD], {
       returnAt: at('2026-12-07T04:00:00Z'),
     });
     expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
@@ -970,5 +994,338 @@ describe('resolveRules', () => {
       target,
     );
     expect(resolved.COMMISSION?.config.percent).toBe(10);
+  });
+});
+
+describe('pricing review fixes (S2)', () => {
+  const at = (iso: string) => new Date(iso);
+  const codes = (result: ReturnType<typeof run>) =>
+    Object.fromEntries(result.breakdown.map((l) => [l.code, l.amountMinor]));
+  const sum = (result: ReturnType<typeof run>) =>
+    result.breakdown.reduce((total, line) => total + line.amountMinor, 0);
+  const POSITIONING = rule('POSITIONING', { rateFactor: 0.5 });
+  const OVERNIGHT = rule('OVERNIGHT', { amountMinor: 3_000_000 });
+  const CREW = rule('CREW', { amountMinor: 2_000_000 });
+  const TWO_NIGHTS = { returnAt: at('2026-12-07T04:00:00Z') };
+  const ON_RECORD = [
+    rule('LANDING', { amountMinor: 0 }),
+    rule('HANDLING', { amountMinor: 0 }),
+  ];
+
+  it('says nothing about a limit when no discount applied at all', () => {
+    const discount = rule('DISCOUNT', { name: 'Launch', percent: 10 });
+    const zeroCommission = run([
+      RATE,
+      rule('COMMISSION', { percent: 0, mode: 'ADD_ON' }),
+      discount,
+    ]);
+    const noCommission = run([RATE, discount]);
+    for (const result of [zeroCommission, noCommission]) {
+      expect(result.discountMinor).toBe(0);
+      expect(result.assumptions.join(' ')).not.toMatch(/its limit/);
+      expect(result.breakdown.map((l) => l.code)).not.toContain('DISCOUNT');
+      expect(result.totalMinor).toBe(sum(result));
+    }
+  });
+
+  describe('choosing a round-trip strategy', () => {
+    it('a complete waiting price beats a cheaper return to base that is not', () => {
+      // No positioning rate: the flights to base and back are left out, so
+      // returning to base looks cheaper than it is.
+      const result = run([RATE, OVERNIGHT, CREW], {
+        ...TWO_NIGHTS,
+        aircraft: { ...AIRCRAFT, base: point('C', 0, 3) },
+      });
+      expect(result.roundTrip?.options).toEqual([
+        expect.objectContaining({ strategy: 'WAIT', complete: true }),
+        expect.objectContaining({
+          strategy: 'RETURN_TO_BASE',
+          complete: false,
+        }),
+      ]);
+      const [wait, ferry] = result.roundTrip!.options;
+      expect(ferry.totalMinor).toBeLessThan(wait.totalMinor);
+      expect(result.roundTrip?.strategy).toBe('WAIT');
+      const said = result.assumptions.join(' ');
+      expect(said).toMatch(
+        /waits 2 nights at B until the return flight; returning to C between the flights could not be fully priced/,
+      );
+      expect(said).not.toMatch(/priced below/);
+    });
+
+    it('a complete return to base beats waiting that is not', () => {
+      // No overnight or crew rule: two nights at B cannot be priced.
+      const result = run([RATE, POSITIONING, ...ON_RECORD], TWO_NIGHTS);
+      expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
+      const said = result.assumptions.join(' ');
+      expect(said).toMatch(
+        /returns to A between the flights and comes back for the return; waiting at B could not be fully priced/,
+      );
+      expect(said).not.toMatch(/priced below/);
+    });
+
+    it('keeps waiting when neither option is complete, whichever looks cheaper', () => {
+      // No overnight rule and no positioning rate.
+      const result = run([RATE, CREW], {
+        ...TWO_NIGHTS,
+        aircraft: { ...AIRCRAFT, base: point('C', 0, 3) },
+      });
+      const [wait, ferry] = result.roundTrip!.options;
+      expect([wait.complete, ferry.complete]).toEqual([false, false]);
+      expect(ferry.totalMinor).toBeLessThan(wait.totalMinor);
+      expect(result.roundTrip?.strategy).toBe('WAIT');
+      const said = result.assumptions.join(' ');
+      expect(said).toMatch(
+        /neither waiting nor returning to C between the flights could be fully priced, so waiting was kept/,
+      );
+      expect(said).not.toMatch(/priced below/);
+    });
+  });
+
+  describe('returning to base between the flights', () => {
+    it('lands at the base and again at the destination, with handling at both ends of each leg', () => {
+      const charges = [
+        rule('LANDING', { amountMinor: 100 }),
+        rule('HANDLING', { amountMinor: 10 }),
+      ];
+      const ferry = run(
+        [
+          RATE,
+          POSITIONING,
+          CREW,
+          rule('OVERNIGHT', { amountMinor: 9_000_000 }),
+          ...charges,
+        ],
+        TWO_NIGHTS,
+      );
+      expect(ferry.roundTrip?.strategy).toBe('RETURN_TO_BASE');
+      // Landing at B, A (base), B and A; handling at both ends of 4 legs.
+      expect(codes(ferry).LANDING_HANDLING).toBe(4 * 100 + 8 * 10);
+      expect(ferry.totalMinor).toBe(sum(ferry));
+      // Waiting flies two legs: landing at B and A, handling at 4 ends.
+      const wait = run([RATE, POSITIONING, OVERNIGHT, CREW, ...charges], {
+        ...TWO_NIGHTS,
+        aircraft: { ...AIRCRAFT, base: point('C', 0, 30) },
+      });
+      expect(wait.roundTrip?.strategy).toBe('WAIT');
+      expect(codes(wait).LANDING_HANDLING).toBe(2 * 100 + 4 * 10);
+    });
+
+    it('includes ferry landings within the free positioning distance', () => {
+      const result = run(
+        [
+          RATE,
+          rule('POSITIONING', { rateFactor: 0.5, freeWithinKm: 1000 }),
+          OVERNIGHT,
+          CREW,
+          rule('LANDING', { amountMinor: 100 }),
+          rule('HANDLING', { amountMinor: 10 }),
+        ],
+        TWO_NIGHTS,
+      );
+      expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
+      expect(codes(result).INTERIM_POSITIONING).toBeUndefined();
+      expect(codes(result).LANDING_HANDLING).toBe(480);
+    });
+
+    it('a ferry charge not on record makes returning to base incomplete, so a complete wait wins', () => {
+      // Landing and handling on record everywhere but the base, which is
+      // the cheaper option on its known costs.
+      const charged = (id: string, longitude: number, name = id) => ({
+        ...point(id, 0, longitude),
+        name,
+        charges: {
+          currency: 'INR',
+          categories: [
+            {
+              category: 'LIGHT_JET',
+              landingMinor: 100,
+              parkingMinor: 0,
+              handlingMinor: 10,
+            },
+          ],
+        },
+      });
+      const C = { ...point('C', 0, 3), name: 'Hidden Field' };
+      const result = run(
+        [
+          RATE,
+          POSITIONING,
+          CREW,
+          rule('OVERNIGHT', { amountMinor: 9_000_000 }),
+        ],
+        {
+          ...TWO_NIGHTS,
+          origin: charged('A', 0),
+          destination: charged('B', 6),
+          aircraft: { ...AIRCRAFT, base: C },
+        },
+      );
+      const [wait, ferry] = result.roundTrip!.options;
+      expect(wait).toMatchObject({ strategy: 'WAIT', complete: true });
+      expect(ferry).toMatchObject({
+        strategy: 'RETURN_TO_BASE',
+        complete: false,
+      });
+      expect(ferry.totalMinor).toBeLessThan(wait.totalMinor);
+      expect(result.roundTrip?.strategy).toBe('WAIT');
+      const said = result.assumptions.join(' ');
+      expect(said).not.toMatch(/priced below/);
+      expect(said).toMatch(
+        /returning to Hidden Field between the flights could not be fully priced/,
+      );
+      expect(result.totalMinor).toBe(sum(result));
+    });
+
+    it('a return to base without its charges on record loses to waiting; each exclusion listed once', () => {
+      const C = { ...point('C', 0, 3), name: 'Hidden Field' };
+      const result = run(
+        [
+          RATE,
+          POSITIONING,
+          rule('OVERNIGHT', { amountMinor: 9_000_000 }),
+          CREW,
+        ],
+        { ...TWO_NIGHTS, aircraft: { ...AIRCRAFT, base: C } },
+      );
+      expect(result.roundTrip?.strategy).toBe('WAIT');
+      expect(result.assumptions.join(' ')).not.toMatch(/priced below/);
+      expect(result.exclusions.join(' ')).not.toMatch(/Hidden Field/);
+      expect(
+        result.exclusions.filter((e) => e === 'Landing charges at B'),
+      ).toHaveLength(1);
+    });
+  });
+
+  describe('time to return to base', () => {
+    // Lands at B at 05:30; to base A and back is 2 h of flying.
+    const options = (result: ReturnType<typeof run>) =>
+      result.roundTrip?.options.map((o) => o.strategy);
+    const WAITING = rule('WAITING', { amountMinor: 1_000_000, freeHours: 1 });
+
+    it(`needs ${DEFAULT_TURNAROUND_MINUTES} minutes on the ground at each end by default`, () => {
+      // 2 h flying + 2 × 45 min = 3.5 h: 09:00 fits, 08:59 does not.
+      expect(
+        options(
+          run([RATE, POSITIONING, WAITING], {
+            returnAt: at('2026-12-05T09:00:00Z'),
+          }),
+        ),
+      ).toEqual(['WAIT', 'RETURN_TO_BASE']);
+      expect(
+        options(
+          run([RATE, POSITIONING, WAITING], {
+            returnAt: at('2026-12-05T08:59:00Z'),
+          }),
+        ),
+      ).toEqual(['WAIT']);
+    });
+
+    it('takes the turnaround from the time allowance rule', () => {
+      const allowance = rule('TIME_ALLOWANCE', {
+        minutes: 0,
+        turnaroundMinutes: 60,
+      });
+      // 2 h flying + 2 × 60 min = 4 h: 09:30 fits, 09:29 does not.
+      expect(
+        options(
+          run([RATE, POSITIONING, WAITING, allowance], {
+            returnAt: at('2026-12-05T09:30:00Z'),
+          }),
+        ),
+      ).toEqual(['WAIT', 'RETURN_TO_BASE']);
+      expect(
+        options(
+          run([RATE, POSITIONING, WAITING, allowance], {
+            returnAt: at('2026-12-05T09:29:00Z'),
+          }),
+        ),
+      ).toEqual(['WAIT']);
+    });
+  });
+
+  describe('percentages in exact integers, half up', () => {
+    it('rounds a half paisa up, where floating point would not', () => {
+      // 12,345,000 × 0.57% = 70,366.5 exactly.
+      expect(percentOf(12_345_000, 0.57)).toBe(70_367);
+      expect(percentOf(12_345_000, 0)).toBe(0);
+      expect(percentOf(0, 18)).toBe(0);
+      expect(percentOf(100, 18)).toBe(18);
+      expect(percentOf(5, 10)).toBe(1); // 0.5 rounds up
+      expect(percentOf(4, 10)).toBe(0); // 0.4 rounds down
+    });
+
+    it('applies the rule to commission, markup, discount and tax', () => {
+      const rate = rule(
+        'HOURLY_RATE',
+        { amountMinor: 12_345_000, currency: 'INR' },
+        'AIRCRAFT',
+        'ac1',
+      );
+      const result = run([
+        rate,
+        rule('COMMISSION', { percent: 0.57, mode: 'ADD_ON' }),
+        rule('MARKUP', { percent: 0.57 }),
+        rule('DISCOUNT', { name: 'Offer', percent: 0.01 }),
+        rule('TAX', { name: 'GST', percent: 0.57 }),
+      ]);
+      // Before tax 12,345,000 + 70,367 + 70,367 = 12,485,734; discount
+      // 0.01% = 1,248.5734 → 1,249; tax 0.57% of 12,484,485 = 71,161.5645.
+      expect(codes(result)).toMatchObject({
+        OPERATING: 12_345_000,
+        PLATFORM_FEE: 70_367,
+        MARKUP: 70_367,
+        DISCOUNT: -1_249,
+        TAX: 71_162,
+      });
+      expect(result.totalMinor).toBe(sum(result));
+    });
+  });
+
+  it('a per-day minimum bills exactly the minimum hours × rate', () => {
+    // 550 km at 600 km/h: 55 min a flight, 18,333,333.33 at 20,000,000/h.
+    const rate = rule(
+      'HOURLY_RATE',
+      { amountMinor: 20_000_000, currency: 'INR' },
+      'AIRCRAFT',
+      'ac1',
+    );
+    const result = run(
+      [
+        rate,
+        rule('MIN_BILLABLE_HOURS', { hours: 2, per: 'DAY' }),
+        OVERNIGHT,
+        CREW,
+      ],
+      { destination: point('D', 0, 5.5), returnAt: at('2026-12-07T08:00:00Z') },
+    );
+    const flying = codes(result);
+    // 2 h a day × 3 days × 20,000,000/h.
+    expect(
+      flying.OPERATING + flying.OPERATING_RETURN + flying.MIN_BILLABLE,
+    ).toBe(120_000_000);
+    expect(result.totalMinor).toBe(sum(result));
+  });
+
+  it('adds no per-day minimum when the hours flown meet it exactly', () => {
+    // Tax-inclusive: 8,474,576.27 an hour. Two 1 h flights on one day meet
+    // 2 h a day, though the rounded flights fall a paisa short of 2 h × rate.
+    const inclusive = rule(
+      'HOURLY_RATE',
+      { amountMinor: 10_000_000, currency: 'INR', taxInclusive: true },
+      'AIRCRAFT',
+      'ac1',
+    );
+    const result = run(
+      [
+        inclusive,
+        rule('TAX', { name: 'GST', percent: 18 }),
+        rule('MIN_BILLABLE_HOURS', { hours: 2, per: 'DAY' }),
+      ],
+      { returnAt: at('2026-12-05T08:00:00Z') },
+    );
+    expect(codes(result).OPERATING).toBe(8_474_576);
+    expect(codes(result).MIN_BILLABLE).toBeUndefined();
+    expect(result.totalMinor).toBe(sum(result));
   });
 });

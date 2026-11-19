@@ -64,7 +64,12 @@ export interface RuleConfigs {
   COMMISSION: { percent: number; mode: 'ADD_ON' | 'DEDUCTED' };
   TAX: { name: string; percent: number };
   ROUTING_FACTOR: { factor: number };
-  TIME_ALLOWANCE: { minutes: number };
+  /**
+   * `minutes` per leg for taxi and procedures; `turnaroundMinutes`, the
+   * ground time needed at each end of a return to base between a round
+   * trip's flights (left out: the engine's default).
+   */
+  TIME_ALLOWANCE: { minutes: number; turnaroundMinutes?: number };
   VALIDITY: { minutes: number };
 }
 

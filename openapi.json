@@ -10876,6 +10876,10 @@
               }
             ]
           },
+          "incomplete": {
+            "type": "boolean",
+            "description": "True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request."
+          },
           "validUntil": {
             "type": "string",
             "format": "date-time"
@@ -10897,6 +10901,7 @@
           "returnAt",
           "roundTripStrategy",
           "price",
+          "incomplete",
           "validUntil",
           "warnings"
         ]
@@ -11136,6 +11141,10 @@
               }
             ]
           },
+          "incomplete": {
+            "type": "boolean",
+            "description": "True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request."
+          },
           "validUntil": {
             "type": "string",
             "format": "date-time"
@@ -11207,6 +11216,7 @@
           "returnAt",
           "roundTripStrategy",
           "price",
+          "incomplete",
           "validUntil",
           "warnings",
           "searchId",
