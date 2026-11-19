@@ -36,6 +36,7 @@ import { AirAmbulanceModule } from './modules/air-ambulance/air-ambulance.module
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { ContentModule } from './modules/content/content.module.js';
+import { ConfigurationModule } from './modules/configuration/configuration.module.js';
 import { EnquiriesModule } from './modules/enquiries/enquiries.module.js';
 import { ReportsModule } from './modules/reports/reports.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
@@ -73,6 +74,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
     NotificationsModule,
     DocumentsModule,
     ContentModule,
+    ConfigurationModule,
     EnquiriesModule,
     ReportsModule,
     AuditModule,

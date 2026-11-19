@@ -650,6 +650,39 @@ model ContentItem {
 }
 
 // ---------------------------------------------------------------------------
+// Service category configuration (C2): booking mode and payment model
+// ---------------------------------------------------------------------------
+
+/// Open decision 5. Air ambulance is never INSTANT (rule 7): enforced in
+/// configuration/category-config.ts and by a CHECK constraint.
+enum BookingMode {
+  INSTANT
+  REQUEST
+}
+
+/// Open decision 7: A full payment, B after operator confirmation, C deposit.
+enum PaymentModel {
+  A_INSTANT
+  B_OPERATOR_CONFIRMED
+  C_DEPOSIT
+}
+
+/// Platform setting per category and region. An operator's override lives in
+/// Operator.bookingMode and Operator.paymentModel (jsonb per category).
+model ServiceCategoryConfig {
+  id           String          @id @default(uuid()) @db.Uuid
+  category     ServiceCategory
+  region       String          @default("IN")
+  isEnabled    Boolean         @default(true)
+  bookingMode  BookingMode
+  paymentModel PaymentModel
+  createdAt    DateTime        @default(now()) @db.Timestamptz
+  updatedAt    DateTime        @updatedAt @db.Timestamptz
+
+  @@unique([category, region])
+}
+
+// ---------------------------------------------------------------------------
 // Sales enquiries (contact page)
 // ---------------------------------------------------------------------------
 

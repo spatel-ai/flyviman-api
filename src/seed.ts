@@ -9,6 +9,10 @@ import {
   UserStatus,
 } from './generated/prisma/enums.js';
 import { DEFAULT_TEMPLATES } from './modules/notifications/templates.js';
+import {
+  DEFAULT_CATEGORY_CONFIG,
+  DEFAULT_REGION,
+} from './modules/configuration/category-config.js';
 import { hashPassword, PASSWORD_MIN_LENGTH } from './common/crypto/password.js';
 
 // A local .env when there is one (Node's own loader); hosts set variables
@@ -175,6 +179,25 @@ async function ensureLocations() {
   console.log(`created  locations      ${count}`);
 }
 
+/**
+ * Booking mode and payment model per category: the assumed defaults of open
+ * decisions 5 and 7. Rows already present are left alone, so changes made by
+ * administrators are never overwritten.
+ */
+async function ensureCategoryConfig() {
+  const { count } = await prisma.serviceCategoryConfig.createMany({
+    data: Object.entries(DEFAULT_CATEGORY_CONFIG).map(
+      ([category, setting]) => ({
+        category: category as keyof typeof DEFAULT_CATEGORY_CONFIG,
+        region: DEFAULT_REGION,
+        ...setting,
+      }),
+    ),
+    skipDuplicates: true,
+  });
+  if (count > 0) console.log(`created  category configs ${count}`);
+}
+
 async function ensureCustomerProfile(email: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { email } });
   await prisma.customerProfile.upsert({
@@ -235,6 +258,7 @@ async function ensureOperator(email: string) {
 try {
   await ensureContent();
   await ensureLocations();
+  await ensureCategoryConfig();
   await ensurePricingRules();
   await ensureUser(
     required('SEED_ADMIN_EMAIL').toLowerCase(),
