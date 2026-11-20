@@ -5525,7 +5525,7 @@
     },
     "/api/v1/bookings/{reference}/cancellation-quote": {
       "get": {
-        "description": "Worked out from the cancellation terms the booking was made on (rule 9) and the notice left before the first departure. A charge is money only when the price is `CONFIRMED` (`amountKnown`); before that the rule that applies is shown and `chargeMinor` is 0. `refundMinor` is what is due back (refunds are made later; nothing moves here), null while the amount paid cannot be read. 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404.",
+        "description": "Worked out from the cancellation terms the booking was made on (rule 9) and the notice left before the first departure. A charge is money only when the price is `CONFIRMED` (`amountKnown`); before that the rule that applies is shown and `chargeMinor` is 0. `paidMinor` is what was paid towards the booking (less refunds) and `refundMinor` what is due back, paid less the charge (finance refunds it from its queue; nothing moves here). 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404.",
         "operationId": "BookingsController_cancellationQuote",
         "parameters": [
           {
@@ -6837,8 +6837,46 @@
       }
     },
     "/api/v1/bookings/{reference}/payments": {
+      "get": {
+        "description": "Newest first: every attempt with its status, method type, refunds, and `receipt` (null until it has succeeded; the same as `GET /payments/:reference/receipt`). What is due now is the booking’s `amountDue`. Another customer’s booking is 404.",
+        "operationId": "PaymentsController_forBooking",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookingPaymentDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The payments of one of the caller’s bookings, with receipts",
+        "tags": [
+          "payments"
+        ]
+      },
       "post": {
-        "description": "Only for a booking `AWAITING_PAYMENT` with a `CONFIRMED` price and nothing paid: model A and B take the full total (B once the operator has accepted), model C the deposit (the category’s percent, rounded up to the next paisa). 409 `PAYMENT_NOT_DUE` otherwise (`details` says why), 409 `PAYMENT_ALREADY_PAID`, 409 `PAYMENT_AMOUNT_MISMATCH` when `expectedAmountMinor` is not the amount due (the amount due, currency and purpose are in `details`), 502 `PAYMENT_PROVIDER_ERROR`. While a payment for the same amount is `INITIATED` or `PENDING` it is returned again instead of a second order. Open the gateway’s checkout with `checkout`. Never changes the booking’s status. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "For a booking `AWAITING_PAYMENT` with a `CONFIRMED` price and nothing paid: model A and B take the full total (B once the operator has accepted), model C the deposit (the category’s percent, rounded up to the next paisa). After a model C deposit (`paymentStatus` `PARTIALLY_PAID`), the balance: the total less what was paid (purpose `BALANCE`), while the booking is `AWAITING_PAYMENT`, `CONFIRMED` or `SCHEDULED` and before the first departure; once it succeeds the booking is `PAID`. 409 `PAYMENT_NOT_DUE` otherwise (`details` says why), 409 `PAYMENT_ALREADY_PAID`, 409 `PAYMENT_AMOUNT_MISMATCH` when `expectedAmountMinor` is not the amount due (the amount due, currency and purpose are in `details`), 502 `PAYMENT_PROVIDER_ERROR`. While a payment for the same amount is `INITIATED` or `PENDING` it is returned again instead of a second order. Open the gateway’s checkout with `checkout`. Never changes the booking’s status. A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "PaymentsController_create",
         "parameters": [
           {
@@ -6888,6 +6926,80 @@
           }
         ],
         "summary": "Create a gateway order for what the booking owes now",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/{reference}": {
+      "get": {
+        "description": "For the customer who owes it (poll it after checkout), or finance and the super administrator. `status` is the payment’s own; the booking’s `paymentStatus` summarises all its payments. `method` is the method type only (never card details). Refunds carry no reason. Someone else’s payment is 404.",
+        "operationId": "PaymentsController_detail",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One payment, with its refunds",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/{reference}/receipt": {
+      "get": {
+        "description": "For a payment whose money arrived; 409 `PAYMENT_NOT_SUCCEEDED` before that. The issuer (`RECEIPT_ISSUER_*`), the booking reference, the amount labelled `CONFIRMED`, the method type (never card details, rule 10), when it was paid, and its refunds with what was kept. It says, in `notice`, that it is a payment receipt and not a GST tax invoice: the invoice format is not decided (open decision 13). JSON; the web renders it. Someone else’s payment is 404.",
+        "operationId": "PaymentsController_receipt",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentReceiptDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The receipt of a payment (not a GST tax invoice)",
         "tags": [
           "payments"
         ]
@@ -6991,6 +7103,258 @@
         "summary": "Gateway notification",
         "tags": [
           "webhooks"
+        ]
+      }
+    },
+    "/api/v1/admin/payments": {
+      "get": {
+        "description": "Filter by `status`, `reviewReason` (payments flagged for a person) or `bookingReference`. Each with its method type, refunds and `reviewReason`.",
+        "operationId": "AdminPaymentsController_payments",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/PaymentStatus"
+            }
+          },
+          {
+            "name": "reviewReason",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/PaymentReviewReason"
+            }
+          },
+          {
+            "name": "bookingReference",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "FLY-BK-7K2M9Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminPaymentDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Payments, newest first",
+        "tags": [
+          "admin-payments"
+        ]
+      }
+    },
+    "/api/v1/admin/refunds": {
+      "get": {
+        "description": "Filter by `status`. Each with its payment, booking, reason and what is still refundable from the payment.",
+        "operationId": "AdminPaymentsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RefundStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RefundResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Refunds, newest first",
+        "tags": [
+          "admin-payments"
+        ]
+      }
+    },
+    "/api/v1/admin/payments/{reference}/refunds": {
+      "post": {
+        "description": "For a payment whose money arrived (`SUCCEEDED`, `REFUND_PENDING` or `PARTIALLY_REFUNDED`; otherwise 409 `PAYMENT_NOT_REFUNDABLE`), up to what is still refundable: its amount less refunds completed or under way (409 `REFUND_EXCEEDS_REMAINDER`, the remainder in `details`). The refund is recorded `REQUESTED` and the payment and booking `paymentStatus` become `REFUND_PENDING` before the gateway is asked; the answer is the refund as recorded: `PENDING` while the gateway returns the money, `FAILED` if it refused (the amount is refundable again), or still `REQUESTED` if the gateway could not be reached (its notice settles it later; start no second refund for it). The gateway’s notice completes it: the payment becomes `PARTIALLY_REFUNDED` or `REFUNDED`. Audited with the reason. Never changes the booking’s status. A repeat with the same `Idempotency-Key` and body returns the first answer. Another payment’s or an unknown reference is 404.",
+        "operationId": "AdminPaymentsController_create",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "required": true,
+            "in": "header",
+            "description": "A UUID, new for each refund and reused on retry.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRefundDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Start a refund of a payment, in full or in part",
+        "tags": [
+          "admin-payments"
+        ]
+      }
+    },
+    "/api/v1/admin/refunds/due": {
+      "get": {
+        "description": "Oldest first. `CANCELLATION`: a cancelled booking’s refund due (paid less the charge, recorded at cancellation) less refunds made since, spread over its payments; `BOOKING_CLOSED`: a payment that succeeded after the booking expired or was cancelled; `ALREADY_PAID`: a second payment for a paid booking. Each row is one payment with `dueMinor` to refund; a row leaves the queue once refunds completed or under way cover it. Nothing is refunded automatically. Payments flagged `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` are not listed: their extra money is not on a payment this API can refund.",
+        "operationId": "AdminPaymentsController_due",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RefundDueItemDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Payments to refund (the finance queue)",
+        "tags": [
+          "admin-payments"
         ]
       }
     },
@@ -14691,6 +15055,50 @@
           "createdAt"
         ]
       },
+      "PaymentPurpose": {
+        "type": "string",
+        "enum": [
+          "FULL",
+          "DEPOSIT",
+          "BALANCE"
+        ],
+        "description": "`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit)."
+      },
+      "BookingAmountDueDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise: send it as `expectedAmountMinor`."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "priceType": {
+            "description": "Only a confirmed price is ever charged (rule 1).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "kind": {
+            "description": "`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "priceType",
+          "kind"
+        ]
+      },
       "ItineraryLegDto": {
         "type": "object",
         "properties": {
@@ -15046,6 +15454,16 @@
               }
             ]
           },
+          "amountDue": {
+            "nullable": true,
+            "description": "What is due now (the same rule `POST /bookings/:reference/payments` applies), or null when nothing is: not awaiting payment, price not confirmed, operator not yet accepted (model B), paid, or past departure for a balance (W4-1).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingAmountDueDto"
+              }
+            ]
+          },
           "bookingMode": {
             "type": "string",
             "enum": [
@@ -15120,6 +15538,7 @@
           "category",
           "status",
           "paymentStatus",
+          "amountDue",
           "bookingMode",
           "paymentModel",
           "price",
@@ -15197,13 +15616,11 @@
           },
           "paidMinor": {
             "type": "number",
-            "nullable": true,
-            "description": "Paise paid so far; null while it cannot be read yet (M9)."
+            "description": "Paise paid towards the booking: succeeded payments less refunds completed or under way, leaving out money flagged for a refund of its own (a late or second payment)."
           },
           "refundMinor": {
             "type": "number",
-            "nullable": true,
-            "description": "Paise due back: paid less the charge, never below 0. Null when `paidMinor` is null. Refunds are made later (M9); nothing is moved here."
+            "description": "Paise due back: paid less the charge, never below 0. Nothing is moved here: finance makes the refund from its queue (`GET /admin/refunds/due`)."
           },
           "explanation": {
             "type": "string",
@@ -15775,14 +16192,6 @@
           "conditions",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "PaymentPurpose": {
-        "type": "string",
-        "enum": [
-          "FULL",
-          "DEPOSIT",
-          "BALANCE"
         ]
       },
       "PaymentStatus": {
@@ -16539,26 +16948,6 @@
           "conditions"
         ]
       },
-      "CreatePaymentDto": {
-        "type": "object",
-        "properties": {
-          "expectedAmountMinor": {
-            "type": "number",
-            "description": "Paise: the amount due that the customer was shown and agrees to pay. If it is not what is due now, 409 `PAYMENT_AMOUNT_MISMATCH` carries the amount due."
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "INR"
-            ],
-            "example": "INR"
-          }
-        },
-        "required": [
-          "expectedAmountMinor",
-          "currency"
-        ]
-      },
       "PaymentPriceDto": {
         "type": "object",
         "properties": {
@@ -16608,6 +16997,371 @@
           "orderId"
         ]
       },
+      "PaymentMethodDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true,
+            "example": "upi",
+            "description": "The gateway’s method type (`card`, `upi`, `netbanking`, `wallet`, …); null when it did not say."
+          },
+          "label": {
+            "type": "string",
+            "example": "UPI",
+            "description": "For display."
+          }
+        },
+        "required": [
+          "type",
+          "label"
+        ]
+      },
+      "RefundStatus": {
+        "type": "string",
+        "enum": [
+          "REQUESTED",
+          "PENDING",
+          "COMPLETED",
+          "FAILED"
+        ],
+        "description": "`REQUESTED` (recorded, the gateway not yet answered), `PENDING` (the gateway is returning it), `COMPLETED` or `FAILED`."
+      },
+      "RefundSummaryDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-RF-7K2M9Q"
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "status": {
+            "description": "`REQUESTED` (recorded, the gateway not yet answered), `PENDING` (the gateway is returning it), `COMPLETED` or `FAILED`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefundStatus"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it last changed: completion or failure once settled."
+          }
+        },
+        "required": [
+          "reference",
+          "amountMinor",
+          "currency",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ReceiptIssuerDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Flyviman"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "address",
+          "email",
+          "phone"
+        ]
+      },
+      "PaymentReceiptDto": {
+        "type": "object",
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "enum": [
+              "PAYMENT_RECEIPT"
+            ]
+          },
+          "notice": {
+            "type": "string",
+            "example": "This is a payment receipt, not a GST tax invoice.",
+            "description": "Shown on every receipt, word for word."
+          },
+          "receiptNumber": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q",
+            "description": "The payment reference."
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issuer": {
+            "$ref": "#/components/schemas/ReceiptIssuerDto"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "purpose": {
+            "description": "`FULL`, `DEPOSIT` or `BALANCE`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          },
+          "amount": {
+            "description": "What was paid, labelled `CONFIRMED` (rule 1).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPriceDto"
+              }
+            ]
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refunds": {
+            "description": "Oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundSummaryDto"
+            }
+          },
+          "refundedMinor": {
+            "type": "number",
+            "description": "Paise returned so far (completed refunds)."
+          },
+          "netPaidMinor": {
+            "type": "number",
+            "description": "Paise kept: the amount less refunds returned."
+          }
+        },
+        "required": [
+          "documentType",
+          "notice",
+          "receiptNumber",
+          "issuedAt",
+          "issuer",
+          "bookingReference",
+          "category",
+          "purpose",
+          "amount",
+          "method",
+          "paidAt",
+          "refunds",
+          "refundedMinor",
+          "netPaidMinor"
+        ]
+      },
+      "BookingPaymentDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "description": "Only a verified gateway notice makes it `SUCCEEDED` or `FAILED`; the checkout result makes it `PENDING` at most.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "purpose": {
+            "description": "`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "#/components/schemas/PaymentPriceDto"
+          },
+          "checkout": {
+            "$ref": "#/components/schemas/PaymentCheckoutDto"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "refundedMinor": {
+            "type": "number",
+            "description": "Paise returned so far (completed refunds)."
+          },
+          "refunds": {
+            "description": "Oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundSummaryDto"
+            }
+          },
+          "receipt": {
+            "nullable": true,
+            "description": "Null until the payment has succeeded.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentReceiptDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "purpose",
+          "price",
+          "checkout",
+          "paidAt",
+          "createdAt",
+          "method",
+          "refundedMinor",
+          "refunds",
+          "receipt"
+        ]
+      },
+      "PaymentDetailDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "description": "Only a verified gateway notice makes it `SUCCEEDED` or `FAILED`; the checkout result makes it `PENDING` at most.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "purpose": {
+            "description": "`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "#/components/schemas/PaymentPriceDto"
+          },
+          "checkout": {
+            "$ref": "#/components/schemas/PaymentCheckoutDto"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "refundedMinor": {
+            "type": "number",
+            "description": "Paise returned so far (completed refunds)."
+          },
+          "refunds": {
+            "description": "Oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "purpose",
+          "price",
+          "checkout",
+          "paidAt",
+          "createdAt",
+          "method",
+          "refundedMinor",
+          "refunds"
+        ]
+      },
+      "CreatePaymentDto": {
+        "type": "object",
+        "properties": {
+          "expectedAmountMinor": {
+            "type": "number",
+            "description": "Paise: the amount due that the customer was shown and agrees to pay. If it is not what is due now, 409 `PAYMENT_AMOUNT_MISMATCH` carries the amount due."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          }
+        },
+        "required": [
+          "expectedAmountMinor",
+          "currency"
+        ]
+      },
       "PaymentResponseDto": {
         "type": "object",
         "properties": {
@@ -16628,7 +17382,7 @@
             ]
           },
           "purpose": {
-            "description": "`FULL` (models A and B) or `DEPOSIT` (model C).",
+            "description": "`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).",
             "allOf": [
               {
                 "$ref": "#/components/schemas/PaymentPurpose"
@@ -16694,6 +17448,269 @@
         },
         "required": [
           "received"
+        ]
+      },
+      "AdminPaymentDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "description": "Only a verified gateway notice makes it `SUCCEEDED` or `FAILED`; the checkout result makes it `PENDING` at most.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "purpose": {
+            "description": "`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "#/components/schemas/PaymentPriceDto"
+          },
+          "checkout": {
+            "$ref": "#/components/schemas/PaymentCheckoutDto"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethodDto"
+          },
+          "refundedMinor": {
+            "type": "number",
+            "description": "Paise returned so far (completed refunds)."
+          },
+          "refunds": {
+            "description": "Oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundSummaryDto"
+            }
+          },
+          "reviewReason": {
+            "nullable": true,
+            "description": "Set when a verified event needs a person: `BOOKING_CLOSED`, `ALREADY_PAID`, `AMOUNT_MISMATCH`, `DUPLICATE_CAPTURE`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentReviewReason"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "purpose",
+          "price",
+          "checkout",
+          "paidAt",
+          "createdAt",
+          "method",
+          "refundedMinor",
+          "refunds",
+          "reviewReason"
+        ]
+      },
+      "RefundResponseDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-RF-7K2M9Q"
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "status": {
+            "description": "`REQUESTED` (recorded, the gateway not yet answered), `PENDING` (the gateway is returning it), `COMPLETED` or `FAILED`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefundStatus"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it last changed: completion or failure once settled."
+          },
+          "paymentReference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "paymentStatus": {
+            "description": "The payment after this refund was recorded.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "refundableMinor": {
+            "type": "number",
+            "description": "Paise still refundable from the payment after this refund (refunds completed or under way count)."
+          }
+        },
+        "required": [
+          "reference",
+          "amountMinor",
+          "currency",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "paymentReference",
+          "bookingReference",
+          "reason",
+          "paymentStatus",
+          "refundableMinor"
+        ]
+      },
+      "CreateRefundDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise to return: the whole refundable remainder for a full refund, or less for a partial one. More than the remainder is 409 `REFUND_EXCEEDS_REMAINDER`."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the money goes back, for the audit trail (rule 6). Not shown to the customer. No personal or card details."
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "reason"
+        ]
+      },
+      "RefundDueKind": {
+        "type": "string",
+        "enum": [
+          "CANCELLATION",
+          "BOOKING_CLOSED",
+          "ALREADY_PAID"
+        ],
+        "description": "`CANCELLATION`: a cancellation left money due back (paid less the charge); `BOOKING_CLOSED`: a payment succeeded after the booking expired or was cancelled; `ALREADY_PAID`: a second payment for a paid booking."
+      },
+      "RefundDueItemDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "description": "`CANCELLATION`: a cancellation left money due back (paid less the charge); `BOOKING_CLOSED`: a payment succeeded after the booking expired or was cancelled; `ALREADY_PAID`: a second payment for a paid booking.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefundDueKind"
+              }
+            ]
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "bookingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "bookingPaymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "paymentReference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "paymentAmountMinor": {
+            "type": "number",
+            "description": "Paise the payment took."
+          },
+          "refundableMinor": {
+            "type": "number",
+            "description": "Paise still refundable from this payment."
+          },
+          "dueMinor": {
+            "type": "number",
+            "description": "Paise to refund from this payment: the cancellation’s outstanding refund due (spread over its payments, newest first), or the whole remainder of a flagged payment."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it became due: the cancellation, or the payment."
+          }
+        },
+        "required": [
+          "kind",
+          "bookingReference",
+          "bookingStatus",
+          "bookingPaymentStatus",
+          "paymentReference",
+          "paymentStatus",
+          "paymentAmountMinor",
+          "refundableMinor",
+          "dueMinor",
+          "currency",
+          "since"
         ]
       },
       "PatientMobility": {
