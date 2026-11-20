@@ -21,6 +21,9 @@ const PRICED: NonNullable<Revalidation['current']> = {
     endsAt: new Date('2026-12-01T07:10:00.000Z'),
   },
   saveCalculation: vi.fn(),
+  promotion: null,
+  breakdown: [],
+  assumptions: [],
 };
 
 const REVALIDATION: Revalidation = {

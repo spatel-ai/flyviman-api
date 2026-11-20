@@ -22,6 +22,7 @@ import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { CustomersService } from '../customers/customers.service.js';
+import { PromotionsService } from '../pricing/promotions.service.js';
 import { CANCELLATION_NOTE, SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
@@ -114,6 +115,7 @@ export class BookingsService {
     private readonly customers: CustomersService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   async create(
@@ -124,6 +126,7 @@ export class BookingsService {
     const revalidation = await this.search.revalidate(
       input.searchId,
       input.resultId,
+      input.promoCode ? { code: input.promoCode, customerId: user.id } : null,
     );
     const passengerIds = input.passengerIds ?? [];
     if (passengerIds.length > revalidation.passengerCount) {
@@ -254,6 +257,17 @@ export class BookingsService {
               specialRequests,
             },
           });
+          // Under the code's lock, after the customer's and before the
+          // aircraft's (`placeBookingHold`): checks the caps once more.
+          const promotion = current.priced ? current.promotion : null;
+          if (promotion) {
+            await this.promotions.redeem(tx, {
+              promotionId: promotion.promotionId,
+              customerId: user.id,
+              bookingId: booking.id,
+              trip: promotion.trip,
+            });
+          }
           if (snapshots.length > 0) {
             await tx.bookingPassenger.createMany({
               data: snapshots.map((snapshot) => ({
@@ -297,6 +311,7 @@ export class BookingsService {
                 aircraftId: booking.aircraftId,
                 calculationId,
                 totalMinor: current.priced ? current.totalMinor : null,
+                promotionId: promotion?.promotionId ?? null,
                 currency: booking.currency,
                 priceType: booking.priceType,
                 passengerCount: snapshots.length,

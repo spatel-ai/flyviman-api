@@ -6,10 +6,15 @@ import { PricingRuleType, Role } from '../../generated/prisma/enums.js';
  * finance and super admins. Other internal roles still see that such a record
  * exists (who, what, when) but not its before, after or reason.
  *
+ * Promotions (M10) are finance's too, so their records are kept the same way.
+ *
  * Exception: operations set the matching limits (MATCHING_LIMITS), so they
  * see the contents of those records, and of no other pricing rule.
  */
-const COMMERCIAL_ENTITIES: ReadonlySet<string> = new Set(['PricingRule']);
+const COMMERCIAL_ENTITIES: ReadonlySet<string> = new Set([
+  'PricingRule',
+  'Promotion',
+]);
 const COMMERCIAL_READERS: ReadonlySet<Role> = new Set([
   Role.FINANCE_ADMIN,
   Role.SUPER_ADMIN,

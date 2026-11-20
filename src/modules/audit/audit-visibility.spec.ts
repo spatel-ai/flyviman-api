@@ -47,6 +47,17 @@ describe('canReadAuditContents', () => {
     ).toBe(false);
   });
 
+  it('keeps promotion contents for finance and super admins', () => {
+    const promotion = {
+      entityType: 'Promotion',
+      before: null,
+      after: { code: 'WINTER10' },
+    };
+    expect(canReadAuditContents(promotion, Role.FINANCE_ADMIN)).toBe(true);
+    expect(canReadAuditContents(promotion, Role.SUPER_ADMIN)).toBe(true);
+    expect(canReadAuditContents(promotion, Role.OPS)).toBe(false);
+  });
+
   it('leaves other records readable by every role that reads the log', () => {
     const other = { before: null, after: null };
     expect(

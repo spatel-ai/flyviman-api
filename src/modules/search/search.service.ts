@@ -23,6 +23,13 @@ import {
   type PricePoint,
 } from '../pricing/engine.js';
 import { PricingService } from '../pricing/pricing.service.js';
+import type { PromoPreviewResponseDto } from '../pricing/dto/promotion.dto.js';
+import type { PromotionTrip } from '../pricing/promotions.js';
+import {
+  type AppliedPromotion,
+  promotionRefusal,
+  PromotionsService,
+} from '../pricing/promotions.service.js';
 import { customerBreakdown } from './breakdown.js';
 import { EmptyLegsService } from '../empty-legs/empty-legs.service.js';
 import { calendarDepartures, monthInRange } from './calendar.js';
@@ -93,6 +100,15 @@ export interface Revalidation {
         hold: { startsAt: Date; endsAt: Date };
         /** Stores this price as an immutable calculation. */
         saveCalculation: (tx: Prisma.TransactionClient) => Promise<string>;
+        /** The promotion code applied to this price, to redeem on booking. */
+        promotion: {
+          promotionId: string;
+          trip: PromotionTrip;
+          amountOffMinor: number;
+        } | null;
+        /** The customer's breakdown and assumptions of this price. */
+        breakdown: { code: string; label: string; amountMinor: number }[];
+        assumptions: string[];
       };
 }
 
@@ -112,6 +128,7 @@ export class SearchService {
     private readonly routing: RoutingProvider,
     private readonly categories: CategoryConfigService,
     private readonly emptyLegs: EmptyLegsService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   async search(
@@ -383,7 +400,11 @@ export class SearchService {
    * and the trip priced again exactly as the search priced it. `current` is
    * null when the aircraft can no longer fly the trip.
    */
-  async revalidate(searchId: string, resultId: string): Promise<Revalidation> {
+  async revalidate(
+    searchId: string,
+    resultId: string,
+    promo: { code: string; customerId: string | null } | null = null,
+  ): Promise<Revalidation> {
     const search = await this.find(searchId);
     const stored = (search.results as unknown as StoredResult[]).find(
       (entry) => entry.resultId === resultId,
@@ -391,6 +412,20 @@ export class SearchService {
     if (!stored) throw notFound('Result');
     const legs = search.legs as unknown as SearchLegDto[];
     const category = search.category as 'PRIVATE_CHARTER' | 'HELICOPTER';
+    // A code that cannot be used says why before anything is priced.
+    const promotionTrip: PromotionTrip = {
+      now: new Date(),
+      category,
+      originId: legs[0].originId,
+      destinationId: legs[0].destinationId,
+    };
+    const applied: AppliedPromotion | null = promo
+      ? await this.promotions.forCode(
+          promo.code,
+          promotionTrip,
+          promo.customerId,
+        )
+      : null;
     const result = publicResult(stored);
     const base = {
       searchId: search.id,
@@ -443,6 +478,7 @@ export class SearchService {
       search.passengerCount,
       candidate,
       (a, b) => this.routing.distanceKm(a, b),
+      applied,
     );
     const operatorId = candidate.aircraft.operatorId;
     // Busy from leaving base to landing at the destination, or back at the
@@ -455,6 +491,8 @@ export class SearchService {
       endsAt: new Date((returnAt ?? departureAt).getTime() + legMs),
     };
     if (!price.priced) {
+      // Priced on request: the operator's quote sets the price, not a code.
+      if (applied) throw promotionRefusal('PROMO_CODE_NOT_APPLICABLE');
       return { ...base, current: { operatorId, priced: false, hold } };
     }
     return {
@@ -475,7 +513,61 @@ export class SearchService {
             result: price,
             availabilityCheckedAt: now,
           }),
+        promotion: applied
+          ? {
+              promotionId: applied.promotionId,
+              trip: promotionTrip,
+              amountOffMinor: -(
+                price.breakdown.find((line) => line.code === 'PROMOTION')
+                  ?.amountMinor ?? 0
+              ),
+            }
+          : null,
+        breakdown: customerBreakdown(price.breakdown),
+        assumptions: price.assumptions,
       },
+    };
+  }
+
+  /**
+   * A customer's promotion code on one result (M10): the trip priced again
+   * with it, as a booking would be. Nothing is stored. Signed in, the
+   * customer's own limit is checked too; otherwise it is checked on booking.
+   */
+  async previewPromoCode(
+    searchId: string,
+    resultId: string,
+    code: string,
+    customerId: string | null,
+  ): Promise<PromoPreviewResponseDto> {
+    const { current } = await this.revalidate(searchId, resultId, {
+      code,
+      customerId,
+    });
+    if (!current) {
+      throw new AppException(
+        'BOOKING_UNAVAILABLE',
+        'This aircraft is no longer available for this trip.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    // `revalidate` refuses a code on a trip priced on request.
+    if (!current.priced || !current.promotion) {
+      throw promotionRefusal('PROMO_CODE_NOT_APPLICABLE');
+    }
+    const line = current.breakdown.find((entry) => entry.code === 'PROMOTION');
+    return {
+      code: code.trim().toUpperCase(),
+      name: line?.label ?? code,
+      amountOffMinor: current.promotion.amountOffMinor,
+      price: {
+        priceType: PriceType.ESTIMATE,
+        amountMinor: current.totalMinor,
+        currency: current.currency,
+        validUntil: current.validUntil.toISOString(),
+      },
+      breakdown: current.breakdown,
+      assumptions: current.assumptions,
     };
   }
 
@@ -654,6 +746,7 @@ function priceCandidate(
   passengerCount: number,
   candidate: Candidate,
   distance: (a: PricePoint, b: PricePoint) => number,
+  promotion: AppliedPromotion | null = null,
 ): { result: EngineResult; inputs: Prisma.InputJsonValue } {
   const { aircraft } = candidate;
   const { origin, destination, departureAt, returnAt, now } = trip;
@@ -673,6 +766,7 @@ function priceCandidate(
     },
     rules: candidate.rules,
     rawDistanceKm: distance,
+    promotion: promotion?.input ?? null,
   });
   const inputs: Prisma.InputJsonValue = {
     leg: {
@@ -694,6 +788,10 @@ function priceCandidate(
     flightMinutes: result.flightMinutes,
     positioningMinutes: result.positioningMinutes,
     repositioningMinutes: result.repositioningMinutes,
+    // The code's terms as applied, so the price stays explainable.
+    ...(promotion
+      ? { promotion: promotion.input as unknown as Prisma.InputJsonObject }
+      : {}),
   };
   return { result, inputs };
 }

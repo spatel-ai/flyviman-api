@@ -77,6 +77,17 @@ export class CreateBookingDto {
   @MaxLength(1000)
   @IsPlainText()
   specialRequests?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 32,
+    description:
+      'A promotion code, already previewed with `POST /search/:searchId/results/:resultId/promo-code`; `expectedTotalMinor` is then the price with the code. Checked again, with the caps, as the booking is made: 422 `PROMO_CODE_INVALID`, `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (also for a result priced on request) or `PROMO_CODE_LIMIT_REACHED`, and nothing is booked. One use of the code per booking.',
+  })
+  @OptionalNotNull()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  promoCode?: string;
 }
 
 export class BookingPriceDto {

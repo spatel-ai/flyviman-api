@@ -6,10 +6,13 @@ import {
   AdminPriceCalculationsController,
   AdminPricingRulesController,
 } from './admin-pricing.controller.js';
+import { AdminOperatorPricingController } from './admin-operator-pricing.controller.js';
 import { AdminPricingService } from './admin-pricing.service.js';
+import { AdminPromotionsController } from './admin-promotions.controller.js';
 import { OperatorPricingController } from './operator-pricing.controller.js';
 import { OperatorPricingService } from './operator-pricing.service.js';
 import { PricingService } from './pricing.service.js';
+import { PromotionsService } from './promotions.service.js';
 
 @Module({
   imports: [OperatorsModule, AircraftModule, AuditModule],
@@ -17,8 +20,15 @@ import { PricingService } from './pricing.service.js';
     OperatorPricingController,
     AdminPricingRulesController,
     AdminPriceCalculationsController,
+    AdminPromotionsController,
+    AdminOperatorPricingController,
   ],
-  providers: [PricingService, OperatorPricingService, AdminPricingService],
-  exports: [PricingService],
+  providers: [
+    PricingService,
+    OperatorPricingService,
+    AdminPricingService,
+    PromotionsService,
+  ],
+  exports: [PricingService, PromotionsService],
 })
 export class PricingModule {}
