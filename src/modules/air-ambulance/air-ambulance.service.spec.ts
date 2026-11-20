@@ -9,6 +9,8 @@ import {
 } from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
+import type { DocumentsService } from '../documents/documents.service.js';
+import type { LocationsService } from '../locations/locations.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
 import {
   type AirAmbulanceActor,
@@ -55,6 +57,7 @@ function setup(
   options: {
     status?: AirAmbulanceStatus;
     memberOf?: Record<string, string>;
+    activeLocations?: string[];
   } = {},
 ) {
   const stored: {
@@ -115,6 +118,10 @@ function setup(
   } as unknown as PrismaService;
   const audit = { record: vi.fn(async (): Promise<void> => undefined) };
   const memberOf = options.memberOf ?? {};
+  const active = options.activeLocations ?? ['loc-1', 'loc-2'];
+  const locations = {
+    isActive: vi.fn(async (id: string) => active.includes(id)),
+  };
   const operators = {
     forMember: vi.fn(async (userId: string) => {
       const id = memberOf[userId];
@@ -127,8 +134,10 @@ function setup(
     audit as unknown as AuditService,
     cipher,
     operators as unknown as OperatorsService,
+    locations as unknown as LocationsService,
+    {} as DocumentsService,
   );
-  return { service, stored, events, audit, tx };
+  return { service, stored, events, audit, tx, locations };
 }
 
 const customer: AirAmbulanceActor = { id: REQUESTER, role: Role.CUSTOMER };
@@ -186,6 +195,28 @@ describe('AirAmbulanceService.create', () => {
       },
       tx,
     );
+  });
+});
+
+describe('AirAmbulanceService.create: locations', () => {
+  it('refuses the same place at both ends with 400 and stores nothing', async () => {
+    const { service, stored } = setup();
+    await expect(
+      service.create(
+        customer,
+        { ...input(), destinationLocationId: 'loc-1' },
+        CLAIM,
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(stored.request).toBeUndefined();
+  });
+
+  it('answers 404 for an unknown or inactive location, never a foreign-key error', async () => {
+    const { service, stored } = setup({ activeLocations: ['loc-1'] });
+    await expect(
+      service.create(customer, input(), CLAIM),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(stored.request).toBeUndefined();
   });
 });
 
