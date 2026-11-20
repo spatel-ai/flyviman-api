@@ -18,6 +18,7 @@ import {
   Role,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
@@ -192,6 +193,7 @@ export class AirAmbulanceService implements OnModuleInit {
     private readonly locations: LocationsService,
     private readonly documents: DocumentsService,
     private readonly events: NotificationEventsService,
+    private readonly aircraft: AircraftService,
   ) {}
 
   onModuleInit(): void {
@@ -415,6 +417,54 @@ export class AirAmbulanceService implements OnModuleInit {
       this.prisma.airAmbulanceRequest.count({ where }),
     ]);
     return { items: rows.map(toView), total };
+  }
+
+  /**
+   * The missions an operator administrator's organisation was selected for,
+   * from the customer's acceptance on, newest first (W4-6). Only an approved
+   * operator's administrators (409 `OPERATOR_NOT_APPROVED`, as the other
+   * operator routes). Never any medical data.
+   */
+  async listForOperator(
+    actor: AirAmbulanceActor,
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: AirAmbulanceRequestView[]; total: number }> {
+    const operatorId = await this.operatorOf(actor);
+    if (operatorId === null) {
+      throw new AppException(
+        'OPERATOR_NOT_APPROVED',
+        'Only an approved operator can see its air ambulance missions.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const where = {
+      selectedOperatorId: operatorId,
+      status: { in: [...ACCEPTED_OR_LATER] },
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.airAmbulanceRequest.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.airAmbulanceRequest.count({ where }),
+    ]);
+    return { items: rows.map(toView), total };
+  }
+
+  /**
+   * Operators operations may quote: approved, with at least one approved
+   * air ambulance aircraft (owner decision 2026-11-20, W4-6), by name.
+   */
+  async eligibleOperators(): Promise<{ id: string; name: string }[]> {
+    const approved = await this.operators.approvedForMatching(
+      await this.aircraft.airAmbulanceOperatorIds(),
+    );
+    return [...approved]
+      .map(([id, operator]) => ({ id, name: operator.name }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   }
 
   /**

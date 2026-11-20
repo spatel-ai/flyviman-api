@@ -188,3 +188,12 @@ export class QuoteAirAmbulanceDto {
   @IsPlainText()
   conditions: string;
 }
+
+/** An operator operations may quote for a mission (W4-6). */
+export class AirAmbulanceOperatorDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'Skyline Medevac' })
+  name: string;
+}

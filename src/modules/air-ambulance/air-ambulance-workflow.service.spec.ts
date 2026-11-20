@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Role } from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
+import type { AircraftService } from '../aircraft/aircraft.service.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
 import type { UsersService } from '../users/users.service.js';
@@ -15,7 +16,11 @@ const ADMIN = { id: 'u-sa', role: Role.SUPER_ADMIN };
 const CUSTOMER = { id: 'u-customer', role: Role.CUSTOMER };
 const ALL_CHECKED = Object.fromEntries(FEASIBILITY_ITEMS.map((i) => [i, true]));
 
-function setup(row: Record<string, unknown>, operatorStatus = 'APPROVED') {
+function setup(
+  row: Record<string, unknown>,
+  operatorStatus = 'APPROVED',
+  ambulanceAircraft = true,
+) {
   let current: Record<string, unknown> = {
     id: 'aa-1',
     reference: 'FLY-AA-7K2M9Q',
@@ -93,6 +98,9 @@ function setup(row: Record<string, unknown>, operatorStatus = 'APPROVED') {
     operators as unknown as OperatorsService,
     users as unknown as UsersService,
     { notify: vi.fn() } as unknown as NotificationEventsService,
+    {
+      hasAirAmbulanceAircraft: vi.fn(async () => ambulanceAircraft),
+    } as unknown as AircraftService,
   );
   return { service, events, audit, current: () => current };
 }
@@ -121,6 +129,18 @@ describe('AirAmbulanceWorkflowService.move to CONFIRMED', () => {
     await expect(
       service.move(OWNER, 'FLY-AA-7K2M9Q', 'CONFIRMED'),
     ).rejects.toMatchObject({ code: 'OPERATOR_NOT_APPROVED' });
+  });
+
+  it('refuses an operator that no longer has an approved air ambulance aircraft', async () => {
+    const { service, current } = setup(
+      { status: 'ACCEPTED', feasibility: ALL_CHECKED },
+      'APPROVED',
+      false,
+    );
+    await expect(
+      service.move(OWNER, 'FLY-AA-7K2M9Q', 'CONFIRMED'),
+    ).rejects.toMatchObject({ code: 'AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE' });
+    expect(current().status).toBe('ACCEPTED');
   });
 
   it('refuses operations staff who do not own the request', async () => {
@@ -160,6 +180,37 @@ describe('AirAmbulanceWorkflowService.move to CONFIRMED', () => {
     expect(
       (await service.move(ADMIN, 'FLY-AA-7K2M9Q', 'CONFIRMED')).status,
     ).toBe('CONFIRMED');
+  });
+});
+
+describe('AirAmbulanceWorkflowService.quote', () => {
+  const QUOTE = {
+    operatorId: 'op-2',
+    amountMinor: 40_000_000,
+    currency: 'INR',
+    conditions: 'Free cancellation until dispatch.',
+  };
+
+  it('refuses an approved operator without an approved air ambulance aircraft', async () => {
+    const { service, events, current } = setup(
+      { status: 'FEASIBILITY_CHECK' },
+      'APPROVED',
+      false,
+    );
+    await expect(
+      service.quote(OWNER, 'FLY-AA-7K2M9Q', QUOTE),
+    ).rejects.toMatchObject({ code: 'AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE' });
+    expect(current().status).toBe('FEASIBILITY_CHECK');
+    expect(events).toEqual([]);
+  });
+
+  it('quotes an eligible operator', async () => {
+    const { service } = setup({ status: 'FEASIBILITY_CHECK' });
+    const view = await service.quote(OWNER, 'FLY-AA-7K2M9Q', QUOTE);
+    expect(view).toMatchObject({
+      status: 'QUOTED',
+      selectedOperatorId: 'op-2',
+    });
   });
 });
 
