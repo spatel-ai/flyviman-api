@@ -201,25 +201,34 @@ export class TripsService {
         { kind: 'CUSTOMER', user },
         { event: { cancellation: applied } },
       );
-      if (input.reason !== undefined) {
-        await tx.booking.update({
-          where: { id: booking.id },
-          data: { cancellationReason: input.reason },
-        });
-      }
+      // The time the transition stamped, so the answer matches the record.
+      const { cancelledAt } = await tx.booking.update({
+        where: { id: booking.id },
+        data:
+          input.reason === undefined
+            ? {}
+            : { cancellationReason: input.reason },
+        select: { cancelledAt: true },
+      });
+      if (!cancelledAt)
+        throw new Error('A cancelled booking has no cancelledAt.');
       const open = await tx.changeRequest.findMany({
         where: { bookingId: booking.id, status: ChangeRequestStatus.REQUESTED },
         select: { id: true },
       });
+      let closed = 0;
       for (const { id } of open) {
-        await tx.changeRequest.update({
-          where: { id },
+        // Only if still open: a decision made meanwhile stands.
+        const { count } = await tx.changeRequest.updateMany({
+          where: { id, status: ChangeRequestStatus.REQUESTED },
           data: {
             status: ChangeRequestStatus.REJECTED,
             decidedById: user.id,
             decidedAt: now,
           },
         });
+        if (count !== 1) continue;
+        closed += 1;
         await tx.bookingEvent.create({
           data: {
             bookingId: booking.id,
@@ -258,7 +267,7 @@ export class TripsService {
             reference: booking.reference,
             status: BookingStatus.CANCELLED,
             changeRequestId: request.id,
-            closedChangeRequests: open.length,
+            closedChangeRequests: closed,
             ...applied,
           },
         },
@@ -267,7 +276,7 @@ export class TripsService {
       return {
         reference: booking.reference,
         status: BookingStatus.CANCELLED,
-        cancelledAt: now.toISOString(),
+        cancelledAt: cancelledAt.toISOString(),
         cancellation: quoteFor(booking, now, BookingStatus.CANCELLED),
       };
     });
