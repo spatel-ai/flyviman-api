@@ -5,6 +5,7 @@ import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OperatorsModule } from '../operators/operators.module.js';
+import { PricingModule } from '../pricing/pricing.module.js';
 import { QuotesModule } from '../quotes/quotes.module.js';
 import { SearchModule } from '../search/search.module.js';
 import { UsersModule } from '../users/users.module.js';
@@ -35,6 +36,7 @@ import { TripsService } from './trips.service.js';
     CustomersModule,
     QuotesModule,
     OperatorsModule,
+    PricingModule,
     UsersModule,
     NotificationsModule,
   ],
@@ -48,7 +50,12 @@ import { TripsService } from './trips.service.js';
     OperatorBookingRequestsController,
     DevBookingJobsController,
   ],
-  providers: [BookingsService, TripsService, BookingRequestsService, FieldCipher],
+  providers: [
+    BookingsService,
+    TripsService,
+    BookingRequestsService,
+    FieldCipher,
+  ],
   exports: [BookingsService],
 })
 export class BookingsModule {}

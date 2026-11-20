@@ -133,16 +133,34 @@ describe('itineraryFrom', () => {
   });
 });
 
-describe('requestTerms (rule 9)', () => {
-  it('snapshots the note shown, word for word, with no charges', () => {
+describe('requestTerms (rule 9, D-172)', () => {
+  const tiers = [
+    { minHoursBeforeDeparture: 72, chargePercent: 10 },
+    { minHoursBeforeDeparture: 0, chargePercent: 100 },
+  ];
+
+  it("snapshots Flyviman's tiers and their summary, word for word", () => {
     const at = new Date('2026-11-19T10:00:00.000Z');
-    expect(requestTerms('Shown with the result.', at)).toEqual({
+    expect(
+      requestTerms({ summary: 'Shown with the result.', tiers }, at),
+    ).toEqual({
       version: 1,
       source: 'PLATFORM',
       summary: 'Shown with the result.',
-      charges: [],
+      charges: tiers,
       acceptedAt: '2026-11-19T10:00:00.000Z',
     });
+  });
+
+  it('is a copy: a later change to the table never reaches the snapshot', () => {
+    const table = tiers.map((tier) => ({ ...tier }));
+    const snapshot = requestTerms(
+      { summary: 'Shown.', tiers: table },
+      new Date('2026-11-19T10:00:00.000Z'),
+    );
+    table[0].chargePercent = 90;
+    table.push({ minHoursBeforeDeparture: 0, chargePercent: 0 });
+    expect(snapshot.charges).toEqual(tiers);
   });
 });
 

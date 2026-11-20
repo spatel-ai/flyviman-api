@@ -57,6 +57,15 @@ export class CreateBookingDto {
   @IsIn(['INR'])
   currency: 'INR';
 
+  @ApiProperty({
+    minimum: 1,
+    description:
+      "The `cancellationTerms.version` the result detail showed (rule 9). If Flyviman's tiers have changed since, 409 `BOOKING_TERMS_CHANGED` carries the current `version` and `summary`; show them and send again with the new version and a new `Idempotency-Key`.",
+  })
+  @IsInt()
+  @Min(1)
+  cancellationTermsVersion: number;
+
   @ApiPropertyOptional({
     type: [String],
     format: 'uuid',
