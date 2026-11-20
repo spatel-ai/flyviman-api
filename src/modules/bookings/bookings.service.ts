@@ -31,8 +31,9 @@ import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { CustomersService } from '../customers/customers.service.js';
+import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
 import { QuotesService } from '../quotes/quotes.service.js';
-import { CANCELLATION_NOTE, SearchService } from '../search/search.service.js';
+import { SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import { encryptLegacyFreeText } from './free-text-backfill.js';
@@ -142,6 +143,7 @@ export class BookingsService implements OnApplicationBootstrap {
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
     private readonly quotes: QuotesService,
+    private readonly cancellationTerms: CancellationTermsService,
   ) {}
 
   /**
@@ -277,6 +279,23 @@ export class BookingsService implements OnApplicationBootstrap {
             );
           }
           const now = new Date();
+          // Flyviman's tiers as the customer was shown them (rule 9, D-172).
+          // Read in the transaction, so the snapshot is the version checked.
+          const terms = await this.cancellationTerms.current(tx, now);
+          if (terms.version !== input.cancellationTermsVersion) {
+            throw new AppException(
+              'BOOKING_TERMS_CHANGED',
+              'The cancellation terms have changed since you looked. Read the new terms before sending your request.',
+              HttpStatus.CONFLICT,
+              [
+                {
+                  field: 'cancellationTermsVersion',
+                  issue: String(terms.version),
+                },
+                { field: 'summary', issue: terms.summary },
+              ],
+            );
+          }
           // A quote request has no price yet: no calculation, and an amount
           // of 0 that is never shown (`isQuoteRequest`).
           const calculationId = current.priced
@@ -298,7 +317,7 @@ export class BookingsService implements OnApplicationBootstrap {
               currency: current.priced ? current.currency : input.currency,
               priceType: PriceType.ESTIMATE,
               cancellationTerms: requestTerms(
-                CANCELLATION_NOTE,
+                terms,
                 now,
               ) as unknown as Prisma.InputJsonValue,
               specialRequests,
@@ -346,6 +365,9 @@ export class BookingsService implements OnApplicationBootstrap {
                 operatorId: booking.operatorId,
                 aircraftId: booking.aircraftId,
                 calculationId,
+                // Which tier table was snapshotted, traceable to its version.
+                cancellationTermsRuleId: terms.ruleId,
+                cancellationTermsVersion: terms.version,
                 totalMinor: current.priced ? current.totalMinor : null,
                 currency: booking.currency,
                 priceType: booking.priceType,

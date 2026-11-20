@@ -110,7 +110,10 @@ export class AdminPricingService {
     const now = new Date();
     const where: Prisma.PricingRuleWhereInput = {
       scope: query.scope ?? { in: [...ADMIN_RULE_SCOPES] },
-      type: opsOnly ? 'MATCHING_LIMITS' : query.type,
+      // The cancellation tiers have their own screen and routes.
+      type: opsOnly
+        ? 'MATCHING_LIMITS'
+        : (query.type ?? { not: 'CANCELLATION_TIERS' }),
       ...(query.active ? inForceWhere(now) : {}),
     };
     const [rows, total] = await this.prisma.$transaction([

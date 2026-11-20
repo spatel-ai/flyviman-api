@@ -13,7 +13,7 @@ import {
   BookingStatus,
   ServiceCategory,
 } from '../../../generated/prisma/enums.js';
-import { QuoteResponseDto } from '../../quotes/dto/quote.dto.js';
+import { OperatorQuoteResponseDto } from '../../quotes/dto/quote.dto.js';
 import {
   BookingPriceDto,
   CancellationTermsDto,
@@ -147,11 +147,11 @@ export class OperatorBookingRequestDto {
   holdExpiresAt: string | null;
 
   @ApiProperty({
-    type: QuoteResponseDto,
+    type: OperatorQuoteResponseDto,
     nullable: true,
     description: 'The newest quote sent, if any.',
   })
-  quote: QuoteResponseDto | null;
+  quote: OperatorQuoteResponseDto | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
@@ -170,8 +170,11 @@ export class OperatorBookingRequestDetailDto extends OperatorBookingRequestDto {
   @ApiProperty({ type: String, nullable: true })
   specialRequests: string | null;
 
-  @ApiProperty({ type: [QuoteResponseDto], description: 'Newest first.' })
-  quotes: QuoteResponseDto[];
+  @ApiProperty({
+    type: [OperatorQuoteResponseDto],
+    description: 'Newest first.',
+  })
+  quotes: OperatorQuoteResponseDto[];
 
   @ApiProperty({
     type: [BookingMessageDto],

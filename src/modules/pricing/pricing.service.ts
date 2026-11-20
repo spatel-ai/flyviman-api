@@ -6,6 +6,7 @@ import {
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { legMetrics, type EngineResult } from './engine.js';
+import { priceOperatorQuote, type QuotePriceResult } from './quote-price.js';
 import { resolveRules, type RuleRow } from './rules.js';
 
 @Injectable()
@@ -89,6 +90,70 @@ export class PricingService {
       select: { id: true },
     });
     return row.id;
+  }
+
+  /**
+   * Prices an operator's quote (D-172 B) with the platform and category
+   * rules in force for the aircraft, and stores the calculation, immutable
+   * and labelled `QUOTE` (rule 1), in the caller's transaction. Returns the
+   * stored id with the result.
+   */
+  async priceQuote(
+    db: Prisma.TransactionClient,
+    input: {
+      aircraftId: string;
+      operatorId: string;
+      category: AircraftCategory;
+      bookingId: string;
+      operatorPriceMinor: number;
+      validUntil: Date;
+      availabilityCheckedAt: Date;
+    },
+  ): Promise<{ calculationId: string; result: QuotePriceResult }> {
+    const rules = resolveRules(
+      await this.activeRules(input.availabilityCheckedAt),
+      {
+        aircraftId: input.aircraftId,
+        operatorId: input.operatorId,
+        category: input.category,
+      },
+    );
+    const result = priceOperatorQuote({
+      operatorPriceMinor: input.operatorPriceMinor,
+      rules,
+    });
+    const row = await db.priceCalculation.create({
+      data: {
+        searchId: null,
+        aircraftId: input.aircraftId,
+        operatorId: input.operatorId,
+        // The operator's price is `baseMinor`, which only finance reads; it
+        // is not repeated here, because operations see the inputs (D-103).
+        inputs: {
+          source: 'OPERATOR_QUOTE',
+          bookingId: input.bookingId,
+          category: input.category,
+        },
+        appliedRules: result.appliedRules as unknown as Prisma.InputJsonValue,
+        breakdown: result.breakdown as unknown as Prisma.InputJsonValue,
+        baseMinor: result.baseMinor,
+        feesMinor: result.feesMinor,
+        taxMinor: result.taxMinor,
+        discountMinor: result.discountMinor,
+        totalMinor: result.totalMinor,
+        operatorPayableMinor: result.operatorPayableMinor,
+        platformRevenueMinor: result.platformRevenueMinor,
+        currency: result.currency,
+        priceType: PriceType.QUOTE,
+        validUntil: input.validUntil,
+        availabilityCheckedAt: input.availabilityCheckedAt,
+        assumptions: result.assumptions,
+        exclusions: result.exclusions,
+        warnings: result.warnings,
+      },
+      select: { id: true },
+    });
+    return { calculationId: row.id, result };
   }
 
   async calculation(id: string) {

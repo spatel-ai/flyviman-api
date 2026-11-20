@@ -22,6 +22,10 @@ import {
   type EngineResult,
   type PricePoint,
 } from '../pricing/engine.js';
+import {
+  CancellationTermsService,
+  publicTerms,
+} from '../pricing/cancellation-terms.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { customerBreakdown } from './breakdown.js';
 import { EmptyLegsService } from '../empty-legs/empty-legs.service.js';
@@ -49,13 +53,6 @@ const MIN_NOTICE_MINUTES = 60;
 const MIN_RETURN_GAP_MINUTES = 60;
 /** And within this many days of it. */
 const MAX_RETURN_DAYS = 30;
-
-/**
- * Shown with every result before the customer commits, and snapshotted on a
- * booking made from it as its cancellation terms (business rule 9).
- */
-export const CANCELLATION_NOTE =
-  'Cancellation conditions are set by the operator and shown with its quote, before you commit to anything.';
 
 /** What is stored per result in `Search.results`: customer-safe only. */
 interface StoredResult extends SearchResultDto {
@@ -112,6 +109,7 @@ export class SearchService {
     private readonly routing: RoutingProvider,
     private readonly categories: CategoryConfigService,
     private readonly emptyLegs: EmptyLegsService,
+    private readonly cancellationTerms: CancellationTermsService,
   ) {}
 
   async search(
@@ -354,6 +352,9 @@ export class SearchService {
     const { bookingMode } = await this.categories.resolve(search.category, {
       operatorId: aircraft?.operatorId,
     });
+    // Flyviman's tiers, one table for every operator (D-172), shown before
+    // the customer commits and snapshotted on the request (rule 9).
+    const terms = await this.cancellationTerms.current();
     return {
       ...publicResult(stored),
       searchId: search.id,
@@ -373,7 +374,8 @@ export class SearchService {
         bookingMode,
         stored.price !== null,
       ),
-      cancellationNote: CANCELLATION_NOTE,
+      cancellationNote: terms.summary,
+      cancellationTerms: publicTerms(terms),
     };
   }
 

@@ -16,6 +16,7 @@ import {
   ServiceCategory,
 } from '../../../generated/prisma/enums.js';
 import { EmptyLegResponseDto } from '../../empty-legs/dto/empty-leg.dto.js';
+import { CancellationTierTableDto } from '../../pricing/dto/cancellation-terms.dto.js';
 
 /** Fixed-wing categories a charter search can ask for. */
 export const CHARTER_CATEGORIES = [
@@ -296,7 +297,15 @@ export class SearchResultDetailDto extends SearchResultDto {
   confirmationRequirements: string[];
 
   @ApiProperty({
-    description: 'Shown before the customer commits (business rule 9).',
+    description:
+      'Shown before the customer commits (business rule 9): `cancellationTerms.summary`, word for word.',
   })
   cancellationNote: string;
+
+  @ApiProperty({
+    type: CancellationTierTableDto,
+    description:
+      "Flyviman's cancellation tiers, the same for every operator (D-172). Send `version` as `cancellationTermsVersion` with the booking request.",
+  })
+  cancellationTerms: CancellationTierTableDto;
 }

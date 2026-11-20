@@ -7,6 +7,8 @@ import {
   AdminPricingRulesController,
 } from './admin-pricing.controller.js';
 import { AdminPricingService } from './admin-pricing.service.js';
+import { AdminCancellationTermsController } from './admin-cancellation-terms.controller.js';
+import { CancellationTermsService } from './cancellation-terms.service.js';
 import { OperatorPricingController } from './operator-pricing.controller.js';
 import { OperatorPricingService } from './operator-pricing.service.js';
 import { PricingService } from './pricing.service.js';
@@ -17,8 +19,14 @@ import { PricingService } from './pricing.service.js';
     OperatorPricingController,
     AdminPricingRulesController,
     AdminPriceCalculationsController,
+    AdminCancellationTermsController,
   ],
-  providers: [PricingService, OperatorPricingService, AdminPricingService],
-  exports: [PricingService],
+  providers: [
+    PricingService,
+    OperatorPricingService,
+    AdminPricingService,
+    CancellationTermsService,
+  ],
+  exports: [PricingService, CancellationTermsService],
 })
 export class PricingModule {}

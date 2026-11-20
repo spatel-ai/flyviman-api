@@ -5228,6 +5228,69 @@
         ]
       }
     },
+    "/api/v1/admin/cancellation-terms": {
+      "get": {
+        "operationId": "AdminCancellationTermsController_current",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationTierTableDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The cancellation tiers in force",
+        "tags": [
+          "admin: pricing"
+        ]
+      },
+      "put": {
+        "description": "Applies to booking requests made from now on; every booking keeps the terms it was requested on. Identical tiers write nothing. 409 `PRICING_RULE_NOT_CURRENT` when `baseVersion` is no longer the version in force. Audited with before, after and the reason.",
+        "operationId": "AdminCancellationTermsController_change",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeCancellationTermsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationTierTableDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change the cancellation tiers (creates a new version)",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields. Passenger and medical fields inside before and after are null for roles that may not read them (medical: super admin only; identity document numbers: no one; passenger details: operations and super admin). `restricted` is true on every row where something was withheld or redacted.",
@@ -6681,7 +6744,7 @@
     },
     "/api/v1/operator/booking-requests/{reference}/revise-quote": {
       "post": {
-        "description": "Only while the request is `OPERATOR_PENDING` (409 `BOOKING_INVALID_TRANSITION`). The quote is `SENT` with `priceType` `QUOTE`; an open quote is `SUPERSEDED` (a sent quote is never edited). Valid for 48 hours (`BOOKING_HOLD_HOURS`) unless `validUntil` is given (at least an hour ahead, never after departure; 400 otherwise); the hold is kept as long. Checks approval and the held time like accept (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`, `BOOKING_UNAVAILABLE`). Audited; the customer is notified.",
+        "description": "Only while the request is `OPERATOR_PENDING` (409 `BOOKING_INVALID_TRANSITION`). The quote is `SENT` with `priceType` `QUOTE`; an open quote is `SUPERSEDED` (a sent quote is never edited). Valid for 48 hours (`BOOKING_HOLD_HOURS`) unless `validUntil` is given (at least an hour ahead, never after departure; 400 otherwise); the hold is kept as long. The body carries the operator’s price (`operatorPriceMinor`, before Flyviman’s charges and tax); Flyviman’s pricing rules add commission, fees and tax and store the calculation, and the customer sees the total only. The quote carries the cancellation terms the request was made on (D-172). Checks approval and the held time like accept (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`, `BOOKING_UNAVAILABLE`). Audited; the customer is notified.",
         "operationId": "OperatorBookingRequestsController_reviseQuote",
         "parameters": [
           {
@@ -6709,7 +6772,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuoteResponseDto"
+                  "$ref": "#/components/schemas/OperatorQuoteResponseDto"
                 }
               }
             }
@@ -13235,6 +13298,57 @@
         ],
         "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator."
       },
+      "CancellationTierDto": {
+        "type": "object",
+        "properties": {
+          "minHoursBeforeDeparture": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8760,
+            "description": "Applies when cancelling at least this many hours before departure (a boundary falls in the cheaper tier)."
+          },
+          "chargePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Whole percent of the confirmed price."
+          }
+        },
+        "required": [
+          "minHoursBeforeDeparture",
+          "chargePercent"
+        ]
+      },
+      "CancellationTierTableDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "description": "The version in force. Send it back as `cancellationTermsVersion` when making a booking request, and as `baseVersion` when changing the tiers."
+          },
+          "tiers": {
+            "description": "Longest notice first; the last tier starts at 0 hours.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CancellationTierDto"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "The terms in words, shown to the customer and snapshotted on a booking request word for word."
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "tiers",
+          "summary",
+          "validFrom"
+        ]
+      },
       "SearchResultDetailDto": {
         "type": "object",
         "properties": {
@@ -13351,7 +13465,15 @@
           },
           "cancellationNote": {
             "type": "string",
-            "description": "Shown before the customer commits (business rule 9)."
+            "description": "Shown before the customer commits (business rule 9): `cancellationTerms.summary`, word for word."
+          },
+          "cancellationTerms": {
+            "description": "Flyviman's cancellation tiers, the same for every operator (D-172). Send `version` as `cancellationTermsVersion` with the booking request.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CancellationTierTableDto"
+              }
+            ]
           }
         },
         "required": [
@@ -13375,7 +13497,8 @@
           "exclusions",
           "bookingMode",
           "confirmationRequirements",
-          "cancellationNote"
+          "cancellationNote",
+          "cancellationTerms"
         ]
       },
       "PaymentModel": {
@@ -14311,6 +14434,35 @@
           "finance"
         ]
       },
+      "ChangeCancellationTermsDto": {
+        "type": "object",
+        "properties": {
+          "tiers": {
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "Longest notice first, each notice once, ending with a tier at 0 hours; a charge never falls as the notice shortens.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CancellationTierDto"
+            }
+          },
+          "baseVersion": {
+            "type": "number",
+            "description": "The `version` the change was made from. 409 `PRICING_RULE_NOT_CURRENT` when another change came first."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the change is made. Kept in the audit record."
+          }
+        },
+        "required": [
+          "tiers",
+          "baseVersion",
+          "reason"
+        ]
+      },
       "AuditLogResponseDto": {
         "type": "object",
         "properties": {
@@ -14411,6 +14563,11 @@
             ],
             "example": "INR"
           },
+          "cancellationTermsVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "The `cancellationTerms.version` the result detail showed (rule 9). If Flyviman's tiers have changed since, 409 `BOOKING_TERMS_CHANGED` carries the current `version` and `summary`; show them and send again with the new version and a new `Idempotency-Key`."
+          },
           "passengerIds": {
             "description": "Saved passengers (`/me/passengers`) to copy onto the booking, at most the search’s passenger count. May be left out and set later.",
             "type": "array",
@@ -14427,7 +14584,8 @@
         "required": [
           "searchId",
           "resultId",
-          "currency"
+          "currency",
+          "cancellationTermsVersion"
         ]
       },
       "BookingStatus": {
@@ -15592,7 +15750,12 @@
             "$ref": "#/components/schemas/QuotePriceDto"
           },
           "conditions": {
-            "$ref": "#/components/schemas/QuoteConditionsDto"
+            "description": "`summary` and `charges` are Flyviman's cancellation terms the booking was requested on (D-172); `inclusions` and `exclusions` are the operator's.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteConditionsDto"
+              }
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -16005,6 +16168,101 @@
           "model"
         ]
       },
+      "OperatorQuotePriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "description": "As the quote: `QUOTE` until accepted, then `CONFIRMED`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise: the operator's price as entered."
+          },
+          "payableMinor": {
+            "type": "number",
+            "description": "Paise: what Flyviman pays the operator (the price, less commission where commission is deducted)."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "payableMinor",
+          "currency"
+        ]
+      },
+      "OperatorQuoteResponseDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-QT-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteStatus"
+              }
+            ]
+          },
+          "open": {
+            "type": "boolean",
+            "description": "True while the customer can still accept or decline it (sent, and before `validUntil`)."
+          },
+          "price": {
+            "$ref": "#/components/schemas/QuotePriceDto"
+          },
+          "conditions": {
+            "description": "`summary` and `charges` are Flyviman's cancellation terms the booking was requested on (D-172); `inclusions` and `exclusions` are the operator's.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteConditionsDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "operatorPrice": {
+            "nullable": true,
+            "description": "Null for a quote sent before quotes were priced from the operator's price (D-172).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorQuotePriceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "open",
+          "price",
+          "conditions",
+          "createdAt",
+          "updatedAt",
+          "operatorPrice"
+        ]
+      },
       "OperatorBookingRequestDto": {
         "type": "object",
         "properties": {
@@ -16060,7 +16318,7 @@
             "type": "object",
             "allOf": [
               {
-                "$ref": "#/components/schemas/QuoteResponseDto"
+                "$ref": "#/components/schemas/OperatorQuoteResponseDto"
               }
             ]
           },
@@ -16142,7 +16400,7 @@
             "type": "object",
             "allOf": [
               {
-                "$ref": "#/components/schemas/QuoteResponseDto"
+                "$ref": "#/components/schemas/OperatorQuoteResponseDto"
               }
             ]
           },
@@ -16168,7 +16426,7 @@
             "description": "Newest first.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/QuoteResponseDto"
+              "$ref": "#/components/schemas/OperatorQuoteResponseDto"
             }
           },
           "messages": {
@@ -16227,42 +16485,9 @@
           "reason"
         ]
       },
-      "QuoteChargeInputDto": {
-        "type": "object",
-        "properties": {
-          "minHoursBeforeDeparture": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 8760,
-            "description": "Applies when cancelling at least this many hours before departure."
-          },
-          "chargePercent": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100,
-            "description": "Of the total."
-          }
-        },
-        "required": [
-          "minHoursBeforeDeparture",
-          "chargePercent"
-        ]
-      },
       "QuoteConditionsInputDto": {
         "type": "object",
         "properties": {
-          "summary": {
-            "type": "string",
-            "maxLength": 2000,
-            "description": "The cancellation conditions in words, shown to the customer before they accept (business rule 9)."
-          },
-          "charges": {
-            "description": "Cancellation charges by notice, longest notice first, each notice once. Empty: nothing is charged on cancellation.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QuoteChargeInputDto"
-            }
-          },
           "inclusions": {
             "description": "What the price includes.",
             "type": "array",
@@ -16279,8 +16504,6 @@
           }
         },
         "required": [
-          "summary",
-          "charges",
           "inclusions",
           "exclusions"
         ]
@@ -16288,9 +16511,11 @@
       "ReviseQuoteDto": {
         "type": "object",
         "properties": {
-          "totalMinor": {
+          "operatorPriceMinor": {
             "type": "number",
-            "description": "Paise: the all-in price the customer pays (taxes and fees included)."
+            "minimum": 1,
+            "maximum": 10000000000,
+            "description": "Paise: the operator's price for the trip, before Flyviman's commission, fees and tax (tax- and commission-exclusive). Flyviman's pricing rules work out the customer's total, labelled `QUOTE`, from it (D-172)."
           },
           "currency": {
             "type": "string",
@@ -16309,7 +16534,7 @@
           }
         },
         "required": [
-          "totalMinor",
+          "operatorPriceMinor",
           "currency",
           "conditions"
         ]

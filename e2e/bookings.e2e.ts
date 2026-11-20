@@ -88,6 +88,7 @@ function bodyFor(
   return {
     searchId: searched.searchId,
     resultId: searched.result.resultId,
+    cancellationTermsVersion: searched.termsVersion,
     expectedTotalMinor: searched.result.price.amountMinor,
     currency: 'INR',
     ...extra,
@@ -159,12 +160,12 @@ test.describe('POST /bookings', () => {
         legs: [{ originId: trip.mumbai, destinationId: trip.goa }],
         aircraft: { id: trip.aircraftId },
       },
-      // The note the result showed, word for word (rule 9).
+      // Flyviman's tiers the result showed, word for word (rule 9, D-172).
       cancellationTerms: {
         version: 1,
         source: 'PLATFORM',
-        summary: shown.cancellationNote,
-        charges: [],
+        summary: shown.cancellationTerms.summary,
+        charges: shown.cancellationTerms.tiers,
       },
       specialRequests: 'Vegetarian meals',
       passengers: [
@@ -306,6 +307,46 @@ test.describe('POST /bookings', () => {
     );
     expect(agreed.status()).toBe(201);
     expect((await agreed.json()).data.price.amountMinor).toBe(newTotal);
+  });
+
+  test('refuses terms other than those shown, and a request without them (rule 9)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const trip = await pricedJet(contexts);
+    const searched = await searchFor(request, trip);
+    const { customer, userId } = await newCustomer(contexts);
+
+    const stale = await book(
+      customer,
+      bodyFor(searched, {
+        cancellationTermsVersion: (searched.termsVersion as number) + 1000,
+      }),
+    );
+    expect(stale.status()).toBe(409);
+    const error = (await stale.json()).error;
+    expect(error.code).toBe('BOOKING_TERMS_CHANGED');
+    const details = Object.fromEntries(
+      error.details.map((d: { field: string; issue: string }) => [
+        d.field,
+        d.issue,
+      ]),
+    );
+    expect(Number(details.cancellationTermsVersion)).toBe(
+      searched.termsVersion,
+    );
+    expect(details.summary).toMatch(/cancellation terms/);
+
+    const { cancellationTermsVersion: _omitted, ...without } =
+      bodyFor(searched);
+    expect((await book(customer, without)).status()).toBe(400);
+    expect(
+      await withPrisma((prisma) =>
+        prisma.booking.count({ where: { customerId: userId } }),
+      ),
+    ).toBe(0);
   });
 
   test('the held aircraft cannot be requested for the same time again', async ({
