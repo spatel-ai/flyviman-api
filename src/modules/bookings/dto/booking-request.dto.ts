@@ -17,6 +17,7 @@ import { QuoteResponseDto } from '../../quotes/dto/quote.dto.js';
 import {
   BookingPriceDto,
   CancellationTermsDto,
+  ChangeRequestResponseDto,
   ItineraryDto,
   ItineraryLegDto,
 } from './booking.dto.js';
@@ -183,4 +184,11 @@ export class OperatorBookingRequestDetailDto extends OperatorBookingRequestDto {
     description: 'Internal notes, oldest first.',
   })
   notes: BookingNoteDto[];
+
+  @ApiProperty({
+    type: [ChangeRequestResponseDto],
+    description:
+      'Change and cancellation requests, newest first; answer an open one (`REQUESTED`) with `POST /operator/change-requests/:id/decide`.',
+  })
+  changeRequests: ChangeRequestResponseDto[];
 }
