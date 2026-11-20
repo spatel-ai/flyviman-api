@@ -4,6 +4,7 @@ import { AppException } from '../../common/errors/app.exception.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import {
   AircraftCategory,
+  BookingMode,
   PriceType,
   ServiceCategory,
   TripType,
@@ -70,10 +71,18 @@ export interface Revalidation {
   passengerCount: number;
   /** As the search offered it (customer-safe fields only). */
   result: ResultFields;
-  /** Null when the aircraft can no longer fly the trip. */
+  /**
+   * Null when the aircraft can no longer fly the trip. Unpriced when the
+   * operator prices it on request: a booking from it asks for a quote.
+   */
   current:
     | null
-    | { operatorId: string; priced: false }
+    | {
+        operatorId: string;
+        priced: false;
+        /** The time the aircraft is busy with this trip. */
+        hold: { startsAt: Date; endsAt: Date };
+      }
     | {
         operatorId: string;
         priced: true;
@@ -360,10 +369,10 @@ export class SearchService {
       assumptions: (calculation?.assumptions ?? []) as string[],
       exclusions: (calculation?.exclusions ?? []) as string[],
       bookingMode,
-      confirmationRequirements: [
-        'The operator confirms the aircraft, crew and price',
-        'Availability and price are checked again before you pay',
-      ],
+      confirmationRequirements: confirmationRequirements(
+        bookingMode,
+        stored.price !== null,
+      ),
       cancellationNote: CANCELLATION_NOTE,
     };
   }
@@ -436,12 +445,18 @@ export class SearchService {
       (a, b) => this.routing.distanceKm(a, b),
     );
     const operatorId = candidate.aircraft.operatorId;
-    if (!price.priced) {
-      return { ...base, current: { operatorId, priced: false } };
-    }
     // Busy from leaving base to landing at the destination, or back at the
     // origin after a round trip: the window matching checked.
     const legMs = (candidate.legMinutes ?? 60) * 60_000;
+    const hold = {
+      startsAt: new Date(
+        departureAt.getTime() - candidate.positioningMinutes * 60_000,
+      ),
+      endsAt: new Date((returnAt ?? departureAt).getTime() + legMs),
+    };
+    if (!price.priced) {
+      return { ...base, current: { operatorId, priced: false, hold } };
+    }
     return {
       ...base,
       current: {
@@ -450,12 +465,7 @@ export class SearchService {
         totalMinor: price.totalMinor,
         currency: price.currency,
         validUntil: price.validUntil,
-        hold: {
-          startsAt: new Date(
-            departureAt.getTime() - candidate.positioningMinutes * 60_000,
-          ),
-          endsAt: new Date((returnAt ?? departureAt).getTime() + legMs),
-        },
+        hold,
         saveCalculation: (tx) =>
           this.pricing.saveCalculation(tx, {
             searchId: search.id,
@@ -595,7 +605,34 @@ const CALENDAR_TTL_MS = 5 * 60_000;
 const CALENDAR_CACHE_SIZE = 500;
 const CALENDAR_MONTHS_AHEAD = 12;
 const PRICE_ON_REQUEST =
-  'The operator prices this aircraft on request. Send a request and our team will come back to you.';
+  'The operator prices this aircraft on request. Send a quote request and the operator will quote you before you commit to anything.';
+
+/**
+ * What must happen before a booking from a result is confirmed, as the
+ * result detail lists it. Only a booking on request waits for the operator:
+ * an instant booking never says the operator confirms (its price is still
+ * checked again). A price on request is always quoted by the operator.
+ */
+export function confirmationRequirements(
+  bookingMode: BookingMode,
+  priced: boolean,
+): string[] {
+  if (!priced) {
+    return [
+      'The operator sends you a quote with its conditions',
+      'You accept the quote before anything is charged',
+    ];
+  }
+  return bookingMode === BookingMode.INSTANT
+    ? [
+        'Your price is confirmed before you pay',
+        'Availability and price are checked again before you pay',
+      ]
+    : [
+        'The operator confirms the aircraft, crew and price',
+        'Availability and price are checked again before you pay',
+      ];
+}
 
 /** The trip a candidate is priced for. */
 interface PricedTrip {

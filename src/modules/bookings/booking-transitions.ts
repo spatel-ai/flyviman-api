@@ -51,6 +51,14 @@ export interface TransitionContext {
   feasibilityComplete: boolean;
   /** For SCHEDULED to COMPLETED: the departure time has passed. */
   departed: boolean;
+  /**
+   * The operator's quote on the booking (M8): none sent, one `LIVE` (sent,
+   * within its validity) or the last one `LAPSED` (past `validUntil`).
+   * Unknown is `NONE`.
+   */
+  quote?: 'NONE' | 'LIVE' | 'LAPSED';
+  /** Requested without a price (priced on request): only a quote prices it. */
+  priceOnRequest?: boolean;
 }
 
 export type TransitionCheck =
@@ -61,7 +69,7 @@ interface Edge {
   to: BookingStatus;
   by: readonly BookingActor[];
   /** A reason the move is refused, or `null` when its condition holds. */
-  unless?: (context: TransitionContext) => string | null;
+  unless?: (context: TransitionContext, actor: BookingActor) => string | null;
 }
 
 const S = BookingStatus;
@@ -152,10 +160,43 @@ export const EDGES: readonly Edge[] = [
   {
     from: S.OPERATOR_PENDING,
     to: S.PRICE_CONFIRMED,
-    // The operator accepts the proposed price. The doc's "or the customer
-    // accepts a revised quote" waits for quotes (M8), which will decide how
-    // a customer's acceptance is recorded; until then only the operator.
-    by: ['OPERATOR'],
+    // The operator accepts the proposed price, or the customer accepts the
+    // operator's quote. While a quote waits for the customer, only the
+    // customer's answer moves the booking; a request without a price is
+    // priced only by a quote.
+    by: ['OPERATOR', 'CUSTOMER'],
+    unless: (c, actor) => {
+      const quote = c.quote ?? 'NONE';
+      if (actor === 'CUSTOMER') {
+        return quote === 'LIVE' ? null : 'there is no open quote to accept';
+      }
+      if (quote === 'LIVE') return 'a quote is waiting for the customer';
+      return c.priceOnRequest
+        ? 'the request has no price to accept: send a quote'
+        : null;
+    },
+  },
+  {
+    from: S.OPERATOR_PENDING,
+    to: S.QUOTE_DECLINED,
+    // The customer declines the operator's quote.
+    by: ['CUSTOMER'],
+    unless: (c) =>
+      c.quote === 'LIVE' ? null : 'there is no open quote to decline',
+  },
+  {
+    from: S.OPERATOR_PENDING,
+    to: S.EXPIRED,
+    // The operator's quote lapsed without an answer from the customer.
+    by: ['SYSTEM'],
+    unless: (c) => (c.quote === 'LAPSED' ? null : 'no quote has lapsed'),
+  },
+  {
+    from: S.CLARIFICATION_REQUESTED,
+    to: S.EXPIRED,
+    // The customer did not answer the operator's question while the
+    // aircraft was held.
+    by: ['SYSTEM'],
   },
   {
     from: S.OPERATOR_PENDING,
@@ -240,7 +281,7 @@ export function checkTransition(
   if (!edge.by.includes(actor)) {
     return { allowed: false, reason: `${actor} cannot move ${from} to ${to}` };
   }
-  const blocker = edge.unless?.(context) ?? null;
+  const blocker = edge.unless?.(context, actor) ?? null;
   return blocker ? { allowed: false, reason: blocker } : { allowed: true };
 }
 

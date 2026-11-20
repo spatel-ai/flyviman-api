@@ -656,6 +656,101 @@ export class AvailabilityService {
     return true;
   }
 
+  /**
+   * Checks a booking's hold again and keeps it until at least `until`
+   * (never past the time it holds), for an answer that moves the booking on
+   * (business rule 3). Under the aircraft's lock, like `placeBookingHold`,
+   * it looks for anything else in the way of the held time: every block
+   * but a lapsed soft hold, other than this booking's own. `false` when the
+   * booking has no hold or the time is no longer free; nothing is written
+   * then. A lapsed hold whose time is still free is taken up again.
+   */
+  async recheckBookingHold(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+    until: Date,
+  ): Promise<boolean> {
+    const hold = await tx.availabilityBlock.findFirst({
+      where: { bookingId, reason: AvailabilityBlockReason.SOFT_HOLD },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    if (!hold) return false;
+    await lockAircraft(tx, hold.aircraftId);
+    const now = new Date();
+    const clash = await tx.availabilityBlock.findFirst({
+      where: {
+        aircraftId: hold.aircraftId,
+        startsAt: { lt: hold.endsAt },
+        endsAt: { gt: hold.startsAt },
+        AND: [
+          { OR: [{ bookingId: null }, { bookingId: { not: bookingId } }] },
+          {
+            OR: [
+              { reason: { not: AvailabilityBlockReason.SOFT_HOLD } },
+              { expiresAt: null },
+              { expiresAt: { gt: now } },
+            ],
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (clash) return false;
+    const target = Math.min(until.getTime(), hold.endsAt.getTime());
+    const current = hold.expiresAt?.getTime() ?? 0;
+    if (target <= current) return true;
+    const row = await tx.availabilityBlock.update({
+      where: { id: hold.id },
+      data: { expiresAt: new Date(target) },
+    });
+    await this.audit.record(
+      {
+        action: 'availability.block.extend',
+        entityType: 'AvailabilityBlock',
+        entityId: row.id,
+        before: { ...blockValues(hold), bookingId },
+        after: { ...blockValues(row), bookingId },
+      },
+      tx,
+    );
+    return true;
+  }
+
+  /**
+   * Lets a booking's soft holds lapse now, when the request ends (rejected,
+   * declined, expired), so the time is offered again at once. Audited.
+   */
+  async releaseBookingHolds(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+  ): Promise<void> {
+    const now = new Date();
+    const holds = await tx.availabilityBlock.findMany({
+      where: {
+        bookingId,
+        reason: AvailabilityBlockReason.SOFT_HOLD,
+        expiresAt: { gt: now },
+      },
+    });
+    for (const hold of holds) {
+      await lockAircraft(tx, hold.aircraftId);
+      const row = await tx.availabilityBlock.update({
+        where: { id: hold.id },
+        data: { expiresAt: now },
+      });
+      await this.audit.record(
+        {
+          action: 'availability.block.release',
+          entityType: 'AvailabilityBlock',
+          entityId: row.id,
+          before: { ...blockValues(hold), bookingId },
+          after: { ...blockValues(row), bookingId },
+        },
+        tx,
+      );
+    }
+  }
+
   /** Used by tests and, later, by bookings. The database constraint is the backstop. */
   async assertNoBookingOverlap(
     aircraftId: string,

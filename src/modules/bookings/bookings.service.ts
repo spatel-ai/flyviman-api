@@ -27,6 +27,7 @@ import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import {
   holdExpiry,
+  isQuoteRequest,
   itineraryFrom,
   lastFour,
   passengerSnapshot,
@@ -153,11 +154,14 @@ export class BookingsService {
       currency: input.currency,
     });
     if (outcome.kind === 'unavailable') throw unavailable();
-    if (outcome.kind === 'priceOnRequest') {
+    if (outcome.kind === 'nowOnRequest') {
+      // The aircraft is now priced on request: send the request without an
+      // amount to ask the operator for a quote.
       throw new AppException(
-        'BOOKING_PRICE_ON_REQUEST',
-        'The operator prices this aircraft on request. Send an enquiry and our team will come back to you.',
-        HttpStatus.UNPROCESSABLE_ENTITY,
+        'BOOKING_PRICE_CHANGED',
+        'The operator now prices this aircraft on request. Send a quote request instead.',
+        HttpStatus.CONFLICT,
+        [{ field: 'price', issue: 'ON_REQUEST' }],
       );
     }
     if (outcome.kind === 'priceChanged') {
@@ -176,7 +180,7 @@ export class BookingsService {
     }
     const current = revalidation.current;
     // Narrowed by the outcome; repeated for the compiler.
-    if (!current?.priced) throw unavailable();
+    if (!current) throw unavailable();
 
     const config = await this.categories.resolve(revalidation.category, {
       operatorId: current.operatorId,
@@ -200,6 +204,7 @@ export class BookingsService {
     const maxOpen = this.config.getOrThrow<number>(
       'BOOKING_MAX_OPEN_PER_CUSTOMER',
     );
+    const holdHours = this.config.getOrThrow<number>('BOOKING_HOLD_HOURS');
 
     for (let attempt = 1; ; attempt += 1) {
       try {
@@ -222,7 +227,11 @@ export class BookingsService {
             );
           }
           const now = new Date();
-          const calculationId = await current.saveCalculation(tx);
+          // A quote request has no price yet: no calculation, and an amount
+          // of 0 that is never shown (`isQuoteRequest`).
+          const calculationId = current.priced
+            ? await current.saveCalculation(tx)
+            : null;
           const booking = await tx.booking.create({
             data: {
               reference: bookingReference(),
@@ -235,8 +244,8 @@ export class BookingsService {
               aircraftId,
               itinerary: itinerary as unknown as Prisma.InputJsonValue,
               calculationId,
-              totalMinor: BigInt(current.totalMinor),
-              currency: current.currency,
+              totalMinor: current.priced ? BigInt(current.totalMinor) : 0n,
+              currency: current.priced ? current.currency : input.currency,
               priceType: PriceType.ESTIMATE,
               cancellationTerms: requestTerms(
                 CANCELLATION_NOTE,
@@ -258,7 +267,7 @@ export class BookingsService {
             bookingId: booking.id,
             startsAt: current.hold.startsAt,
             endsAt: current.hold.endsAt,
-            expiresAt: holdExpiry(now, current.hold.endsAt),
+            expiresAt: holdExpiry(now, current.hold.endsAt, holdHours),
           });
           if (!held) throw unavailable();
 
@@ -287,7 +296,7 @@ export class BookingsService {
                 operatorId: booking.operatorId,
                 aircraftId: booking.aircraftId,
                 calculationId,
-                totalMinor: current.totalMinor,
+                totalMinor: current.priced ? current.totalMinor : null,
                 currency: booking.currency,
                 priceType: booking.priceType,
                 passengerCount: snapshots.length,
@@ -303,12 +312,14 @@ export class BookingsService {
             reference: booking.reference,
             status: moved,
             paymentStatus: booking.paymentStatus,
-            price: {
-              priceType: booking.priceType,
-              amountMinor: current.totalMinor,
-              currency: booking.currency,
-              validUntil: current.validUntil.toISOString(),
-            },
+            price: current.priced
+              ? {
+                  priceType: booking.priceType,
+                  amountMinor: current.totalMinor,
+                  currency: booking.currency,
+                  validUntil: current.validUntil.toISOString(),
+                }
+              : null,
             createdAt: booking.createdAt.toISOString(),
           };
         });
@@ -341,15 +352,17 @@ export class BookingsService {
       paymentStatus: booking.paymentStatus,
       bookingMode: booking.bookingMode,
       paymentModel: booking.paymentModel,
-      price: {
-        priceType: booking.priceType,
-        amountMinor: minorToNumber(booking.totalMinor),
-        currency: booking.currency,
-        validUntil:
-          estimate && booking.calculation
-            ? booking.calculation.validUntil.toISOString()
-            : null,
-      },
+      price: isQuoteRequest(booking)
+        ? null
+        : {
+            priceType: booking.priceType,
+            amountMinor: minorToNumber(booking.totalMinor),
+            currency: booking.currency,
+            validUntil:
+              estimate && booking.calculation
+                ? booking.calculation.validUntil.toISOString()
+                : null,
+          },
       itinerary: parseItinerary(booking.itinerary),
       cancellationTerms: parseCancellationTerms(booking.cancellationTerms),
       specialRequests: this.revealLegacy(booking.specialRequests),
