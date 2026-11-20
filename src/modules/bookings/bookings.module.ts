@@ -10,6 +10,7 @@ import { QuotesModule } from '../quotes/quotes.module.js';
 import { SearchModule } from '../search/search.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { AdminChangeRequestsController } from './admin-change-requests.controller.js';
+import { AdminPriceOverrideController } from './admin-price-override.controller.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import { BookingsController } from './bookings.controller.js';
 import { BookingsService } from './bookings.service.js';
@@ -45,12 +46,18 @@ import { TripsService } from './trips.service.js';
     MeBookingsController,
     OperatorChangeRequestsController,
     AdminChangeRequestsController,
+    AdminPriceOverrideController,
     BookingConversationController,
     CustomerQuotesController,
     OperatorBookingRequestsController,
     DevBookingJobsController,
   ],
-  providers: [BookingsService, TripsService, BookingRequestsService, FieldCipher],
+  providers: [
+    BookingsService,
+    TripsService,
+    BookingRequestsService,
+    FieldCipher,
+  ],
   exports: [BookingsService],
 })
 export class BookingsModule {}

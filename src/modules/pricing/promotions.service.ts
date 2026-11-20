@@ -37,7 +37,8 @@ function terms(row: PromotionRow): PromotionTerms {
     name: row.name,
     kind: row.kind,
     percentBasisPoints: row.percentBasisPoints,
-    amountMinor: row.amountMinor == null ? null : minorToNumber(row.amountMinor),
+    amountMinor:
+      row.amountMinor == null ? null : minorToNumber(row.amountMinor),
     category: row.category,
     originId: row.originId,
     destinationId: row.destinationId,
@@ -141,7 +142,8 @@ export class PromotionsService {
       const found = await this.prisma.location.count({
         where: { id: { in: [originId, destinationId] }, isActive: true },
       });
-      if (found !== 2) throw invalid('originId', 'unknown or inactive location');
+      if (found !== 2)
+        throw invalid('originId', 'unknown or inactive location');
     }
     const code = normalizeCode(dto.code);
     try {
@@ -152,7 +154,9 @@ export class PromotionsService {
             name: dto.name,
             kind: dto.kind,
             percentBasisPoints:
-              dto.kind === 'PERCENT' ? Math.round((dto.percent ?? 0) * 100) : null,
+              dto.kind === 'PERCENT'
+                ? Math.round((dto.percent ?? 0) * 100)
+                : null,
             amountMinor:
               dto.kind === 'FIXED' ? BigInt(dto.amountMinor ?? 0) : null,
             currency: dto.currency,
@@ -193,10 +197,7 @@ export class PromotionsService {
   }
 
   /** Ends a promotion now. Only once, and not one already past its window. */
-  async end(
-    id: string,
-    reason: string,
-  ): Promise<PromotionResponseDto> {
+  async end(id: string, reason: string): Promise<PromotionResponseDto> {
     const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
       const current = await tx.promotion.findUnique({ where: { id } });

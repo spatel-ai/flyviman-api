@@ -987,9 +987,10 @@ describe('promotion codes (M10)', () => {
       ['PROMOTION', -539_000],
       ['TAX', 1_843_380],
     ]);
-    expect(result.breakdown.find((l) => l.code === 'PROMOTION')).toMatchObject(
-      { label: 'Winter offer', basis: 'Code WINTER5: 5% of the price before tax' },
-    );
+    expect(result.breakdown.find((l) => l.code === 'PROMOTION')).toMatchObject({
+      label: 'Winter offer',
+      basis: 'Code WINTER5: 5% of the price before tax',
+    });
     expect(result).toMatchObject({
       discountMinor: 759_000,
       operatorPayableMinor: 10_000_000,
@@ -1046,9 +1047,9 @@ describe('promotion codes (M10)', () => {
       },
     );
     // Flyviman earns 10,00,000; the rule took 5,50,000; the code the rest.
-    expect(result.breakdown.find((l) => l.code === 'PROMOTION')?.amountMinor).toBe(
-      -450_000,
-    );
+    expect(
+      result.breakdown.find((l) => l.code === 'PROMOTION')?.amountMinor,
+    ).toBe(-450_000);
     expect(result.platformRevenueMinor).toBe(0);
     expect(result.operatorPayableMinor).toBe(10_000_000);
     expect(result.assumptions).toContain(

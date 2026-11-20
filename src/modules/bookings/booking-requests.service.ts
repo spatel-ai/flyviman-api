@@ -17,6 +17,7 @@ import {
   AircraftListingStatus,
   AvailabilityBlockReason,
   BookingEventType,
+  BookingPaymentStatus,
   BookingStatus,
   NotificationChannel,
   OperatorStatus,
@@ -35,6 +36,7 @@ import {
   type OperatorAccess,
 } from '../operators/operator-access.js';
 import { OperatorsService } from '../operators/operators.service.js';
+import { PricingService } from '../pricing/pricing.service.js';
 import type {
   QuoteResponseDto,
   ReviseQuoteDto,
@@ -46,6 +48,7 @@ import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import type { BookingPriceDto } from './dto/booking.dto.js';
+import type { OverridePriceDto } from './dto/price-override.dto.js';
 import type {
   BookingMessageDto,
   BookingNoteDto,
@@ -155,6 +158,7 @@ export class BookingRequestsService {
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly pricing: PricingService,
   ) {}
 
   // --- Operator inbox ------------------------------------------------------
@@ -396,6 +400,174 @@ export class BookingRequestsService {
             currency: input.currency,
             priceType: PriceType.QUOTE,
             validUntil: validUntil.toISOString(),
+          });
+          return this.notifyCustomer(tx, row, 'booking.quote_sent', {
+            quoteReference: quote.reference,
+            validUntil: validUntil.toISOString(),
+          });
+        });
+        break;
+      } catch (error) {
+        const clash =
+          (error as { code?: unknown }).code === 'P2002' &&
+          attempt < REFERENCE_ATTEMPTS;
+        if (!clash) throw error;
+      }
+    }
+    if (!issued) throw quoteNotFound();
+    return this.quotes.toResponse(issued, booking.reference);
+  }
+
+  // --- Flyviman staff --------------------------------------------------------
+
+  /**
+   * A price set by Flyviman staff (M10; state-machines.md, Quote): a new
+   * quote that supersedes the open one, never an edit of it, with its own
+   * calculation (`PricingService.saveOverride`) holding who set it and why.
+   * Only while the request waits for a quote (`OPERATOR_PENDING`) and
+   * nothing is paid, so the customer accepts or declines it as any quote;
+   * the conditions are carried from the latest quote unless given. Rechecks
+   * the aircraft and the hold (rule 3). Audited with before, after and the
+   * reason (`booking.price_override`).
+   */
+  async overridePrice(
+    user: AuthUser,
+    reference: string,
+    input: OverridePriceDto,
+  ): Promise<QuoteResponseDto> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { reference },
+      select: { id: true, reference: true },
+    });
+    if (!booking) throw notFound();
+    const requested = input.validUntil ? new Date(input.validUntil) : undefined;
+    let issued: QuoteRow | null = null;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.changeRequest(booking.id, async (tx, row, now) => {
+          if (row.status !== BookingStatus.OPERATOR_PENDING) {
+            throw invalidTransition(
+              `the price of a ${row.status} booking cannot be overridden`,
+            );
+          }
+          if (row.paymentStatus !== BookingPaymentStatus.UNPAID) {
+            throw invalidTransition('a payment has been made');
+          }
+          const departure = departureOf(row);
+          if (
+            requested &&
+            (requested.getTime() < now.getTime() + MIN_QUOTE_MINUTES * 60_000 ||
+              requested.getTime() > departure.getTime())
+          ) {
+            throw new AppException(
+              'VALIDATION_ERROR',
+              'The request is not valid.',
+              HttpStatus.BAD_REQUEST,
+              [
+                {
+                  field: 'validUntil',
+                  issue: `must be at least ${MIN_QUOTE_MINUTES} minutes from now and no later than the departure`,
+                },
+              ],
+            );
+          }
+          const latest = row.quotes[0] ?? null;
+          const conditions =
+            input.conditions ?? (latest && this.quotes.conditionsOf(latest));
+          if (!conditions || !conditions.summary) {
+            throw new AppException(
+              'VALIDATION_ERROR',
+              'The request is not valid.',
+              HttpStatus.BAD_REQUEST,
+              [
+                {
+                  field: 'conditions',
+                  issue:
+                    'required: the booking has no quote to carry them from',
+                },
+              ],
+            );
+          }
+          const validUntil = quoteValidUntil(
+            now,
+            departure,
+            this.holdHours(),
+            requested,
+          );
+          await this.assertBookable(tx, row, now, 'customer', validUntil);
+          // What the customer was last offered: the open quote, else the
+          // booking's own price (none for a request priced on request).
+          const open = latest?.status === QuoteStatus.SENT ? latest : null;
+          const previous = {
+            totalMinor: open
+              ? minorToNumber(open.totalMinor)
+              : isQuoteRequest(row)
+                ? null
+                : minorToNumber(row.totalMinor),
+            quoteReference: open?.reference ?? null,
+          };
+          const calculationId = row.calculationId
+            ? await this.pricing.saveOverride(tx, {
+                fromCalculationId: row.calculationId,
+                totalMinor: input.totalMinor,
+                validUntil,
+                overriddenById: user.id,
+                reason: input.reason,
+                previous: {
+                  totalMinor: previous.totalMinor ?? 0,
+                  quoteReference: previous.quoteReference,
+                },
+                now,
+              })
+            : null;
+          if (!row.operatorId) throw notFound();
+          const { quote, superseded } = await this.quotes.issue(
+            tx,
+            {
+              bookingId: row.id,
+              operatorId: row.operatorId,
+              totalMinor: input.totalMinor,
+              currency: input.currency,
+              validUntil,
+              conditions,
+              createdById: user.id,
+              calculationId,
+            },
+            now,
+          );
+          issued = quote;
+          await this.audit.record(
+            {
+              action: 'booking.price_override',
+              entityType: 'Booking',
+              entityId: row.id,
+              before: {
+                reference: row.reference,
+                totalMinor: previous.totalMinor,
+                currency: row.currency,
+                quoteReference: previous.quoteReference,
+              },
+              after: {
+                reference: row.reference,
+                totalMinor: input.totalMinor,
+                currency: input.currency,
+                priceType: PriceType.QUOTE,
+                quoteReference: quote.reference,
+                calculationId,
+              },
+              reason: input.reason,
+            },
+            tx,
+          );
+          // The reason stays internal: not on the customer's timeline.
+          await this.event(tx, row.id, BookingEventType.QUOTE_ISSUED, user, {
+            quoteReference: quote.reference,
+            supersedes: superseded,
+            totalMinor: input.totalMinor,
+            currency: input.currency,
+            priceType: PriceType.QUOTE,
+            validUntil: validUntil.toISOString(),
+            override: true,
           });
           return this.notifyCustomer(tx, row, 'booking.quote_sent', {
             quoteReference: quote.reference,

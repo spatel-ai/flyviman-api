@@ -92,6 +92,8 @@ export class QuotesService {
       validUntil: Date;
       conditions: QuoteConditionsInputDto;
       createdById: string;
+      /** A manual override's calculation (M10); otherwise none. */
+      calculationId?: string | null;
     },
     now: Date,
   ): Promise<{ quote: QuoteRow; superseded: string | null }> {
@@ -124,6 +126,7 @@ export class QuotesService {
         validUntil: input.validUntil,
         status: QuoteStatus.SENT,
         createdById: input.createdById,
+        calculationId: input.calculationId ?? null,
       },
     });
     await this.audit.record(

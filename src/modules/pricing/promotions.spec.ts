@@ -76,14 +76,16 @@ describe('promotionProblem', () => {
   it('matches the route in either direction, and nothing else', () => {
     const route = { ...PROMO, originId: 'B', destinationId: 'A' };
     expect(promotionProblem(route, TRIP, NONE)).toBeNull();
-    expect(
-      promotionProblem(route, { ...TRIP, destinationId: 'C' }, NONE),
-    ).toBe('PROMO_CODE_NOT_APPLICABLE');
+    expect(promotionProblem(route, { ...TRIP, destinationId: 'C' }, NONE)).toBe(
+      'PROMO_CODE_NOT_APPLICABLE',
+    );
   });
 
   it('refuses once the overall cap is used up', () => {
     const capped = { ...PROMO, maxUses: 3 };
-    expect(promotionProblem(capped, TRIP, { total: 2, customer: 0 })).toBeNull();
+    expect(
+      promotionProblem(capped, TRIP, { total: 2, customer: 0 }),
+    ).toBeNull();
     expect(promotionProblem(capped, TRIP, { total: 3, customer: 0 })).toBe(
       'PROMO_CODE_LIMIT_REACHED',
     );
@@ -91,7 +93,9 @@ describe('promotionProblem', () => {
 
   it('refuses once the customer has used their share', () => {
     const capped = { ...PROMO, maxUsesPerCustomer: 1 };
-    expect(promotionProblem(capped, TRIP, { total: 5, customer: 0 })).toBeNull();
+    expect(
+      promotionProblem(capped, TRIP, { total: 5, customer: 0 }),
+    ).toBeNull();
     expect(promotionProblem(capped, TRIP, { total: 5, customer: 1 })).toBe(
       'PROMO_CODE_LIMIT_REACHED',
     );
