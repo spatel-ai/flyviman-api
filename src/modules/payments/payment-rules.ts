@@ -7,6 +7,7 @@ import {
   PaymentStatus,
   PriceType,
 } from '../../generated/prisma/enums.js';
+import type { GatewayPaymentStatus } from '../../integrations/payment/payment-gateway.provider.js';
 
 /**
  * The payment rules (M9), pure so every case is unit tested: what a booking
@@ -179,5 +180,36 @@ export function reviewOnSuccess(booking: {
   if (booking.paymentStatus !== BookingPaymentStatus.UNPAID) {
     return PaymentReviewReason.ALREADY_PAID;
   }
+  return null;
+}
+
+/**
+ * Whether a capture reported with `providerPaymentId` is a second capture
+ * on an order whose payment already succeeded with another gateway payment:
+ * money moved twice, so operations must be told (`DUPLICATE_CAPTURE`). The
+ * same gateway payment reported again is a repeat, not a duplicate.
+ */
+export function isDuplicateCapture(
+  payment: { status: PaymentStatus; providerPaymentId: string | null },
+  providerPaymentId: string | undefined,
+): boolean {
+  return (
+    PAYMENT_RANK[payment.status] >= PAYMENT_RANK.SUCCEEDED &&
+    payment.providerPaymentId !== null &&
+    providerPaymentId !== undefined &&
+    providerPaymentId !== payment.providerPaymentId
+  );
+}
+
+/**
+ * The outcome a status fetched from the gateway settles, or `null` while it
+ * is not final (`created`, `authorized`). A refund is not an outcome of the
+ * payment's own attempt; refunds are handled on their own (W4-1).
+ */
+export function outcomeOfGatewayStatus(
+  status: GatewayPaymentStatus,
+): 'SUCCEEDED' | 'FAILED' | null {
+  if (status === 'captured') return PaymentStatus.SUCCEEDED;
+  if (status === 'failed') return PaymentStatus.FAILED;
   return null;
 }

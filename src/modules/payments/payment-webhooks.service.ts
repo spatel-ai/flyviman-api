@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
+import type { IncomingHttpHeaders } from 'node:http';
 import {
   HttpStatus,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { IncomingHttpHeaders } from 'node:http';
+import { Cron } from '@nestjs/schedule';
+import type { Redis } from 'ioredis';
 import { AppException } from '../../common/errors/app.exception.js';
 import { minorToNumber } from '../../common/money.js';
 import type { Prisma } from '../../generated/prisma/client.js';
@@ -13,22 +17,45 @@ import {
   PaymentStatus,
 } from '../../generated/prisma/enums.js';
 import {
+  type GatewayPayment,
+  PaymentGatewayError,
   PaymentGatewayProvider,
   type WebhookEvent,
 } from '../../integrations/payment/payment-gateway.provider.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { REDIS } from '../../redis/redis.module.js';
 import { AuditService } from '../audit/audit.service.js';
-import { BookingsService } from '../bookings/bookings.service.js';
+import {
+  BookingsService,
+  type PayableBookingRow,
+} from '../bookings/bookings.service.js';
 import type { WebhookAckResponseDto } from './dto/webhook-ack-response.dto.js';
 import {
   bookingPaymentStatusAfterSuccess,
+  isDuplicateCapture,
   nextPaymentStatus,
+  outcomeOfGatewayStatus,
   reviewOnSuccess,
 } from './payment-rules.js';
 import { providerOf } from './payments.service.js';
 
 /** Refusals are logged at most once per this window. */
 export const REFUSAL_LOG_WINDOW_MS = 60_000;
+
+/**
+ * The status sweep asks the gateway about a payment still open this long
+ * after its last change: long enough for the checkout and its notice.
+ */
+export const PAYMENT_SWEEP_AFTER_MINUTES = 15;
+/** ...and stops asking about an order nobody paid after this long. */
+export const PAYMENT_SWEEP_MAX_AGE_HOURS = 48;
+const SWEEP_LOCK_KEY = 'payments:sweep:lock';
+const SWEEP_LOCK_SECONDS = 5 * 60;
+const SWEEP_BATCH = 100;
+const RELEASE_LOCK = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
+
+/** What applied an outcome, kept in its audit record. */
+type OutcomeSource = 'webhook' | 'webhook-redelivery' | 'sweep';
 
 /** Events that move a payment; the others are stored only. */
 const OUTCOME = {
@@ -42,9 +69,11 @@ const OUTCOME = {
  * and stored nowhere. A verified event is stored in `PaymentEvent` (unique
  * per provider event ID) and applied in the same transaction, before the
  * acknowledgement: a duplicate delivery inserts nothing and changes nothing
- * (rule 5). Outcomes only move a payment forward (`nextPaymentStatus`), so a
+ * (rule 5), except that a notice stored before its order was known is
+ * applied when it comes again (`apply`). Outcomes only move a payment forward (`nextPaymentStatus`), so a
  * delayed or out-of-order notice is safe. A payment writes the booking's
- * payment summary only, never its status (rule 2).
+ * payment summary only, never its status (rule 2). A notice that never
+ * arrives is made up for by the status sweep (`runSweep`).
  */
 @Injectable()
 export class PaymentWebhooksService {
@@ -58,6 +87,7 @@ export class PaymentWebhooksService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
   async receive(
@@ -96,9 +126,18 @@ export class PaymentWebhooksService {
    * Stores the event once and applies it. The booking is locked before the
    * payment is read, as on every payment write, so two notices for one
    * booking (or a notice and a cancellation) are applied one after the
-   * other. An event for an order we do not know is stored unapplied
-   * (`paymentId` and `processedAt` empty) and still acknowledged, so the
-   * gateway stops resending it.
+   * other. An event for an order we do not know yet (the notice can beat the
+   * transaction that records the order) is stored unapplied (`paymentId`
+   * and `processedAt` empty) and still acknowledged, never a 5xx: a gateway
+   * disables a failing webhook.
+   *
+   * A redelivery inserts nothing. If the stored event was linked to a
+   * payment it was applied then, and nothing more happens. If it was stored
+   * unapplied and its order is known now, it is applied now. The event row
+   * is append-only, so it stays unlinked: the application is recorded on the
+   * payment and in its audit record (with the event id). The replay guard is
+   * therefore the payment's own state, not the event id alone: a status only
+   * moves forward, and the same capture reported again changes nothing.
    */
   private async apply(
     tx: Prisma.TransactionClient,
@@ -139,50 +178,86 @@ export class PaymentWebhooksService {
       },
       skipDuplicates: true,
     });
-    // Seen before: acknowledged, never applied twice.
-    if (count === 0 || !found || !booking || !outcome) return;
+    if (!found || !booking || !outcome) return;
+    let source: OutcomeSource = 'webhook';
+    if (count === 0) {
+      const stored = await tx.paymentEvent.findUnique({
+        where: {
+          provider_providerEventId: {
+            provider,
+            providerEventId: event.providerEventId,
+          },
+        },
+        select: { paymentId: true, type: true },
+      });
+      // Applied when it was first stored: never twice.
+      if (!stored || stored.paymentId !== null || stored.type !== event.type) {
+        return;
+      }
+      source = 'webhook-redelivery';
+    }
+    await this.applyOutcome(tx, found.id, booking, outcome, event, {
+      source,
+      providerEventId: event.providerEventId,
+    });
+  }
 
+  /**
+   * Applies a verified outcome to a payment whose booking `tx` has locked.
+   * A second capture on a paid order is flagged, never applied; a success
+   * for another amount is flagged, never a success; otherwise the status
+   * only moves forward. A payment writes the booking's payment summary
+   * only, never its status (rule 2). Whether anything changed.
+   */
+  private async applyOutcome(
+    tx: Prisma.TransactionClient,
+    paymentId: string,
+    booking: PayableBookingRow,
+    outcome: 'SUCCEEDED' | 'FAILED',
+    report: Pick<
+      WebhookEvent,
+      'providerPaymentId' | 'amountMinor' | 'currency'
+    >,
+    origin: { source: OutcomeSource; providerEventId?: string },
+  ): Promise<boolean> {
     const payment = await tx.payment.findUniqueOrThrow({
-      where: { id: found.id },
+      where: { id: paymentId },
     });
     const before = { reference: payment.reference, status: payment.status };
 
     if (
       outcome === PaymentStatus.SUCCEEDED &&
-      (event.amountMinor === undefined ||
-        BigInt(event.amountMinor) !== payment.amountMinor ||
-        event.currency !== payment.currency)
+      isDuplicateCapture(payment, report.providerPaymentId)
+    ) {
+      // Money moved twice. The first reason found is kept; the audit
+      // record is always written, so no capture goes unrecorded.
+      await this.flag(tx, payment, PaymentReviewReason.DUPLICATE_CAPTURE, {
+        ...origin,
+        reportedProviderPaymentId: report.providerPaymentId ?? null,
+        providerPaymentId: payment.providerPaymentId,
+      });
+      return true;
+    }
+
+    if (
+      outcome === PaymentStatus.SUCCEEDED &&
+      (report.amountMinor === undefined ||
+        BigInt(report.amountMinor) !== payment.amountMinor ||
+        report.currency !== payment.currency)
     ) {
       // Never a success for an amount other than the order's.
-      if (payment.reviewReason === null) {
-        await tx.payment.update({
-          where: { id: payment.id },
-          data: { reviewReason: PaymentReviewReason.AMOUNT_MISMATCH },
-        });
-        await this.audit.record(
-          {
-            action: 'payment.flag',
-            entityType: 'Payment',
-            entityId: payment.id,
-            before,
-            after: {
-              ...before,
-              reviewReason: PaymentReviewReason.AMOUNT_MISMATCH,
-              reportedAmountMinor: event.amountMinor ?? null,
-              reportedCurrency: event.currency ?? null,
-              amountMinor: minorToNumber(payment.amountMinor),
-            },
-            actor: null,
-          },
-          tx,
-        );
-      }
-      return;
+      if (payment.reviewReason !== null) return false;
+      await this.flag(tx, payment, PaymentReviewReason.AMOUNT_MISMATCH, {
+        reportedAmountMinor: report.amountMinor ?? null,
+        reportedCurrency: report.currency ?? null,
+        amountMinor: minorToNumber(payment.amountMinor),
+      });
+      return true;
     }
 
     const next = nextPaymentStatus(payment.status, outcome);
     // Older than what is recorded (a failure after a success, a repeat).
-    if (!next) return;
+    if (!next) return false;
 
     if (next === PaymentStatus.FAILED) {
       await tx.payment.update({
@@ -190,7 +265,7 @@ export class PaymentWebhooksService {
         data: {
           status: next,
           providerPaymentId:
-            payment.providerPaymentId ?? event.providerPaymentId,
+            payment.providerPaymentId ?? report.providerPaymentId,
         },
       });
       await this.audit.record(
@@ -199,12 +274,12 @@ export class PaymentWebhooksService {
           entityType: 'Payment',
           entityId: payment.id,
           before,
-          after: { reference: payment.reference, status: next },
+          after: { reference: payment.reference, status: next, ...origin },
           actor: null,
         },
         tx,
       );
-      return;
+      return true;
     }
 
     // A success is always recorded: money moved. If the booking is closed
@@ -215,7 +290,7 @@ export class PaymentWebhooksService {
       where: { id: payment.id },
       data: {
         status: next,
-        providerPaymentId: event.providerPaymentId,
+        providerPaymentId: report.providerPaymentId,
         paidAt: new Date(),
         reviewReason: payment.reviewReason ?? reviewReason,
       },
@@ -231,6 +306,7 @@ export class PaymentWebhooksService {
           status: next,
           bookingStatus: booking.status,
           reviewReason,
+          ...origin,
         },
         actor: null,
       },
@@ -246,6 +322,202 @@ export class PaymentWebhooksService {
         purpose: payment.purpose,
       });
     }
+    return true;
+  }
+
+  /**
+   * Sets `reviewReason` if none is set yet (one reason is kept: the first),
+   * and always writes the audit record. Gateway references and amounts
+   * only.
+   */
+  private async flag(
+    tx: Prisma.TransactionClient,
+    payment: {
+      id: string;
+      reference: string;
+      status: PaymentStatus;
+      reviewReason: PaymentReviewReason | null;
+    },
+    reason: PaymentReviewReason,
+    details: Record<string, string | number | null>,
+  ): Promise<void> {
+    const before = {
+      reference: payment.reference,
+      status: payment.status,
+      reviewReason: payment.reviewReason,
+    };
+    if (payment.reviewReason === null) {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { reviewReason: reason },
+      });
+    }
+    await this.audit.record(
+      {
+        action: 'payment.flag',
+        entityType: 'Payment',
+        entityId: payment.id,
+        before,
+        after: {
+          reference: payment.reference,
+          status: payment.status,
+          reviewReason: payment.reviewReason ?? reason,
+          flagged: reason,
+          ...details,
+        },
+        actor: null,
+      },
+      tx,
+    );
+  }
+
+  // --- Status sweep --------------------------------------------------------
+
+  /** Every five minutes. */
+  @Cron('*/5 * * * *', { name: 'payment-sweep' })
+  async scheduled(): Promise<void> {
+    try {
+      await this.runSweep();
+    } catch (error) {
+      this.logger.error(
+        `Payment sweep failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * For a notice that never arrived, or arrived before its order was
+   * recorded and was not sent again: asks the gateway for the status of
+   * every payment still `INITIATED` or `PENDING` after
+   * `PAYMENT_SWEEP_AFTER_MINUTES` (and younger than
+   * `PAYMENT_SWEEP_MAX_AGE_HOURS`, so an order nobody paid is not asked
+   * about forever), and applies a final status the gateway reports for that
+   * order, as a notice would be. The gateway payments asked about are the
+   * one the checkout reported and those named by notices stored unapplied
+   * for the order; a payment with neither is left as it is. The gateway is
+   * called outside any transaction. One instance at a time (Redis lock).
+   */
+  async runSweep(now = new Date()): Promise<{
+    checked: number;
+    applied: number;
+    skipped: boolean;
+  }> {
+    const token = randomUUID();
+    const locked = await this.redis.set(
+      SWEEP_LOCK_KEY,
+      token,
+      'EX',
+      SWEEP_LOCK_SECONDS,
+      'NX',
+    );
+    if (!locked) return { checked: 0, applied: 0, skipped: true };
+    let checked = 0;
+    let applied = 0;
+    try {
+      const provider = providerOf(this.gateway);
+      const seen: string[] = [];
+      for (;;) {
+        const due = await this.prisma.payment.findMany({
+          where: {
+            id: { notIn: seen },
+            provider,
+            status: { in: [PaymentStatus.INITIATED, PaymentStatus.PENDING] },
+            providerOrderId: { not: null },
+            updatedAt: {
+              lte: new Date(
+                now.getTime() - PAYMENT_SWEEP_AFTER_MINUTES * 60_000,
+              ),
+            },
+            createdAt: {
+              gte: new Date(
+                now.getTime() - PAYMENT_SWEEP_MAX_AGE_HOURS * 3_600_000,
+              ),
+            },
+          },
+          select: {
+            id: true,
+            bookingId: true,
+            providerOrderId: true,
+            providerPaymentId: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: SWEEP_BATCH,
+        });
+        for (const payment of due) {
+          seen.push(payment.id);
+          checked += 1;
+          try {
+            if (await this.sweepOne(payment)) applied += 1;
+          } catch (error) {
+            // One payment never stops the rest; only the error's name.
+            this.logger.error(
+              `Payment sweep skipped a payment: ${error instanceof Error ? error.name : 'unknown error'}`,
+            );
+          }
+        }
+        if (due.length < SWEEP_BATCH) break;
+      }
+      if (applied > 0) {
+        this.logger.log(`Payment sweep: ${applied} of ${checked} settled`);
+      }
+      return { checked, applied, skipped: false };
+    } finally {
+      await this.redis.eval(RELEASE_LOCK, 1, SWEEP_LOCK_KEY, token);
+    }
+  }
+
+  private async sweepOne(payment: {
+    id: string;
+    bookingId: string;
+    providerOrderId: string | null;
+    providerPaymentId: string | null;
+  }): Promise<boolean> {
+    const orderId = payment.providerOrderId;
+    if (!orderId) return false;
+    const early = await this.prisma.paymentEvent.findMany({
+      where: {
+        paymentId: null,
+        provider: providerOf(this.gateway),
+        type: { in: Object.keys(OUTCOME) },
+        payload: { path: ['providerOrderId'], equals: orderId },
+      },
+      select: { payload: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const candidates = new Set<string>();
+    if (payment.providerPaymentId) candidates.add(payment.providerPaymentId);
+    for (const { payload } of early) {
+      const id = (payload as { providerPaymentId?: unknown } | null)
+        ?.providerPaymentId;
+      if (typeof id === 'string') candidates.add(id);
+    }
+
+    let changed = false;
+    for (const candidate of candidates) {
+      let fetched: GatewayPayment;
+      try {
+        fetched = await this.gateway.fetchPayment(candidate);
+      } catch (error) {
+        // Unknown to the gateway, or it is down: asked again next run.
+        if (error instanceof PaymentGatewayError) continue;
+        throw error;
+      }
+      const outcome = outcomeOfGatewayStatus(fetched.status);
+      // Only the gateway's own answer for this order settles it.
+      if (!outcome || fetched.providerOrderId !== orderId) continue;
+      const done = await this.prisma.$transaction(async (tx) => {
+        const booking = await this.bookings.forPayment(
+          { id: payment.bookingId },
+          tx,
+        );
+        if (!booking) return false;
+        return this.applyOutcome(tx, payment.id, booking, outcome, fetched, {
+          source: 'sweep',
+        });
+      });
+      changed ||= done;
+    }
+    return changed;
   }
 
   /**

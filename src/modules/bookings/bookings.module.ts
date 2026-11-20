@@ -48,7 +48,12 @@ import { TripsService } from './trips.service.js';
     OperatorBookingRequestsController,
     DevBookingJobsController,
   ],
-  providers: [BookingsService, TripsService, BookingRequestsService, FieldCipher],
+  providers: [
+    BookingsService,
+    TripsService,
+    BookingRequestsService,
+    FieldCipher,
+  ],
   exports: [BookingsService],
 })
 export class BookingsModule {}

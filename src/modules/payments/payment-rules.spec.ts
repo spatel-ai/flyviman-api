@@ -10,7 +10,9 @@ import {
   amountDue,
   bookingPaymentStatusAfterSuccess,
   depositMinor,
+  isDuplicateCapture,
   nextPaymentStatus,
+  outcomeOfGatewayStatus,
   type PayableBooking,
   reviewOnSuccess,
 } from './payment-rules.js';
@@ -212,5 +214,44 @@ describe('reviewOnSuccess', () => {
         paymentStatus: BookingPaymentStatus.UNPAID,
       }),
     ).toBeNull();
+  });
+});
+
+describe('isDuplicateCapture', () => {
+  const paid = { status: PaymentStatus.SUCCEEDED, providerPaymentId: 'pay_1' };
+
+  it('flags another gateway payment captured on a paid order', () => {
+    expect(isDuplicateCapture(paid, 'pay_2')).toBe(true);
+    // Also once the first capture is being refunded: money moved twice.
+    expect(
+      isDuplicateCapture(
+        { status: PaymentStatus.REFUND_PENDING, providerPaymentId: 'pay_1' },
+        'pay_2',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag a repeat of the same capture, or a capture on an unpaid order', () => {
+    expect(isDuplicateCapture(paid, 'pay_1')).toBe(false);
+    expect(isDuplicateCapture(paid, undefined)).toBe(false);
+    for (const status of [
+      PaymentStatus.INITIATED,
+      PaymentStatus.PENDING,
+      PaymentStatus.FAILED,
+    ]) {
+      expect(
+        isDuplicateCapture({ status, providerPaymentId: 'pay_1' }, 'pay_2'),
+      ).toBe(false);
+    }
+  });
+});
+
+describe('outcomeOfGatewayStatus', () => {
+  it('settles only captured and failed payments', () => {
+    expect(outcomeOfGatewayStatus('captured')).toBe(PaymentStatus.SUCCEEDED);
+    expect(outcomeOfGatewayStatus('failed')).toBe(PaymentStatus.FAILED);
+    expect(outcomeOfGatewayStatus('created')).toBeNull();
+    expect(outcomeOfGatewayStatus('authorized')).toBeNull();
+    expect(outcomeOfGatewayStatus('refunded')).toBeNull();
   });
 });

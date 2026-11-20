@@ -2,15 +2,18 @@ import { randomBytes } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MockPaymentGatewayProvider } from './mock-payment-gateway.provider.js';
+import { MockPaymentController } from './mock-payment.controller.js';
 import { PaymentGatewayProvider } from './payment-gateway.provider.js';
 
 /**
  * Binds PaymentGatewayProvider to an implementation, chosen by
  * PAYMENT_PROVIDER. Only `mock` exists: real payments must not be possible
  * until the commercial decisions are settled (docs/open-decisions.md, Hard
- * gate). Razorpay will be one more adapter bound here.
+ * gate). Razorpay will be one more adapter bound here. The mock's
+ * development route (`dev/payments`) needs ENABLE_DEV_TOOLS.
  */
 @Module({
+  controllers: [MockPaymentController],
   providers: [
     {
       provide: PaymentGatewayProvider,

@@ -169,6 +169,25 @@ async function bookingOf(customer: APIRequestContext, reference: string) {
   };
 }
 
+/** Runs the sweep, waiting out a run another test holds the lock for. */
+async function runSweep(request: APIRequestContext) {
+  await expect
+    .poll(async () => {
+      const response = await request.post('dev/jobs/payment-sweep', {
+        headers: await csrfHeaders(request),
+      });
+      expect(response.status()).toBe(200);
+      return (await response.json()).data.skipped as boolean;
+    })
+    .toBe(false);
+}
+
+function setOrderId(reference: string, providerOrderId: string) {
+  return withPrisma((prisma) =>
+    prisma.payment.update({ where: { reference }, data: { providerOrderId } }),
+  );
+}
+
 function paymentRow(reference: string) {
   return withPrisma((prisma) =>
     prisma.payment.findUniqueOrThrow({ where: { reference } }),
@@ -589,5 +608,232 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
       }),
     );
     expect(stored).toMatchObject({ paymentId: null, processedAt: null });
+  });
+
+  test('a notice that came before its order was recorded is applied when it is delivered again', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    // The notice names an order not recorded yet (it beat the transaction
+    // that records it): stored unapplied and acknowledged.
+    const earlyOrderId = `order_early_${randomUUID().slice(0, 8)}`;
+    const early = notice('payment.captured', {
+      orderId: earlyOrderId,
+      amountMinor: totalMinor,
+    });
+    expect((await deliver(request, early)).status()).toBe(200);
+    expect((await paymentRow(order.reference)).status).toBe('INITIATED');
+
+    // Now the order is known under that id, and the gateway sends it again.
+    await withPrisma((prisma) =>
+      prisma.payment.update({
+        where: { reference: order.reference },
+        data: { providerOrderId: earlyOrderId },
+      }),
+    );
+    for (let delivery = 0; delivery < 2; delivery += 1) {
+      const response = await deliver(request, early);
+      expect(response.status()).toBe(200);
+    }
+
+    const payment = await paymentRow(order.reference);
+    expect(payment).toMatchObject({ status: 'SUCCEEDED', reviewReason: null });
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'PAID',
+    });
+    const { events, audits } = await withPrisma(async (prisma) => ({
+      // Append-only: the stored event stays as it was written.
+      events: await prisma.paymentEvent.findMany({
+        where: { providerEventId: early.eventId },
+      }),
+      audits: await prisma.auditLog.findMany({
+        where: { entityId: payment.id, action: 'payment.status' },
+      }),
+    }));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ paymentId: null, processedAt: null });
+    // Applied once, on the redelivery, and recorded with the event's id.
+    expect(audits).toHaveLength(1);
+    expect(audits[0].after).toMatchObject({
+      status: 'SUCCEEDED',
+      source: 'webhook-redelivery',
+      providerEventId: early.eventId,
+    });
+  });
+
+  test('a second capture with another gateway payment on a paid order is flagged, never ignored', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const first = notice('payment.captured', {
+      orderId: order.checkout.orderId,
+      amountMinor: totalMinor,
+    });
+    expect((await deliver(request, first)).status()).toBe(200);
+    const paid = await paymentRow(order.reference);
+    expect(paid).toMatchObject({ status: 'SUCCEEDED', reviewReason: null });
+
+    const second = notice('payment.captured', {
+      orderId: order.checkout.orderId,
+      amountMinor: totalMinor,
+    });
+    expect((await deliver(request, second)).status()).toBe(200);
+
+    const flagged = await paymentRow(order.reference);
+    expect(flagged).toMatchObject({
+      status: 'SUCCEEDED',
+      reviewReason: 'DUPLICATE_CAPTURE',
+      // The first capture stays the payment's own.
+      providerPaymentId: paid.providerPaymentId,
+    });
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      paymentStatus: 'PAID',
+    });
+    const audit = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: { entityId: paid.id, action: 'payment.flag' },
+      }),
+    );
+    expect(audit.after).toMatchObject({ flagged: 'DUPLICATE_CAPTURE' });
+  });
+});
+
+test.describe('POST /dev/jobs/payment-sweep', () => {
+  test("settles a payment whose notice never came from the gateway's own status", async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    // The customer pays in the gateway's checkout; its notice is lost.
+    const simulated = await request.post(
+      `dev/payments/orders/${order.checkout.orderId}/simulate`,
+      { headers: await csrfHeaders(request), data: { outcome: 'success' } },
+    );
+    expect(simulated.status()).toBe(200);
+    const { checkout } = (await simulated.json()).data;
+    const verified = await customer.post(`payments/${order.reference}/verify`, {
+      headers: await csrfHeaders(customer),
+      data: checkout,
+    });
+    expect(verified.status()).toBe(200);
+    expect((await paymentRow(order.reference)).status).toBe('PENDING');
+
+    // Not yet due: changed moments ago.
+    await runSweep(request);
+    expect((await paymentRow(order.reference)).status).toBe('PENDING');
+
+    await withPrisma(
+      (prisma) => prisma.$executeRaw`
+        UPDATE "Payment" SET "updatedAt" = now() - interval '20 minutes'
+        WHERE "reference" = ${order.reference}`,
+    );
+    await runSweep(request);
+
+    const payment = await paymentRow(order.reference);
+    expect(payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: checkout.providerPaymentId,
+      reviewReason: null,
+    });
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'PAID',
+    });
+    const audit = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: {
+          entityId: payment.id,
+          action: 'payment.status',
+          actorId: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
+    expect(audit.after).toMatchObject({ status: 'SUCCEEDED', source: 'sweep' });
+  });
+
+  test('settles an unpaid-looking payment from a notice that came before its order was recorded', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const orderId = order.checkout.orderId;
+    const simulated = await request.post(
+      `dev/payments/orders/${orderId}/simulate`,
+      { headers: await csrfHeaders(request), data: { outcome: 'success' } },
+    );
+    expect(simulated.status()).toBe(200);
+    const { checkout, webhook } = (await simulated.json()).data as {
+      checkout: { providerPaymentId: string };
+      webhook: { body: string; headers: Record<string, string> };
+    };
+
+    // The notice arrives while the order is not recorded yet; it is stored
+    // and acknowledged, so the gateway never sends it again. The checkout
+    // result never comes back either.
+    await setOrderId(
+      order.reference,
+      `order_pending_${randomUUID().slice(0, 8)}`,
+    );
+    const early = await request.post('webhooks/payments/mock', {
+      data: webhook.body,
+      headers: webhook.headers,
+    });
+    expect(early.status()).toBe(200);
+    await setOrderId(order.reference, orderId);
+    await withPrisma(
+      (prisma) => prisma.$executeRaw`
+        UPDATE "Payment" SET "updatedAt" = now() - interval '20 minutes'
+        WHERE "reference" = ${order.reference}`,
+    );
+    expect(await paymentRow(order.reference)).toMatchObject({
+      status: 'INITIATED',
+      providerPaymentId: null,
+    });
+
+    await runSweep(request);
+
+    const payment = await paymentRow(order.reference);
+    expect(payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: checkout.providerPaymentId,
+    });
+    const audit = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: {
+          entityId: payment.id,
+          action: 'payment.status',
+          actorId: null,
+        },
+      }),
+    );
+    expect(audit.after).toMatchObject({ status: 'SUCCEEDED', source: 'sweep' });
   });
 });

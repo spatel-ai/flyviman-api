@@ -1,4 +1,9 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FieldCipher, isEncrypted } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
@@ -25,6 +30,7 @@ import { CustomersService } from '../customers/customers.service.js';
 import { CANCELLATION_NOTE, SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
+import { encryptLegacyFreeText } from './free-text-backfill.js';
 import {
   holdExpiry,
   isQuoteRequest,
@@ -104,7 +110,9 @@ function notFound(): AppException {
  * record. Passenger details never reach the audit trail, events or logs.
  */
 @Injectable()
-export class BookingsService {
+export class BookingsService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(BookingsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -115,6 +123,28 @@ export class BookingsService {
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Encrypts the free text (change-request details, cancellation reasons)
+   * saved in plain text before it was encrypted, before the API accepts
+   * requests. A failure stops the start; only the error's name is kept,
+   * since a database error can repeat the value.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    let changed: number;
+    try {
+      changed = await encryptLegacyFreeText(this.prisma, (plain) =>
+        this.cipher.encrypt(plain),
+      );
+    } catch (error) {
+      throw new Error(
+        `Encrypting booking free text failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+    }
+    if (changed > 0) {
+      this.logger.log(`Encrypted ${changed} booking free-text values`);
+    }
+  }
 
   async create(
     user: AuthUser,
@@ -343,7 +373,7 @@ export class BookingsService {
       },
     });
     if (!booking) throw notFound();
-    const notes = await decisionNotes(this.prisma, booking.id);
+    const notes = await decisionNotes(this.prisma, this.cipher, booking.id);
     const estimate = booking.priceType === PriceType.ESTIMATE;
     return {
       reference: booking.reference,
@@ -380,7 +410,7 @@ export class BookingsService {
       confirmedAt: booking.confirmedAt?.toISOString() ?? null,
       cancelledAt: booking.cancelledAt?.toISOString() ?? null,
       changeRequests: booking.changeRequests.map((row) =>
-        changeRequestView(row, booking.reference, notes),
+        changeRequestView(row, booking.reference, notes, this.cipher),
       ),
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),

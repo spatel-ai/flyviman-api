@@ -1,5 +1,9 @@
 import type { Logger } from '@nestjs/common';
-import type { PaymentGatewayProvider } from '../../integrations/payment/payment-gateway.provider.js';
+import type { Redis } from 'ioredis';
+import {
+  PaymentGatewayError,
+  type PaymentGatewayProvider,
+} from '../../integrations/payment/payment-gateway.provider.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { BookingsService } from '../bookings/bookings.service.js';
@@ -19,6 +23,7 @@ function setup() {
     { $transaction: transaction } as unknown as PrismaService,
     {} as AuditService,
     {} as BookingsService,
+    {} as Redis,
   );
   const warn = vi.fn();
   (service as unknown as { logger: Pick<Logger, 'warn'> }).logger = { warn };
@@ -63,6 +68,7 @@ describe('PaymentWebhooksService refusals', () => {
       { $transaction: transaction } as unknown as PrismaService,
       {} as AuditService,
       {} as BookingsService,
+      {} as Redis,
     );
     await expect(
       service.receive('mock', Buffer.from('{}'), {}),
@@ -76,5 +82,278 @@ describe('PaymentWebhooksService refusals', () => {
       service.receive('razorpay', Buffer.from('{}'), {}),
     ).rejects.toThrow();
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+/** A payment open for 10,000 paise on a booking awaiting payment. */
+function paymentWorld(overrides: Record<string, unknown> = {}) {
+  const payment = {
+    id: 'p-1',
+    reference: 'FLY-PY-AAAAAA',
+    bookingId: 'b-1',
+    status: 'INITIATED',
+    providerOrderId: 'order_1',
+    providerPaymentId: null as string | null,
+    amountMinor: 10_000n,
+    currency: 'INR',
+    purpose: 'FULL',
+    reviewReason: null as string | null,
+    ...overrides,
+  };
+  const booking = {
+    id: 'b-1',
+    reference: 'FLY-AAAAAA',
+    status: 'AWAITING_PAYMENT',
+    paymentStatus: 'UNPAID',
+  };
+  const tx = {
+    payment: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'p-1', bookingId: 'b-1' }),
+      findUniqueOrThrow: vi.fn(() => Promise.resolve({ ...payment })),
+      update: vi.fn(({ data }: { data: Record<string, unknown> }) => {
+        Object.assign(payment, data);
+        return Promise.resolve(payment);
+      }),
+    },
+    paymentEvent: {
+      createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findUnique: vi.fn(),
+    },
+  };
+  const audit = { record: vi.fn() };
+  const bookings = {
+    forPayment: vi.fn().mockResolvedValue(booking),
+    recordPaymentStatus: vi.fn(),
+  };
+  const gateway = {
+    name: 'mock',
+    parseWebhook: vi.fn(),
+    fetchPayment: vi.fn(),
+  };
+  const redis = { set: vi.fn().mockResolvedValue('OK'), eval: vi.fn() };
+  const prisma = {
+    $transaction: vi.fn((work: (t: typeof tx) => unknown) => work(tx)),
+    payment: { findMany: vi.fn().mockResolvedValue([]) },
+    paymentEvent: { findMany: vi.fn().mockResolvedValue([]) },
+  };
+  const service = new PaymentWebhooksService(
+    gateway as unknown as PaymentGatewayProvider,
+    prisma as unknown as PrismaService,
+    audit as unknown as AuditService,
+    bookings as unknown as BookingsService,
+    redis as unknown as Redis,
+  );
+  const deliver = (event: Record<string, unknown>) => {
+    gateway.parseWebhook.mockReturnValue({
+      ok: true,
+      event: {
+        providerEventId: 'evt_1',
+        type: 'payment.captured',
+        providerOrderId: 'order_1',
+        providerPaymentId: 'pay_1',
+        amountMinor: 10_000,
+        currency: 'INR',
+        ...event,
+      },
+    });
+    return service.receive('mock', Buffer.from('{}'), {});
+  };
+  return {
+    payment,
+    tx,
+    audit,
+    bookings,
+    gateway,
+    prisma,
+    redis,
+    service,
+    deliver,
+  };
+}
+
+describe('PaymentWebhooksService applying notices', () => {
+  it('applies a capture on its first delivery', async () => {
+    const world = paymentWorld();
+    await world.deliver({});
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+    });
+    expect(world.bookings.recordPaymentStatus).toHaveBeenCalledTimes(1);
+    expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
+      source: 'webhook',
+      providerEventId: 'evt_1',
+    });
+  });
+
+  it('applies an early notice when it is delivered again and its order is known now', async () => {
+    const world = paymentWorld();
+    world.tx.paymentEvent.createMany.mockResolvedValue({ count: 0 });
+    world.tx.paymentEvent.findUnique.mockResolvedValue({
+      paymentId: null,
+      type: 'payment.captured',
+    });
+    await world.deliver({});
+    expect(world.payment.status).toBe('SUCCEEDED');
+    expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
+      source: 'webhook-redelivery',
+      providerEventId: 'evt_1',
+    });
+
+    // A third delivery changes nothing: the payment is already paid by it.
+    world.audit.record.mockClear();
+    world.tx.payment.update.mockClear();
+    await world.deliver({});
+    expect(world.tx.payment.update).not.toHaveBeenCalled();
+    expect(world.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('never applies again a notice that was applied when it was stored', async () => {
+    const world = paymentWorld();
+    world.tx.paymentEvent.createMany.mockResolvedValue({ count: 0 });
+    world.tx.paymentEvent.findUnique.mockResolvedValue({
+      paymentId: 'p-1',
+      type: 'payment.captured',
+    });
+    await world.deliver({});
+    expect(world.tx.payment.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(world.payment.status).toBe('INITIATED');
+  });
+
+  it('stores a notice for an unknown order and applies nothing', async () => {
+    const world = paymentWorld();
+    world.tx.payment.findUnique.mockResolvedValue(null);
+    await world.deliver({});
+    expect(
+      world.tx.paymentEvent.createMany.mock.calls[0][0].data,
+    ).toMatchObject({ paymentId: null, processedAt: null });
+    expect(world.payment.status).toBe('INITIATED');
+  });
+
+  it('flags a second capture with another gateway payment id and keeps the first', async () => {
+    const world = paymentWorld({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+    });
+    await world.deliver({
+      providerEventId: 'evt_2',
+      providerPaymentId: 'pay_2',
+    });
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+      reviewReason: 'DUPLICATE_CAPTURE',
+    });
+    expect(world.audit.record.mock.calls[0][0]).toMatchObject({
+      action: 'payment.flag',
+      after: {
+        flagged: 'DUPLICATE_CAPTURE',
+        reportedProviderPaymentId: 'pay_2',
+      },
+    });
+    expect(world.bookings.recordPaymentStatus).not.toHaveBeenCalled();
+  });
+
+  it('still audits a duplicate capture when another reason is already set', async () => {
+    const world = paymentWorld({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+      reviewReason: 'ALREADY_PAID',
+    });
+    await world.deliver({
+      providerEventId: 'evt_2',
+      providerPaymentId: 'pay_2',
+    });
+    expect(world.tx.payment.update).not.toHaveBeenCalled();
+    expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
+      reviewReason: 'ALREADY_PAID',
+      flagged: 'DUPLICATE_CAPTURE',
+    });
+  });
+});
+
+describe('PaymentWebhooksService status sweep', () => {
+  const open = {
+    id: 'p-1',
+    bookingId: 'b-1',
+    providerOrderId: 'order_1',
+    providerPaymentId: null,
+  };
+
+  it('settles an open payment from the gateway, using the payment id of an early notice', async () => {
+    const world = paymentWorld();
+    world.prisma.payment.findMany.mockResolvedValue([open]);
+    world.prisma.paymentEvent.findMany.mockResolvedValue([
+      { payload: { providerOrderId: 'order_1', providerPaymentId: 'pay_9' } },
+    ]);
+    world.gateway.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_9',
+      providerOrderId: 'order_1',
+      amountMinor: 10_000,
+      currency: 'INR',
+      status: 'captured',
+      amountRefundedMinor: 0,
+    });
+
+    expect(await world.service.runSweep()).toEqual({
+      checked: 1,
+      applied: 1,
+      skipped: false,
+    });
+    expect(world.gateway.fetchPayment).toHaveBeenCalledWith('pay_9');
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_9',
+    });
+    expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
+      source: 'sweep',
+    });
+    expect(world.redis.eval).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a payment the gateway does not settle, or reports for another order', async () => {
+    const world = paymentWorld();
+    world.prisma.payment.findMany.mockResolvedValue([
+      { ...open, providerPaymentId: 'pay_1', status: 'PENDING' },
+    ]);
+    for (const answer of [
+      Promise.reject(new PaymentGatewayError('NOT_FOUND', 'No such payment.')),
+      Promise.resolve({
+        providerPaymentId: 'pay_1',
+        providerOrderId: 'order_1',
+        amountMinor: 10_000,
+        currency: 'INR',
+        status: 'authorized',
+        amountRefundedMinor: 0,
+      }),
+      Promise.resolve({
+        providerPaymentId: 'pay_1',
+        providerOrderId: 'order_other',
+        amountMinor: 10_000,
+        currency: 'INR',
+        status: 'captured',
+        amountRefundedMinor: 0,
+      }),
+    ]) {
+      answer.catch(() => undefined);
+      world.gateway.fetchPayment.mockReturnValueOnce(answer);
+      expect((await world.service.runSweep()).applied).toBe(0);
+    }
+    expect(world.prisma.$transaction).not.toHaveBeenCalled();
+    expect(world.payment.status).toBe('INITIATED');
+  });
+
+  it('asks nothing for a payment with no gateway payment id, and skips while another instance runs', async () => {
+    const world = paymentWorld();
+    world.prisma.payment.findMany.mockResolvedValue([open]);
+    expect((await world.service.runSweep()).checked).toBe(1);
+    expect(world.gateway.fetchPayment).not.toHaveBeenCalled();
+
+    world.redis.set.mockResolvedValue(null);
+    expect(await world.service.runSweep()).toEqual({
+      checked: 0,
+      applied: 0,
+      skipped: true,
+    });
   });
 });
