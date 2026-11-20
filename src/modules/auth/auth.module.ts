@@ -1,6 +1,6 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import {
   RateLimitGuard,
@@ -10,6 +10,7 @@ import { CustomersModule } from '../customers/customers.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { UsersService } from '../users/users.service.js';
+import { AdminRolesController } from './admin-roles.controller.js';
 import { AuthController } from './auth.controller.js';
 import { CsrfGuard, JwtAuthGuard, RolesGuard } from './auth.guards.js';
 import { AuthService } from './auth.service.js';
@@ -24,6 +25,7 @@ import { VerificationService } from './verification.service.js';
 
 @Module({
   imports: [
+    DiscoveryModule,
     UsersModule,
     CustomersModule,
     NotificationsModule,
@@ -39,7 +41,7 @@ import { VerificationService } from './verification.service.js';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, AdminRolesController],
   providers: [
     AuthService,
     TokenService,

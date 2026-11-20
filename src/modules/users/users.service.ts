@@ -74,6 +74,40 @@ function notFound(): AppException {
   return new AppException('NOT_FOUND', 'User not found.', HttpStatus.NOT_FOUND);
 }
 
+/**
+ * Serialises every change that could take away a super administrator (a
+ * role change, a suspension) for the rest of the transaction, so two such
+ * changes at once cannot both see another super administrator left and
+ * leave none.
+ */
+async function lockSuperAdmins(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('users:super_admins'))`;
+}
+
+/**
+ * Refuses a change that would leave no active super administrator. Call it
+ * holding `lockSuperAdmins`, before changing `targetId`.
+ */
+async function assertAnotherSuperAdmin(
+  tx: Prisma.TransactionClient,
+  targetId: string,
+): Promise<void> {
+  const others = await tx.user.count({
+    where: {
+      role: Role.SUPER_ADMIN,
+      status: UserStatus.ACTIVE,
+      id: { not: targetId },
+    },
+  });
+  if (others === 0) {
+    throw new AppException(
+      'USER_LAST_SUPER_ADMIN',
+      'This is the last active super administrator. Give another account that role first.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
 /** Owns the User table. Other modules read users only through this service. */
 @Injectable()
 export class UsersService {
@@ -246,8 +280,16 @@ export class UsersService {
       );
     }
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (status === UserStatus.SUSPENDED) await lockSuperAdmins(tx);
       const user = await tx.user.findUnique({ where: { id } });
       if (!user) throw notFound();
+      if (
+        status === UserStatus.SUSPENDED &&
+        user.role === Role.SUPER_ADMIN &&
+        user.status === UserStatus.ACTIVE
+      ) {
+        await assertAnotherSuperAdmin(tx, id);
+      }
 
       // Flyviman may suspend an active account, take over a suspension an
       // operator made (so the operator can no longer lift it), and lift its
@@ -317,6 +359,101 @@ export class UsersService {
       await this.tokens.revokeFor(id, 'password-reset');
     }
     return updated;
+  }
+
+  /**
+   * The one place an internal account's role changes (OPS, FINANCE_ADMIN,
+   * SUPER_ADMIN), with a reason, audited in the same transaction. Nobody
+   * changes their own role, and the last active super administrator keeps
+   * theirs. Every sign-in of the account ends with the change, as with a
+   * suspension, so the person signs in again under the new role.
+   */
+  async changeRole(
+    actor: AuthUser,
+    id: string,
+    role: Role,
+    reason: string,
+  ): Promise<UserDetail> {
+    if (actor.id === id) {
+      throw new AppException(
+        'USER_INVALID_TRANSITION',
+        'You cannot change the role of your own account.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (!STAFF_ROLES.includes(role)) {
+      throw new AppException(
+        'VALIDATION_ERROR',
+        'Choose an internal role.',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'role', issue: 'must be an internal role' }],
+      );
+    }
+    const conflict = (message: string) =>
+      new AppException('USER_INVALID_TRANSITION', message, HttpStatus.CONFLICT);
+
+    return this.prisma.$transaction(async (tx) => {
+      await lockSuperAdmins(tx);
+      // The caller's role was read before the lock; a super administrator
+      // demoted or suspended at the same moment no longer acts as one.
+      const caller = await tx.user.findUnique({
+        where: { id: actor.id },
+        select: { role: true, status: true },
+      });
+      if (
+        caller?.role !== Role.SUPER_ADMIN ||
+        caller.status !== UserStatus.ACTIVE
+      ) {
+        throw new AppException(
+          'FORBIDDEN',
+          'You do not have access to this.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      const user = await tx.user.findUnique({
+        where: { id },
+        select: { role: true, status: true },
+      });
+      if (!user) throw notFound();
+      if (!STAFF_ROLES.includes(user.role)) {
+        throw conflict('Only internal staff accounts change role here.');
+      }
+      if (user.role === role) {
+        throw conflict('This account already has that role.');
+      }
+      if (user.role === Role.SUPER_ADMIN && user.status === UserStatus.ACTIVE) {
+        await assertAnotherSuperAdmin(tx, id);
+      }
+      const { count } = await tx.user.updateMany({
+        where: { id, role: user.role },
+        data: { role },
+      });
+      if (count !== 1) {
+        throw conflict(
+          'This account changed at the same moment. Reload and try again.',
+        );
+      }
+      await this.audit.record(
+        {
+          action: 'user.role_change',
+          entityType: 'User',
+          entityId: id,
+          before: { role: user.role },
+          after: { role },
+          reason,
+        },
+        tx,
+      );
+      // Never change a role without signing out: refuse rather than skip.
+      if (!this.sessionRevoker) {
+        throw new Error('No session revoker registered');
+      }
+      await this.sessionRevoker(id, tx);
+      return tx.user.findUniqueOrThrow({
+        where: { id },
+        omit: { passwordHash: true },
+      });
+    });
   }
 
   /**

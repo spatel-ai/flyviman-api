@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsEnum,
@@ -9,6 +10,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
+import { IsPlainText } from '../../../common/validation/text.js';
 import { Role, UserStatus } from '../../../generated/prisma/enums.js';
 import { STAFF_ROLES } from '../users.service.js';
 
@@ -55,4 +57,21 @@ export class CreateStaffDto {
   @ApiProperty({ enum: STAFF_ROLES })
   @IsIn(STAFF_ROLES)
   role: Role;
+}
+
+export class ChangeUserRoleDto {
+  @ApiProperty({
+    enum: STAFF_ROLES,
+    description: 'The new internal role. Only internal staff change role.',
+  })
+  @IsIn(STAFF_ROLES)
+  role: Role;
+
+  @ApiProperty({ description: 'Why the role is being changed. Audited.' })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsPlainText()
+  @MinLength(3)
+  @MaxLength(500)
+  reason: string;
 }
