@@ -44,7 +44,9 @@ const OUTCOME = {
  * acknowledgement: a duplicate delivery inserts nothing and changes nothing
  * (rule 5). Outcomes only move a payment forward (`nextPaymentStatus`), so a
  * delayed or out-of-order notice is safe. A payment writes the booking's
- * payment summary only, never its status (rule 2).
+ * payment summary; the booking becomes `CONFIRMED` only when the
+ * confirmation rule then holds (`BookingsService.recordPaymentStatus`):
+ * a payment alone never confirms it (rule 2).
  */
 @Injectable()
 export class PaymentWebhooksService {

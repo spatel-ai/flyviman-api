@@ -177,7 +177,7 @@ export class AdminBookingsService {
             specialAssistance: this.reveal(passenger.specialAssistance),
           })),
       specialRequests: hide ? null : this.revealLegacy(row.specialRequests),
-      events: row.events.map((event) => eventOf(event, hide)),
+      events: row.events.map((event) => eventOf(event)),
       notes: hide ? null : this.notesOf(row.events),
       quotes: quotes.map((quote) =>
         this.quotes.toResponse(quote, row.reference, now),
@@ -460,11 +460,10 @@ function summaryOf(row: SummaryRow): AdminBookingSummaryDto {
  */
 function eventOf(
   event: Prisma.BookingEventGetPayload<object>,
-  hide: boolean,
 ): AdminBookingEventDto {
   const payload = event.payload as Record<string, unknown> | null;
+  // The override reason is in the audit trail too, which finance reads.
   const overrideReason =
-    !hide &&
     payload !== null &&
     typeof payload === 'object' &&
     payload.override === true &&

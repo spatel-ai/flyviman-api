@@ -377,11 +377,13 @@ test.describe('PATCH /admin/bookings/:reference/status', () => {
       after: { reference, status: 'EXPIRED' },
       reason: 'Customer asked by phone',
     });
-    // Finance reads the timeline without the reason.
+    // Finance reads the reason too, as in the audit trail.
     const restricted = (
       await (await finance.get(`admin/bookings/${reference}`)).json()
     ).data;
-    expect(restricted.events.at(-1).overrideReason).toBeNull();
+    expect(restricted.events.at(-1).overrideReason).toBe(
+      'Customer asked by phone',
+    );
   });
 
   test('an override to CANCELLED applies the terms and records the refund due, as a customer’s cancellation does', async ({
@@ -402,6 +404,40 @@ test.describe('PATCH /admin/bookings/:reference/status', () => {
       }),
     );
     const ops = await staffSession(contexts, 'ops');
+    // Not while a payment waits for the gateway's answer.
+    const paymentId = await withPrisma(async (prisma) => {
+      const booking = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+      });
+      return (
+        await prisma.payment.create({
+          data: {
+            reference: `FLY-PY-${randomUUID().slice(0, 6).toUpperCase()}`,
+            bookingId: booking.id,
+            provider: 'MOCK',
+            purpose: 'FULL',
+            amountMinor: booking.totalMinor,
+            currency: 'INR',
+            status: 'PENDING',
+            idempotencyKey: `e2e:${randomUUID()}`,
+          },
+        })
+      ).id;
+    });
+    const waiting = await override(ops, reference, {
+      status: 'CANCELLED',
+      reason: 'Operator grounded the aircraft',
+    });
+    expect(waiting.status()).toBe(409);
+    expect((await waiting.json()).error.code).toBe(
+      'BOOKING_PAYMENT_IN_PROGRESS',
+    );
+    await withPrisma((prisma) =>
+      prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: 'FAILED' },
+      }),
+    );
     const response = await override(ops, reference, {
       status: 'CANCELLED',
       reason: 'Operator grounded the aircraft',

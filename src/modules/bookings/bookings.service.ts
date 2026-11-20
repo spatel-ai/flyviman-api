@@ -11,9 +11,12 @@ import { bookingReference } from '../../common/reference.js';
 import { day } from '../../common/validation/formats.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
+  AircraftAvailabilityStatus,
+  AircraftListingStatus,
   BookingEventType,
   type BookingPaymentStatus,
   BookingStatus,
+  OperatorStatus,
   PriceType,
   QuoteStatus,
 } from '../../generated/prisma/enums.js';
@@ -578,7 +581,9 @@ export class BookingsService {
    *
    * Never throws for a booking that does not qualify: inside a payment
    * notice's transaction a failure would lose the captured payment. When
-   * the time is no longer free the booking stays `AWAITING_PAYMENT` (paid)
+   * the trip can no longer be flown as booked (rules 3 and 4: departed,
+   * operator or aircraft no longer approved or in service, the held time
+   * taken) the booking stays `AWAITING_PAYMENT` (paid)
    * and an audit record says why, for operations to resolve.
    */
   async evaluateConfirmation(
@@ -598,11 +603,8 @@ export class BookingsService {
       operatorAccepted: row.operatorAcceptedAt !== null,
     });
     if (!check.allowed) return { confirmed: false, reason: check.reason };
-    if (
-      row.aircraftId !== null &&
-      !(await this.availability.recheckBookingHold(tx, row.id, END_OF_TIME))
-    ) {
-      const reason = 'the aircraft time is no longer free';
+    const reason = await this.unbookable(tx, row);
+    if (reason) {
       await this.audit.record(
         {
           action: 'booking.confirmation_blocked',
@@ -635,6 +637,41 @@ export class BookingsService {
       },
     );
     return { confirmed: true };
+  }
+
+  /**
+   * Rules 3 and 4 at confirmation, as at acceptance: the trip is still
+   * ahead, the operator and aircraft still approved and the aircraft in
+   * service, and the held time still free (kept from now until the trip
+   * ends). Why the booking cannot be confirmed, or null.
+   */
+  private async unbookable(
+    tx: Prisma.TransactionClient,
+    row: Prisma.BookingGetPayload<object>,
+  ): Promise<string | null> {
+    const departure = parseItinerary(row.itinerary).legs[0].departureAt;
+    if (Date.parse(departure) <= Date.now()) return 'the trip has departed';
+    if (row.aircraftId === null) return null;
+    const aircraft = await tx.aircraft.findUnique({
+      where: { id: row.aircraftId },
+      select: {
+        listingStatus: true,
+        availabilityStatus: true,
+        operator: { select: { status: true } },
+      },
+    });
+    if (aircraft?.operator.status !== OperatorStatus.APPROVED) {
+      return 'the operator is not approved';
+    }
+    if (
+      aircraft.listingStatus !== AircraftListingStatus.APPROVED ||
+      aircraft.availabilityStatus !== AircraftAvailabilityStatus.AVAILABLE
+    ) {
+      return 'the aircraft is not approved or not in service';
+    }
+    return (await this.availability.recheckBookingHold(tx, row.id, END_OF_TIME))
+      ? null
+      : 'the aircraft time is no longer free';
   }
 
   /**

@@ -220,8 +220,7 @@ export class AdminBookingEventDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description:
-      'The reason of a status override. Operations and super administrators only; null for finance.',
+    description: 'The reason of a status override (also in the audit trail).',
   })
   overrideReason: string | null;
 

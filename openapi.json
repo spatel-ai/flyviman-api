@@ -5499,7 +5499,7 @@
     },
     "/api/v1/bookings/{reference}/cancel": {
       "post": {
-        "description": "Send the `chargeMinor` from the cancellation quote as `expectedChargeMinor`; if the charge differs now, 409 `BOOKING_CANCELLATION_CHANGED` with the current `chargeMinor`, `currency` and `refundMinor` in `details`. Moves the booking to `CANCELLED` at once, records the terms applied and the refund due on its timeline and as a completed cancellation request, closes any open change request, and is audited. 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "Send the `chargeMinor` from the cancellation quote as `expectedChargeMinor`; if the charge differs now, 409 `BOOKING_CANCELLATION_CHANGED` with the current `chargeMinor`, `currency` and `refundMinor` in `details`. Moves the booking to `CANCELLED` at once, records the terms applied and the refund due on its timeline and as a completed cancellation request, closes any open change request and any open quote, and is audited. 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s final answer. 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404. A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "BookingsController_cancel",
         "parameters": [
           {
@@ -6008,7 +6008,7 @@
     },
     "/api/v1/admin/bookings/{reference}": {
       "get": {
-        "description": "Finance gets `passengers`, `specialRequests` and `notes` as null, change requests without their text and timeline entries without override reasons.",
+        "description": "Finance gets `passengers`, `specialRequests` and `notes` as null and change requests without their text.",
         "operationId": "AdminBookingsController_detail",
         "parameters": [
           {
@@ -6139,7 +6139,7 @@
     },
     "/api/v1/admin/bookings/{reference}/status": {
       "patch": {
-        "description": "Any status to any other, with a `reason` (3–500 characters) kept on the timeline and in the audit trail (before and after). To `CANCELLED` the cancellation terms apply and the refund due is recorded, as for a customer’s cancellation; to `EXPIRED`, `QUOTE_DECLINED` or `OPERATOR_UNAVAILABLE` the aircraft’s hold is released and an open quote closes `EXPIRED`; to `CONFIRMED` the held time is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `BOOKING_INVALID_TRANSITION` when the status is unchanged or the booking changed meanwhile.",
+        "description": "Any status to any other, with a `reason` (3–500 characters) kept on the timeline and in the audit trail (before and after). To `CANCELLED` the cancellation terms apply and the refund due is recorded, as for a customer’s cancellation (409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s answer); to `EXPIRED`, `QUOTE_DECLINED` or `OPERATOR_UNAVAILABLE` the aircraft’s hold is released and an open quote closes `EXPIRED`; to `CONFIRMED` the held time is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `BOOKING_INVALID_TRANSITION` when the status is unchanged or the booking changed meanwhile.",
         "operationId": "AdminBookingsController_override",
         "parameters": [
           {
@@ -6348,7 +6348,7 @@
     },
     "/api/v1/quotes/{reference}/accept": {
       "post": {
-        "description": "The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. A repeat with the same `Idempotency-Key` returns the first answer.",
+        "description": "The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price and at once `AWAITING_PAYMENT`, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. A repeat with the same `Idempotency-Key` returns the first answer.",
         "operationId": "CustomerQuotesController_accept",
         "parameters": [
           {
@@ -6540,7 +6540,7 @@
     },
     "/api/v1/operator/booking-requests/{reference}/accept": {
       "post": {
-        "description": "Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED`: the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.",
+        "description": "Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED` and at once on to `AWAITING_PAYMENT` (every payment model asks for payment then): the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.",
         "operationId": "OperatorBookingRequestsController_accept",
         "parameters": [
           {
@@ -6879,7 +6879,7 @@
     },
     "/api/v1/webhooks/payments/{provider}": {
       "post": {
-        "description": "For the payment gateway only. The signature over the exact body is verified before anything else, and a refused call is stored nowhere; `:provider` is the configured gateway (`mock` in this build). A verified event is stored once (unique per provider event ID) and applied in the same transaction before the 200: a repeated delivery is acknowledged and changes nothing. Outcomes only move a payment forward (a failure after a success is ignored); a success never changes the booking’s status, only its `paymentStatus`; a success for a closed or already-paid booking is recorded and flagged for operations. An event for an unknown order is stored and acknowledged. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).",
+        "description": "For the payment gateway only. The signature over the exact body is verified before anything else, and a refused call is stored nowhere; `:provider` is the configured gateway (`mock` in this build). A verified event is stored once (unique per provider event ID) and applied in the same transaction before the 200: a repeated delivery is acknowledged and changes nothing. Outcomes only move a payment forward (a failure after a success is ignored); a success changes the booking’s `paymentStatus`, and its status only through the confirmation rule (`CONFIRMED` once the operator’s acceptance, the confirmed price and the payment due are all in; a payment alone never confirms); a success for a closed or already-paid booking is recorded and flagged for operations. An event for an unknown order is stored and acknowledged. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).",
         "operationId": "PaymentWebhooksController_receive",
         "parameters": [
           {
@@ -14831,7 +14831,7 @@
           "overrideReason": {
             "type": "string",
             "nullable": true,
-            "description": "The reason of a status override. Operations and super administrators only; null for finance."
+            "description": "The reason of a status override (also in the audit trail)."
           },
           "createdAt": {
             "type": "string",

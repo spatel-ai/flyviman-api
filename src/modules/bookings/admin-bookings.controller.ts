@@ -64,7 +64,7 @@ export class AdminBookingsController {
     summary:
       'One booking: trip, statuses, timeline, quotes, change requests, payments',
     description:
-      'Finance gets `passengers`, `specialRequests` and `notes` as null, change requests without their text and timeline entries without override reasons.',
+      'Finance gets `passengers`, `specialRequests` and `notes` as null and change requests without their text.',
   })
   @ApiOkResponse({ type: AdminBookingDetailDto })
   detail(
@@ -112,7 +112,7 @@ export class AdminBookingsController {
   @ApiOperation({
     summary: 'Override the status, with a reason',
     description:
-      'Any status to any other, with a `reason` (3–500 characters) kept on the timeline and in the audit trail (before and after). To `CANCELLED` the cancellation terms apply and the refund due is recorded, as for a customer’s cancellation; to `EXPIRED`, `QUOTE_DECLINED` or `OPERATOR_UNAVAILABLE` the aircraft’s hold is released and an open quote closes `EXPIRED`; to `CONFIRMED` the held time is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `BOOKING_INVALID_TRANSITION` when the status is unchanged or the booking changed meanwhile.',
+      'Any status to any other, with a `reason` (3–500 characters) kept on the timeline and in the audit trail (before and after). To `CANCELLED` the cancellation terms apply and the refund due is recorded, as for a customer’s cancellation (409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s answer); to `EXPIRED`, `QUOTE_DECLINED` or `OPERATOR_UNAVAILABLE` the aircraft’s hold is released and an open quote closes `EXPIRED`; to `CONFIRMED` the held time is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `BOOKING_INVALID_TRANSITION` when the status is unchanged or the booking changed meanwhile.',
   })
   @ApiOkResponse({ type: AdminBookingDetailDto })
   override(

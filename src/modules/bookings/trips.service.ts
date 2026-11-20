@@ -169,7 +169,6 @@ export class TripsService {
       if (!CANCELLABLE.includes(booking.status)) {
         throw notCancellable(booking.status);
       }
-      await assertNoPaymentPending(tx, booking.id);
       const now = new Date();
       const quote = quoteFor(booking, now);
       if (
@@ -238,6 +237,7 @@ export class TripsService {
       | { kind: 'CUSTOMER'; user: AuthUser; reason?: string }
       | { kind: 'OPERATIONS'; user: AuthUser; overrideReason: string },
   ): Promise<Date> {
+    await assertNoPaymentPending(tx, booking.id);
     const { user } = by;
     const applied = {
       termsSource: quote.terms.source,

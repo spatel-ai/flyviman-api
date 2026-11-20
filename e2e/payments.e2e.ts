@@ -573,6 +573,49 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
     expect(blocked).toHaveLength(1);
   });
 
+  test('a booking whose aircraft was grounded after acceptance stays unconfirmed when paid (rule 4)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const bookingId = await withPrisma(async (prisma) => {
+      const booking = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+      });
+      await prisma.aircraft.update({
+        where: { id: booking.aircraftId! },
+        data: { availabilityStatus: 'MAINTENANCE' },
+      });
+      return booking.id;
+    });
+    const response = await deliver(
+      request,
+      notice('payment.captured', {
+        orderId: order.checkout.orderId,
+        amountMinor: totalMinor,
+      }),
+    );
+    expect(response.status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'PAID',
+    });
+    const blocked = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: { entityId: bookingId, action: 'booking.confirmation_blocked' },
+      }),
+    );
+    expect(blocked.after).toMatchObject({
+      reason: 'the aircraft is not approved or not in service',
+    });
+  });
+
   test('the whole flow: request, operator accepts, customer pays, booking CONFIRMED', async ({
     request,
     playwright,
