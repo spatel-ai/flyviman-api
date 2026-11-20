@@ -442,6 +442,8 @@ test.describe('operator booking request inbox', () => {
     const { reference, customer } = await requested(contexts);
     const path = `operator/booking-requests/${reference}/reject`;
     expect((await post(request, path, {})).status()).toBe(400);
+    // An open quote closes with the request.
+    const sent = await quote(request, reference);
 
     const rejected = await post(request, path, {
       reason: 'Crew unavailable that day',
@@ -452,6 +454,9 @@ test.describe('operator booking request inbox', () => {
 
     const row = await stored(reference);
     expect(row.holds[0].expiresAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(row.quotes.map((entry) => [entry.reference, entry.status])).toEqual([
+      [sent.reference, 'EXPIRED'],
+    ]);
     const response = row.events.find(
       (event) => event.type === 'OPERATOR_RESPONSE',
     );
@@ -725,6 +730,39 @@ test.describe('quotes', () => {
     );
   });
 
+  test('accepting a quote rechecks the aircraft (rule 3)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { reference, customer, trip } = await requested(contexts);
+    const sent = await quote(request, reference);
+    // Maintenance was booked over the held time meanwhile.
+    const row = await stored(reference);
+    await withPrisma((prisma) =>
+      prisma.availabilityBlock.create({
+        data: {
+          aircraftId: trip.aircraftId,
+          startsAt: row.holds[0].startsAt,
+          endsAt: row.holds[0].endsAt,
+          reason: 'MAINTENANCE',
+        },
+      }),
+    );
+    const accepted = await post(
+      customer,
+      `quotes/${sent.reference}/accept`,
+      undefined,
+      randomUUID(),
+    );
+    expect(accepted.status()).toBe(409);
+    expect((await accepted.json()).error.code).toBe('BOOKING_UNAVAILABLE');
+    const after = await stored(reference);
+    expect(after.status).toBe('OPERATOR_PENDING');
+    expect(after.quotes[0].status).toBe('SENT');
+  });
+
   test('the customer declines: QUOTE_DECLINED, hold released', async ({
     request,
     playwright,
@@ -843,6 +881,24 @@ test.describe('hold-expiry job', () => {
         ),
       )
       .toBe(true);
+  });
+
+  test('expires a question the customer left unanswered', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { reference } = await requested(contexts);
+    const asked = await post(
+      request,
+      `operator/booking-requests/${reference}/clarify`,
+      { message: 'Which terminal?' },
+    );
+    expect(asked.status()).toBe(200);
+    await lapseHold(reference);
+    await runJob(request);
+    expect((await stored(reference)).status).toBe('EXPIRED');
   });
 
   test('expires a lapsed quote and its request; a stale accept is refused', async ({

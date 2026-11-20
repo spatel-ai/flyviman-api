@@ -394,6 +394,7 @@ export class BookingRequestsService {
             supersedes: superseded,
             totalMinor: input.totalMinor,
             currency: input.currency,
+            priceType: PriceType.QUOTE,
             validUntil: validUntil.toISOString(),
           });
           return this.notifyCustomer(tx, row, 'booking.quote_sent', {
@@ -663,12 +664,21 @@ export class BookingRequestsService {
           where: {
             id: { notIn: seenBookings },
             status: { in: WAITING },
-            holds: {
-              none: {
-                reason: AvailabilityBlockReason.SOFT_HOLD,
-                expiresAt: { gt: now },
+            // Only requests that held the aircraft and whose hold lapsed;
+            // a booking without a hold (another source) is left alone.
+            AND: [
+              {
+                holds: { some: { reason: AvailabilityBlockReason.SOFT_HOLD } },
               },
-            },
+              {
+                holds: {
+                  none: {
+                    reason: AvailabilityBlockReason.SOFT_HOLD,
+                    expiresAt: { gt: now },
+                  },
+                },
+              },
+            ],
           },
           select: { id: true },
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -735,14 +745,16 @@ export class BookingRequestsService {
     let closed = false;
     await this.changeRequest(bookingId, async (tx, row) => {
       // Read again under the lock: an answer may have renewed the hold.
-      const live = await tx.availabilityBlock.count({
-        where: {
-          bookingId: row.id,
-          reason: AvailabilityBlockReason.SOFT_HOLD,
-          expiresAt: { gt: now },
-        },
+      const holds = await tx.availabilityBlock.findMany({
+        where: { bookingId: row.id, reason: AvailabilityBlockReason.SOFT_HOLD },
+        select: { expiresAt: true },
       });
-      if (live > 0 || !WAITING.includes(row.status)) return [];
+      const live = holds.some(
+        (hold) => hold.expiresAt === null || hold.expiresAt > now,
+      );
+      if (holds.length === 0 || live || !WAITING.includes(row.status)) {
+        return [];
+      }
       const newest = await this.quotes.newest(tx, row.id);
       const standing = quoteStanding(newest, now);
       // A live quote keeps the request open until it lapses (step 1).
