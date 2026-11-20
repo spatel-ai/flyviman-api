@@ -905,8 +905,9 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
 
     const payment = await paymentRow(order.reference);
     expect(payment).toMatchObject({ status: 'SUCCEEDED', reviewReason: null });
+    // Accepted, price confirmed and paid: the confirmation rule holds.
     expect(await bookingOf(customer, reference)).toMatchObject({
-      status: 'AWAITING_PAYMENT',
+      status: 'CONFIRMED',
       paymentStatus: 'PAID',
     });
     const { events, audits } = await withPrisma(async (prisma) => ({
@@ -1016,8 +1017,9 @@ test.describe('POST /dev/jobs/payment-sweep', () => {
       providerPaymentId: checkout.providerPaymentId,
       reviewReason: null,
     });
+    // Accepted, price confirmed and paid: the confirmation rule holds.
     expect(await bookingOf(customer, reference)).toMatchObject({
-      status: 'AWAITING_PAYMENT',
+      status: 'CONFIRMED',
       paymentStatus: 'PAID',
     });
     const audit = await withPrisma((prisma) =>

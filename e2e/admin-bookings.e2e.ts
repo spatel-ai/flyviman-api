@@ -455,7 +455,8 @@ test.describe('PATCH /admin/bookings/:reference/status', () => {
       expect.objectContaining({
         kind: 'CANCELLATION',
         status: 'COMPLETED',
-        details: 'Cancelled by Flyviman operations.',
+        // Encrypted at rest (S3-b), like a customer's cancellation.
+        details: expect.stringMatching(/^v1\./),
         chargeMinor: charge,
         refundMinor: 0n,
       }),
