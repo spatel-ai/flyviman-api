@@ -14579,6 +14579,13 @@
             "items": {
               "$ref": "#/components/schemas/BookingNoteDto"
             }
+          },
+          "changeRequests": {
+            "description": "Change and cancellation requests, newest first; answer an open one (`REQUESTED`) with `POST /operator/change-requests/:id/decide`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeRequestResponseDto"
+            }
           }
         },
         "required": [
@@ -14598,7 +14605,8 @@
           "specialRequests",
           "quotes",
           "messages",
-          "notes"
+          "notes",
+          "changeRequests"
         ]
       },
       "RejectBookingRequestDto": {

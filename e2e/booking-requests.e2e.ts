@@ -254,6 +254,7 @@ test.describe('operator booking request inbox', () => {
       quotes: [],
       messages: [],
       notes: [],
+      changeRequests: [],
     });
     expect(shown).not.toHaveProperty('passengers');
 

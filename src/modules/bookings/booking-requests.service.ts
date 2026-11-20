@@ -45,6 +45,7 @@ import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
+import { changeRequestView, decisionNotes } from './change-requests.js';
 import type { BookingPriceDto } from './dto/booking.dto.js';
 import type {
   BookingMessageDto,
@@ -1129,9 +1130,14 @@ export class BookingRequestsService {
     row: BookingRow,
   ): Promise<OperatorBookingRequestDetailDto> {
     const now = new Date();
-    const [messages, notes] = await Promise.all([
+    const [messages, notes, changeRequests, decided] = await Promise.all([
       this.messagesOf(row.id),
       this.notesOf(row.id),
+      this.prisma.changeRequest.findMany({
+        where: { bookingId: row.id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      }),
+      decisionNotes(this.prisma, row.id),
     ]);
     return {
       ...this.toOperator(row, now),
@@ -1147,6 +1153,9 @@ export class BookingRequestsService {
       ),
       messages,
       notes,
+      changeRequests: changeRequests.map((request) =>
+        changeRequestView(request, row.reference, decided),
+      ),
     };
   }
 }
