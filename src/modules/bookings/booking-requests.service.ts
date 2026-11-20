@@ -1137,7 +1137,7 @@ export class BookingRequestsService {
         where: { bookingId: row.id },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
-      decisionNotes(this.prisma, row.id),
+      decisionNotes(this.prisma, this.cipher, row.id),
     ]);
     return {
       ...this.toOperator(row, now),
@@ -1154,7 +1154,7 @@ export class BookingRequestsService {
       messages,
       notes,
       changeRequests: changeRequests.map((request) =>
-        changeRequestView(request, row.reference, decided),
+        changeRequestView(request, row.reference, decided, this.cipher),
       ),
     };
   }
