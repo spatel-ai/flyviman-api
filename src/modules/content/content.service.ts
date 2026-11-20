@@ -11,6 +11,15 @@ export interface Policy {
   publishedAt: Date;
 }
 
+export interface PublicItem {
+  id: string;
+  title: string;
+  body: string;
+}
+
+/** Most items a public list returns, so the answer stays small. */
+const PUBLIC_LIMIT = 50;
+
 @Injectable()
 export class ContentService {
   constructor(private readonly prisma: PrismaService) {}
@@ -42,5 +51,16 @@ export class ContentService {
       );
     }
     return policy;
+  }
+
+  /** Published banners or questions, in display order, never drafts. */
+  async listPublished(kind: 'BANNER' | 'FAQ'): Promise<PublicItem[]> {
+    const items = await this.prisma.contentItem.findMany({
+      where: { kind, publishedAt: { not: null, lte: new Date() } },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }],
+      take: PUBLIC_LIMIT,
+      select: { id: true, title: true, body: true },
+    });
+    return items;
   }
 }
