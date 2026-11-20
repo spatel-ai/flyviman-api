@@ -102,6 +102,7 @@ export class CreatePromotionDto {
   category?: (typeof PROMOTION_CATEGORIES)[number] | null;
 
   @ApiPropertyOptional({
+    type: String,
     format: 'uuid',
     nullable: true,
     description:
@@ -111,7 +112,7 @@ export class CreatePromotionDto {
   @IsUUID()
   originId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @IsOptional()
   @IsUUID()
   destinationId?: string | null;
@@ -128,6 +129,7 @@ export class CreatePromotionDto {
   endsAt!: string;
 
   @ApiPropertyOptional({
+    type: Number,
     nullable: true,
     description: 'Bookings that may use the code in all. Null: no limit.',
   })
@@ -138,6 +140,7 @@ export class CreatePromotionDto {
   maxUses?: number | null;
 
   @ApiPropertyOptional({
+    type: Number,
     nullable: true,
     description: 'Bookings one customer may make with it. Null: no limit.',
   })

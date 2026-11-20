@@ -4638,6 +4638,56 @@
         ]
       }
     },
+    "/api/v1/search/{searchId}/results/{resultId}/promo-code": {
+      "post": {
+        "description": "The trip priced again with the code, as a booking with `promoCode` would be: an `ESTIMATE` with the discount as its own line. 422 `PROMO_CODE_INVALID` (unknown or not started), `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (another category or route, or priced on request), `PROMO_CODE_LIMIT_REACHED` (overall, or the signed-in customer’s own); 409 `BOOKING_UNAVAILABLE`. On the search rate tier.",
+        "operationId": "SearchController_promoCode",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resultId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPromoCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoPreviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Apply a promotion code to one result (preview, nothing stored)",
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v1/admin/category-config": {
       "get": {
         "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.",
@@ -5176,6 +5226,193 @@
         ]
       }
     },
+    "/api/v1/admin/promotions": {
+      "get": {
+        "description": "`status`: `SCHEDULED` (not started), `ACTIVE`, `ENDED` (past `endsAt` or ended early). Each carries its `uses` so far.",
+        "operationId": "AdminPromotionsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SCHEDULED",
+                "ACTIVE",
+                "ENDED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PromotionResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List promotion codes, newest first",
+        "tags": [
+          "admin: pricing"
+        ]
+      },
+      "post": {
+        "description": "A percentage (`percent`) or a fixed amount (`amountMinor`) off the price before tax, funded by Flyviman and limited, with any `DISCOUNT` rule, to its charges on the trip. Optional category and route (both ends, either direction), validity window, caps overall and per customer. 409 `PROMOTION_CODE_EXISTS`. Audited (`promotion.create`) with the reason.",
+        "operationId": "AdminPromotionsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromotionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a promotion code",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/promotions/{id}/end": {
+      "post": {
+        "description": "The code stops applying at once; bookings already made keep their price. 409 `PROMOTION_ENDED` when it has already ended. Audited (`promotion.end`) with before, after and the reason.",
+        "operationId": "AdminPromotionsController_end",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndPromotionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "End a promotion now",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}/pricing": {
+      "get": {
+        "description": "The operator-wide defaults and each aircraft’s rate in force now, as the operator set them. 404 for an unknown operator.",
+        "operationId": "AdminOperatorPricingController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorPricingDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "An operator's rates and charges (read-only)",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields. Passenger and medical fields inside before and after are null for roles that may not read them (medical: super admin only; identity document numbers: no one; passenger details: operations and super admin). `restricted` is true on every row where something was withheld or redacted.",
@@ -5671,6 +5908,53 @@
         "summary": "Approve or decline a change request, with a note",
         "tags": [
           "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/price-override": {
+      "post": {
+        "description": "Issues a new quote (`QUOTE`) at `totalMinor`, superseding the open one, which is never edited; the customer accepts or declines it as any quote. Only while the request waits for a quote (`OPERATOR_PENDING`) and nothing is paid: otherwise 409 `BOOKING_INVALID_TRANSITION`. Conditions carry over from the latest quote unless given (400 when there is none). The booking’s calculation is copied with the override, its reason and who set it (`overrideReason`); Flyviman absorbs the difference. 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip. Audited (`booking.price_override`) with before, after and the reason.",
+        "operationId": "AdminPriceOverrideController_override",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverridePriceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Override the price of a booking request with a new quote",
+        "tags": [
+          "admin: bookings"
         ]
       }
     },
@@ -12242,6 +12526,108 @@
           "cancellationNote"
         ]
       },
+      "ApplyPromoCodeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "WINTER10",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "PromoPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise, with the code applied."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency",
+          "validUntil"
+        ]
+      },
+      "PromoLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "amountMinor"
+        ]
+      },
+      "PromoPreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "WINTER10"
+          },
+          "name": {
+            "type": "string",
+            "description": "The label of the discount line."
+          },
+          "amountOffMinor": {
+            "type": "number",
+            "description": "Paise the code takes off this trip; 0 when it lowers nothing here (it is then not worth sending)."
+          },
+          "price": {
+            "$ref": "#/components/schemas/PromoPriceDto"
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromoLineDto"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "amountOffMinor",
+          "price",
+          "breakdown",
+          "assumptions"
+        ]
+      },
       "PaymentModel": {
         "type": "string",
         "enum": [
@@ -13175,6 +13561,363 @@
           "finance"
         ]
       },
+      "PromotionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PERCENT",
+              "FIXED"
+            ]
+          },
+          "percent": {
+            "type": "number",
+            "nullable": true
+          },
+          "amountMinor": {
+            "type": "number",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "PRIVATE_CHARTER",
+              "HELICOPTER"
+            ],
+            "nullable": true
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "originName": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxUses": {
+            "type": "number",
+            "nullable": true
+          },
+          "maxUsesPerCustomer": {
+            "type": "number",
+            "nullable": true
+          },
+          "uses": {
+            "type": "number",
+            "description": "Bookings made with the code so far."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "ACTIVE",
+              "ENDED"
+            ]
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "endable": {
+            "type": "boolean",
+            "description": "Whether it can still be ended."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "kind",
+          "percent",
+          "amountMinor",
+          "currency",
+          "category",
+          "originId",
+          "originName",
+          "destinationId",
+          "destinationName",
+          "startsAt",
+          "endsAt",
+          "maxUses",
+          "maxUsesPerCustomer",
+          "uses",
+          "status",
+          "endedAt",
+          "endable",
+          "createdAt"
+        ]
+      },
+      "CreatePromotionDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Letters, digits and dashes, 3–32 characters; kept upper case. Unique: 409 `PROMOTION_CODE_EXISTS`.",
+            "example": "WINTER10"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 60,
+            "description": "Shown to the customer on the discount line.",
+            "example": "Winter offer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PERCENT",
+              "FIXED"
+            ]
+          },
+          "percent": {
+            "type": "number",
+            "description": "PERCENT only: a share of the price before tax, more than 0 and at most 100, two decimals at most.",
+            "example": 10
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "FIXED only: paise off (₹500 is 50000).",
+            "example": 50000
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "PRIVATE_CHARTER",
+              "HELICOPTER"
+            ],
+            "nullable": true,
+            "description": "Left out or null: charter and helicopter."
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "With `destinationId`: only trips between the two places, either direction. Both or neither."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "After `startsAt`, and in the future."
+          },
+          "maxUses": {
+            "type": "number",
+            "nullable": true,
+            "description": "Bookings that may use the code in all. Null: no limit."
+          },
+          "maxUsesPerCustomer": {
+            "type": "number",
+            "nullable": true,
+            "description": "Bookings one customer may make with it. Null: no limit."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the promotion is created. Kept in the audit record."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "kind",
+          "currency",
+          "startsAt",
+          "endsAt",
+          "reason"
+        ]
+      },
+      "EndPromotionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why it is ended early. Kept in the audit record."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "AdminAircraftPricingDto": {
+        "type": "object",
+        "properties": {
+          "hourlyRateMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Hourly rate in paise (₹1,80,000 is 18000000).",
+            "example": 18000000
+          },
+          "taxInclusive": {
+            "type": "boolean",
+            "description": "The aircraft's rates (hourly, sector, fixed routes) already include GST. They are reduced before tax is added."
+          },
+          "commissionInclusive": {
+            "type": "boolean",
+            "description": "The aircraft's rates (hourly, sector, fixed routes) already include Flyviman's commission. They are reduced before commission is added."
+          },
+          "minBillableHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.5,
+            "maximum": 12,
+            "description": "Overrides the operator's minimum billable hours for this aircraft. Required; `null` clears the override."
+          },
+          "minBillableHoursPer": {
+            "type": "string",
+            "enum": [
+              "LEG",
+              "DAY"
+            ],
+            "nullable": true,
+            "description": "Null when no minimum is set."
+          },
+          "sectorRateMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Price per flight in paise, used when the aircraft's pricing model is `SECTOR`. Left out: unchanged; `null` clears.",
+            "example": 25000000
+          },
+          "fixedRoutes": {
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Empty when none is set.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedRouteResponseDto"
+            }
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "registration": {
+            "type": "string",
+            "example": "VT-ABC"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "pricingModel": {
+            "description": "Which of the rates the engine uses.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftPricingModel"
+              }
+            ]
+          }
+        },
+        "required": [
+          "hourlyRateMinor",
+          "taxInclusive",
+          "commissionInclusive",
+          "minBillableHours",
+          "minBillableHoursPer",
+          "sectorRateMinor",
+          "fixedRoutes",
+          "aircraftId",
+          "currency",
+          "registration",
+          "manufacturer",
+          "model",
+          "pricingModel"
+        ]
+      },
+      "AdminOperatorPricingDto": {
+        "type": "object",
+        "properties": {
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/OperatorPricingResponseDto"
+          },
+          "aircraft": {
+            "description": "Newest first, at most 100.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAircraftPricingDto"
+            }
+          },
+          "aircraftTotal": {
+            "type": "number",
+            "description": "All of the operator’s aircraft."
+          }
+        },
+        "required": [
+          "operatorId",
+          "operatorName",
+          "operator",
+          "aircraft",
+          "aircraftTotal"
+        ]
+      },
       "AuditLogResponseDto": {
         "type": "object",
         "properties": {
@@ -13286,6 +14029,11 @@
           "specialRequests": {
             "type": "string",
             "maxLength": 1000
+          },
+          "promoCode": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "A promotion code, already previewed with `POST /search/:searchId/results/:resultId/promo-code`; `expectedTotalMinor` is then the price with the code. Checked again, with the caps, as the booking is made: 422 `PROMO_CODE_INVALID`, `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (also for a result priced on request) or `PROMO_CODE_LIMIT_REACHED`, and nothing is booked. One use of the code per booking."
           }
         },
         "required": [
@@ -14096,6 +14844,104 @@
           "note"
         ]
       },
+      "QuoteChargeInputDto": {
+        "type": "object",
+        "properties": {
+          "minHoursBeforeDeparture": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8760,
+            "description": "Applies when cancelling at least this many hours before departure."
+          },
+          "chargePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Of the total."
+          }
+        },
+        "required": [
+          "minHoursBeforeDeparture",
+          "chargePercent"
+        ]
+      },
+      "QuoteConditionsInputDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "The cancellation conditions in words, shown to the customer before they accept (business rule 9)."
+          },
+          "charges": {
+            "description": "Cancellation charges by notice, longest notice first, each notice once. Empty: nothing is charged on cancellation.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteChargeInputDto"
+            }
+          },
+          "inclusions": {
+            "description": "What the price includes.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "description": "What the price leaves out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "charges",
+          "inclusions",
+          "exclusions"
+        ]
+      },
+      "OverridePriceDto": {
+        "type": "object",
+        "properties": {
+          "totalMinor": {
+            "type": "number",
+            "description": "Paise: the all-in price the customer pays (taxes and fees included)."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the price is overridden. Kept on the calculation and in the audit record; never shown to the customer."
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Until when the customer may accept. Left out: 48 hours from now (`BOOKING_HOLD_HOURS`). Never after the first departure; at least an hour ahead."
+          },
+          "conditions": {
+            "description": "The conditions shown with the price (rule 9). Left out: those of the booking’s latest quote; required when it has none.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteConditionsInputDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "totalMinor",
+          "currency",
+          "reason"
+        ]
+      },
       "QuoteStatus": {
         "type": "string",
         "enum": [
@@ -14530,64 +15376,6 @@
         },
         "required": [
           "reason"
-        ]
-      },
-      "QuoteChargeInputDto": {
-        "type": "object",
-        "properties": {
-          "minHoursBeforeDeparture": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 8760,
-            "description": "Applies when cancelling at least this many hours before departure."
-          },
-          "chargePercent": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100,
-            "description": "Of the total."
-          }
-        },
-        "required": [
-          "minHoursBeforeDeparture",
-          "chargePercent"
-        ]
-      },
-      "QuoteConditionsInputDto": {
-        "type": "object",
-        "properties": {
-          "summary": {
-            "type": "string",
-            "maxLength": 2000,
-            "description": "The cancellation conditions in words, shown to the customer before they accept (business rule 9)."
-          },
-          "charges": {
-            "description": "Cancellation charges by notice, longest notice first, each notice once. Empty: nothing is charged on cancellation.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QuoteChargeInputDto"
-            }
-          },
-          "inclusions": {
-            "description": "What the price includes.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "exclusions": {
-            "description": "What the price leaves out.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "summary",
-          "charges",
-          "inclusions",
-          "exclusions"
         ]
       },
       "ReviseQuoteDto": {
