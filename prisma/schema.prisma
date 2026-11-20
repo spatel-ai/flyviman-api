@@ -1044,6 +1044,62 @@ model PriceCalculation {
   @@index([createdAt])
 }
 
+/// How a promotion code takes money off: a share of the price before tax,
+/// or a fixed amount.
+enum PromotionKind {
+  PERCENT
+  FIXED
+}
+
+/// A promotion code (M10), funded by Flyviman like the `DISCOUNT` rule
+/// (automatic discounts stay that rule). Never edited: finance creates one
+/// and may end it, so a calculation that applied it stays explainable.
+/// `percentBasisPoints` (PERCENT) or `amountMinor` (FIXED), never both
+/// (CHECK). `category` null is every category the engine prices; a route
+/// (`originId` and `destinationId`, both or neither) matches either
+/// direction. Caps null are unlimited.
+model Promotion {
+  id                 String           @id @default(uuid()) @db.Uuid
+  /// Upper case, unique (`WINTER10`).
+  code               String           @unique
+  /// Shown to the customer on the discount line.
+  name               String
+  kind               PromotionKind
+  percentBasisPoints Int?
+  amountMinor        BigInt?
+  currency           String           @default("INR") @db.Char(3)
+  category           ServiceCategory?
+  originId           String?          @db.Uuid
+  destinationId      String?          @db.Uuid
+  startsAt           DateTime         @db.Timestamptz
+  endsAt             DateTime         @db.Timestamptz
+  maxUses            Int?
+  maxUsesPerCustomer Int?
+  /// Set when finance ends it early; it then applies to nothing.
+  endedAt            DateTime?        @db.Timestamptz
+  createdById        String?          @db.Uuid
+  createdAt          DateTime         @default(now()) @db.Timestamptz
+  updatedAt          DateTime         @updatedAt @db.Timestamptz
+
+  redemptions PromotionRedemption[]
+
+  @@index([createdAt])
+}
+
+/// One use of a promotion: a booking made with its code. Counted against
+/// the caps; one per booking.
+model PromotionRedemption {
+  id          String   @id @default(uuid()) @db.Uuid
+  promotionId String   @db.Uuid
+  customerId  String   @db.Uuid
+  bookingId   String   @unique @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+
+  @@index([promotionId, customerId])
+}
+
 // ---------------------------------------------------------------------------
 // M8. Quotes and bookings
 // ---------------------------------------------------------------------------

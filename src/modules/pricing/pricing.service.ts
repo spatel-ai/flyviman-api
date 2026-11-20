@@ -5,7 +5,11 @@ import {
   PriceType,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { legMetrics, type EngineResult } from './engine.js';
+import {
+  type EngineResult,
+  legMetrics,
+  type PromotionInput,
+} from './engine.js';
 import { priceOperatorQuote, type QuotePriceResult } from './quote-price.js';
 import { resolveRules, type RuleRow } from './rules.js';
 
@@ -108,6 +112,8 @@ export class PricingService {
       operatorPriceMinor: number;
       validUntil: Date;
       availabilityCheckedAt: Date;
+      /** The booking's promotion code, kept on every quote (M10). */
+      promotion?: PromotionInput | null;
     },
   ): Promise<{ calculationId: string; result: QuotePriceResult }> {
     const rules = resolveRules(
@@ -121,6 +127,7 @@ export class PricingService {
     const result = priceOperatorQuote({
       operatorPriceMinor: input.operatorPriceMinor,
       rules,
+      promotion: input.promotion ?? null,
     });
     const row = await db.priceCalculation.create({
       data: {
@@ -154,6 +161,94 @@ export class PricingService {
       select: { id: true },
     });
     return { calculationId: row.id, result };
+  }
+
+  /**
+   * A manual override's calculation (M10; pricing-engine.md, "Manual
+   * override with reason"): the booking's calculation copied, never edited,
+   * with an `OVERRIDE` line taking the total to the price set by hand, so
+   * `total = sum(breakdown)` still holds. Flyviman absorbs the difference:
+   * the operator's payable is unchanged and platform revenue moves by it;
+   * tax is not worked out again. Priced as a `QUOTE`, with who set it and
+   * why. Returns the new calculation's id.
+   */
+  async saveOverride(
+    db: Prisma.TransactionClient,
+    input: {
+      fromCalculationId: string;
+      totalMinor: number;
+      validUntil: Date;
+      overriddenById: string;
+      reason: string;
+      /** What the customer was last offered, for the record. */
+      previous: { totalMinor: number; quoteReference: string | null };
+      now: Date;
+    },
+  ): Promise<string> {
+    const from = await db.priceCalculation.findUniqueOrThrow({
+      where: { id: input.fromCalculationId },
+    });
+    const delta = BigInt(input.totalMinor) - from.totalMinor;
+    const platformRevenueMinor = from.platformRevenueMinor + delta;
+    const breakdown = [
+      ...(Array.isArray(from.breakdown) ? from.breakdown : []),
+      ...(delta === 0n
+        ? []
+        : [
+            {
+              code: 'OVERRIDE',
+              label: 'Price set by Flyviman',
+              amountMinor: Number(delta),
+              basis: 'Manual override; the difference is Flyviman’s',
+            },
+          ]),
+    ];
+    const warnings = [
+      ...(Array.isArray(from.warnings) ? from.warnings : []),
+      ...(platformRevenueMinor < 0n
+        ? ['Flyviman earns less than nothing on this trip after the override.']
+        : []),
+    ];
+    const row = await db.priceCalculation.create({
+      data: {
+        searchId: from.searchId,
+        aircraftId: from.aircraftId,
+        operatorId: from.operatorId,
+        inputs: {
+          ...(from.inputs && typeof from.inputs === 'object'
+            ? (from.inputs as Prisma.InputJsonObject)
+            : {}),
+          override: {
+            fromCalculationId: from.id,
+            previousTotalMinor: input.previous.totalMinor,
+            previousQuoteReference: input.previous.quoteReference,
+          },
+        },
+        appliedRules: from.appliedRules as Prisma.InputJsonValue,
+        breakdown: breakdown as Prisma.InputJsonValue,
+        baseMinor: from.baseMinor,
+        feesMinor: from.feesMinor,
+        taxMinor: from.taxMinor,
+        discountMinor: from.discountMinor,
+        totalMinor: BigInt(input.totalMinor),
+        operatorPayableMinor: from.operatorPayableMinor,
+        platformRevenueMinor,
+        currency: from.currency,
+        priceType: PriceType.QUOTE,
+        validUntil: input.validUntil,
+        availabilityCheckedAt: input.now,
+        assumptions: [
+          ...(Array.isArray(from.assumptions) ? from.assumptions : []),
+          'Price set by hand by Flyviman; tax was not worked out again',
+        ] as Prisma.InputJsonValue,
+        exclusions: from.exclusions as Prisma.InputJsonValue,
+        warnings: warnings as Prisma.InputJsonValue,
+        overriddenById: input.overriddenById,
+        overrideReason: input.reason,
+      },
+      select: { id: true },
+    });
+    return row.id;
   }
 
   async calculation(id: string) {

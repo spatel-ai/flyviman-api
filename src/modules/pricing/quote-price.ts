@@ -1,13 +1,19 @@
-import { type AppliedRule, type LineItem, percentOf } from './engine.js';
+import {
+  type AppliedRule,
+  applyPromotion,
+  type LineItem,
+  percentOf,
+  type PromotionInput,
+} from './engine.js';
 import type { ResolvedRules, RuleRow } from './rules.js';
 
 /**
  * The customer's price for an operator's quote (D-172 B): the operator's
  * price is the operator subtotal, and Flyviman's commercial rules are added
  * exactly as the engine adds them to an estimate (pricing-engine.md, step 6):
- * commission, markup and service fee, then any discount (funded by Flyviman
- * and capped at its revenue, so the operator's payable never moves), then
- * tax. Pure, so a quote is as traceable as an estimate.
+ * commission, markup and service fee, then any discount and a promotion
+ * code the booking carries (both funded by Flyviman and capped together at
+ * its revenue, so the operator's payable never moves), then tax. Pure, so a quote is as traceable as an estimate.
  *
  * Kept apart from `calculatePrice` so engine work in parallel stays
  * untouched; `quote-price.spec.ts` checks parity with it for the same base.
@@ -20,6 +26,12 @@ export interface QuotePriceInput {
   operatorPriceMinor: number;
   /** Platform and category rules for the booking's aircraft. */
   rules: ResolvedRules;
+  /**
+   * The promotion code the booking was requested with, if any: a revised
+   * quote keeps the customer's code (applied after the `DISCOUNT` rule,
+   * before tax, as the engine does).
+   */
+  promotion?: PromotionInput | null;
 }
 
 export interface QuotePriceResult {
@@ -123,10 +135,34 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
     });
   }
 
+  // The booking's promotion code on top, limited to what Flyviman still
+  // earns after the discount, as in the engine.
+  const promotion = applyPromotion(
+    input.promotion ?? null,
+    baseMinor + feesMinor - discountMinor,
+    platformMinor - discountMinor,
+  );
+  if (promotion) {
+    if (promotion.capped) {
+      assumptions.push(
+        `${promotion.name} applied up to its limit for this trip`,
+      );
+    }
+    if (promotion.amountMinor > 0) {
+      breakdown.push({
+        code: 'PROMOTION',
+        label: promotion.name,
+        amountMinor: -promotion.amountMinor,
+        basis: promotion.basis,
+      });
+    }
+  }
+  const discountsMinor = discountMinor + (promotion?.amountMinor ?? 0);
+
   let taxMinor = 0;
   const tax = use('TAX');
   if (tax) {
-    taxMinor = percentOf(baseMinor + feesMinor - discountMinor, tax.percent);
+    taxMinor = percentOf(baseMinor + feesMinor - discountsMinor, tax.percent);
     breakdown.push({ code: 'TAX', label: tax.name, amountMinor: taxMinor });
   } else {
     warnings.push('No tax rule is in force; tax is not included.');
@@ -147,13 +183,24 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
     baseMinor,
     feesMinor,
     taxMinor,
-    discountMinor,
-    totalMinor: baseMinor + feesMinor - discountMinor + taxMinor,
+    discountMinor: discountsMinor,
+    totalMinor: baseMinor + feesMinor - discountsMinor + taxMinor,
     operatorPayableMinor:
       commission?.mode === 'DEDUCTED' ? baseMinor - commissionMinor : baseMinor,
-    platformRevenueMinor: platformMinor - discountMinor,
+    platformRevenueMinor: platformMinor - discountsMinor,
     currency: 'INR',
-    appliedRules: [...seen.values()],
+    appliedRules: promotion
+      ? [
+          ...seen.values(),
+          // Not a pricing rule: the promotion's own row, never edited.
+          {
+            id: promotion.id,
+            type: 'PROMOTION',
+            scope: 'PROMOTION',
+            version: 1,
+          },
+        ]
+      : [...seen.values()],
     assumptions,
     exclusions,
     warnings,

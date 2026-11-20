@@ -37,6 +37,10 @@ export const SHOWN_LINES: ReadonlySet<string> = new Set<LineCode>([
   'PLATFORM_FEE',
   'SERVICE_FEE',
   'DISCOUNT',
+  // The promotion's name, chosen by finance; an override's line is never
+  // on a customer's price (it is on the overriding quote's calculation).
+  'PROMOTION',
+  'OVERRIDE',
   'TAX',
 ]);
 

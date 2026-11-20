@@ -32,6 +32,7 @@ import { AvailabilityService } from '../availability/availability.service.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { CustomersService } from '../customers/customers.service.js';
 import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
+import { PromotionsService } from '../pricing/promotions.service.js';
 import { QuotesService } from '../quotes/quotes.service.js';
 import { SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
@@ -144,6 +145,7 @@ export class BookingsService implements OnApplicationBootstrap {
     private readonly config: ConfigService,
     private readonly quotes: QuotesService,
     private readonly cancellationTerms: CancellationTermsService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   /**
@@ -176,6 +178,7 @@ export class BookingsService implements OnApplicationBootstrap {
     const revalidation = await this.search.revalidate(
       input.searchId,
       input.resultId,
+      input.promoCode ? { code: input.promoCode, customerId: user.id } : null,
     );
     const passengerIds = input.passengerIds ?? [];
     if (passengerIds.length > revalidation.passengerCount) {
@@ -323,6 +326,17 @@ export class BookingsService implements OnApplicationBootstrap {
               specialRequests,
             },
           });
+          // Under the code's lock, after the customer's and before the
+          // aircraft's (`placeBookingHold`): checks the caps once more.
+          const promotion = current.priced ? current.promotion : null;
+          if (promotion) {
+            await this.promotions.redeem(tx, {
+              promotionId: promotion.promotionId,
+              customerId: user.id,
+              bookingId: booking.id,
+              trip: promotion.trip,
+            });
+          }
           if (snapshots.length > 0) {
             await tx.bookingPassenger.createMany({
               data: snapshots.map((snapshot) => ({
@@ -369,6 +383,7 @@ export class BookingsService implements OnApplicationBootstrap {
                 cancellationTermsRuleId: terms.ruleId,
                 cancellationTermsVersion: terms.version,
                 totalMinor: current.priced ? current.totalMinor : null,
+                promotionId: promotion?.promotionId ?? null,
                 currency: booking.currency,
                 priceType: booking.priceType,
                 passengerCount: snapshots.length,

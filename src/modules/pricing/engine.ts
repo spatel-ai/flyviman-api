@@ -41,6 +41,24 @@ export interface EngineInput {
   rules: ResolvedRules;
   /** Great-circle (or provider) distance, before the routing factor. */
   rawDistanceKm: (from: PricePoint, to: PricePoint) => number;
+  /**
+   * A promotion code the customer entered, already checked as applicable
+   * (`pricing/promotions.ts`). Applied after the `DISCOUNT` rule, before tax.
+   */
+  promotion?: PromotionInput | null;
+}
+
+/** A promotion code as the engine applies it. Funded by Flyviman. */
+export interface PromotionInput {
+  id: string;
+  code: string;
+  /** The label of the customer's discount line. */
+  name: string;
+  kind: 'PERCENT' | 'FIXED';
+  /** PERCENT: a share of the price before tax, two decimals at most. */
+  percent?: number;
+  /** FIXED: paise off. */
+  amountMinor?: number;
 }
 
 /**
@@ -70,6 +88,9 @@ export const LINE_CODES = [
   'MARKUP',
   'SERVICE_FEE',
   'DISCOUNT',
+  'PROMOTION',
+  // Written only on a manual override's calculation (pricing.service.ts).
+  'OVERRIDE',
   'TAX',
 ] as const;
 
@@ -122,6 +143,7 @@ export interface EngineResult {
   baseMinor: number;
   feesMinor: number;
   taxMinor: number;
+  /** The `DISCOUNT` rule and any promotion code together. */
   discountMinor: number;
   totalMinor: number;
   operatorPayableMinor: number;
@@ -830,9 +852,34 @@ function priceTrip(
     });
   }
 
+  // A promotion code on top, limited to what Flyviman still earns after the
+  // discount, for the same reason.
+  const promotion = applyPromotion(
+    input.promotion ?? null,
+    baseMinor + feesMinor - discountMinor,
+    platformMinor - discountMinor,
+  );
+  if (promotion) {
+    if (promotion.capped) {
+      assumptions.push(
+        `${promotion.name} applied up to its limit for this trip`,
+      );
+    }
+    if (promotion.amountMinor > 0) {
+      breakdown.push({
+        code: 'PROMOTION',
+        label: promotion.name,
+        amountMinor: -promotion.amountMinor,
+        basis: promotion.basis,
+      });
+    }
+  }
+  const promotionMinor = promotion?.amountMinor ?? 0;
+  const discountsMinor = discountMinor + promotionMinor;
+
   let taxMinor = 0;
   if (tax) {
-    taxMinor = percentOf(baseMinor + feesMinor - discountMinor, tax.percent);
+    taxMinor = percentOf(baseMinor + feesMinor - discountsMinor, tax.percent);
     breakdown.push({ code: 'TAX', label: tax.name, amountMinor: taxMinor });
   } else {
     warnings.push('No tax rule is in force; tax is not included.');
@@ -853,17 +900,28 @@ function priceTrip(
       baseMinor,
       feesMinor,
       taxMinor,
-      discountMinor,
-      totalMinor: baseMinor + feesMinor - discountMinor + taxMinor,
+      discountMinor: discountsMinor,
+      totalMinor: baseMinor + feesMinor - discountsMinor + taxMinor,
       operatorPayableMinor:
         commission?.mode === 'DEDUCTED'
           ? baseMinor - commissionMinor
           : baseMinor,
       platformRevenueMinor:
-        commissionMinor + markupMinor + serviceFeeMinor - discountMinor,
+        commissionMinor + markupMinor + serviceFeeMinor - discountsMinor,
       currency: 'INR',
       validUntil,
-      appliedRules: applied(used),
+      appliedRules: promotion
+        ? [
+            ...applied(used),
+            // Not a pricing rule: the promotion's own row, never edited.
+            {
+              id: promotion.id,
+              type: 'PROMOTION',
+              scope: 'PROMOTION',
+              version: 1,
+            },
+          ]
+        : applied(used),
       assumptions,
       exclusions,
       warnings,
@@ -1018,6 +1076,45 @@ function turnaroundLines(
     });
   }
   return lines;
+}
+
+/**
+ * A promotion code's amount off `beforeTaxMinor`: a percentage (rounded as
+ * every percentage is) or a fixed amount, never more than `limitMinor`
+ * (what Flyviman earns on the trip after any discount), so the operator's
+ * payable never moves. Null when there is no promotion.
+ */
+export function applyPromotion(
+  promotion: PromotionInput | null,
+  beforeTaxMinor: number,
+  limitMinor: number,
+): {
+  id: string;
+  name: string;
+  amountMinor: number;
+  capped: boolean;
+  basis: string;
+} | null {
+  if (!promotion) return null;
+  const offeredMinor =
+    promotion.kind === 'PERCENT'
+      ? percentOf(Math.max(0, beforeTaxMinor), promotion.percent ?? 0)
+      : Math.max(0, promotion.amountMinor ?? 0);
+  const amountMinor = Math.max(0, Math.min(offeredMinor, limitMinor));
+  const capped = amountMinor > 0 && amountMinor < offeredMinor;
+  const offer =
+    promotion.kind === 'PERCENT'
+      ? `${promotion.percent}% of the price before tax`
+      : `${offeredMinor} off`;
+  return {
+    id: promotion.id,
+    name: promotion.name,
+    amountMinor,
+    capped,
+    basis: capped
+      ? `Code ${promotion.code}: ${offer} (${offeredMinor} offered), limited to Flyviman's charges on this trip`
+      : `Code ${promotion.code}: ${offer}`,
+  };
 }
 
 function applied(rules: RuleRow[]): AppliedRule[] {

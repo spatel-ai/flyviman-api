@@ -10,7 +10,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { OperatorsService } from '../operators/operators.service.js';
+import { AircraftService } from '../aircraft/aircraft.service.js';
 import type {
+  AdminAircraftPricingDto,
+  AdminOperatorPricingDto,
   AircraftPricingDto,
   AircraftPricingResponseDto,
   FixedRouteDto,
@@ -43,6 +46,9 @@ const AIRCRAFT_TYPES = [
   PricingRuleType.FIXED_ROUTE,
 ] as const;
 
+/** Aircraft listed by the internal read; an operator's fleet is far smaller. */
+const ADMIN_FLEET_LIMIT = 100;
+
 const RULE_SELECT = {
   id: true,
   scope: true,
@@ -66,10 +72,48 @@ export class OperatorPricingService {
     private readonly prisma: PrismaService,
     private readonly operators: OperatorsService,
     private readonly audit: AuditService,
+    private readonly aircraft: AircraftService,
   ) {}
 
   async getOperator(user: AuthUser): Promise<OperatorPricingResponseDto> {
-    const operatorId = await this.operatorOf(user);
+    return this.operatorView(await this.operatorOf(user));
+  }
+
+  /**
+   * The internal read (M10): an operator's defaults and every aircraft's
+   * rate, read-only, for operations, finance and super administrators
+   * (security-rbac.md, "Submit operator pricing inputs"). An unknown
+   * operator is 404. At most `ADMIN_FLEET_LIMIT` aircraft, newest first.
+   */
+  async adminView(operatorId: string): Promise<AdminOperatorPricingDto> {
+    const operator = await this.operators.getById(operatorId);
+    const fleet = await this.aircraft.adminList({
+      page: 1,
+      pageSize: ADMIN_FLEET_LIMIT,
+      operatorId,
+    });
+    const aircraft: AdminAircraftPricingDto[] = [];
+    for (const row of fleet.items) {
+      aircraft.push({
+        ...(await this.aircraftView(row.id)),
+        registration: row.registration,
+        manufacturer: row.manufacturer,
+        model: row.model,
+        pricingModel: row.pricingModel,
+      });
+    }
+    return {
+      operatorId: operator.id,
+      operatorName: operator.legalName,
+      operator: await this.operatorView(operator.id),
+      aircraft,
+      aircraftTotal: fleet.total,
+    };
+  }
+
+  private async operatorView(
+    operatorId: string,
+  ): Promise<OperatorPricingResponseDto> {
     return toOperatorDto(
       await this.inForce(PricingRuleScope.OPERATOR, operatorId, OPERATOR_TYPES),
     );
@@ -148,6 +192,12 @@ export class OperatorPricingService {
     aircraftId: string,
   ): Promise<AircraftPricingResponseDto> {
     await this.ownAircraft(user, aircraftId);
+    return this.aircraftView(aircraftId);
+  }
+
+  private async aircraftView(
+    aircraftId: string,
+  ): Promise<AircraftPricingResponseDto> {
     const rules = await this.inForce(
       PricingRuleScope.AIRCRAFT,
       aircraftId,

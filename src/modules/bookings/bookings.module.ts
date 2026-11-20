@@ -12,6 +12,7 @@ import { UsersModule } from '../users/users.module.js';
 import { AdminBookingsController } from './admin-bookings.controller.js';
 import { AdminBookingsService } from './admin-bookings.service.js';
 import { AdminChangeRequestsController } from './admin-change-requests.controller.js';
+import { AdminPriceOverrideController } from './admin-price-override.controller.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import { BookingsController } from './bookings.controller.js';
 import { BookingsService } from './bookings.service.js';
@@ -43,6 +44,7 @@ import { TripsService } from './trips.service.js';
     PricingModule,
     UsersModule,
     NotificationsModule,
+    PricingModule,
   ],
   controllers: [
     BookingsController,
@@ -50,6 +52,7 @@ import { TripsService } from './trips.service.js';
     OperatorChangeRequestsController,
     AdminChangeRequestsController,
     AdminBookingsController,
+    AdminPriceOverrideController,
     BookingConversationController,
     CustomerQuotesController,
     OperatorBookingRequestsController,
