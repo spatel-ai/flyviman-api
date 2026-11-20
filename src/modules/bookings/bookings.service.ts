@@ -23,6 +23,7 @@ import { CategoryConfigService } from '../configuration/category-config.service.
 import { CustomersService } from '../customers/customers.service.js';
 import { CANCELLATION_NOTE, SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
+import { changeRequestView, decisionNotes } from './change-requests.js';
 import {
   holdExpiry,
   itineraryFrom,
@@ -35,6 +36,7 @@ import {
   afterRequested,
   type BookingActor,
   checkTransition,
+  statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
 import type {
@@ -306,9 +308,11 @@ export class BookingsService {
       include: {
         passengers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         calculation: { select: { validUntil: true } },
+        changeRequests: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] },
       },
     });
     if (!booking) throw notFound();
+    const notes = await decisionNotes(this.prisma, booking.id);
     const estimate = booking.priceType === PriceType.ESTIMATE;
     return {
       reference: booking.reference,
@@ -340,6 +344,11 @@ export class BookingsService {
         documentExpiry: day(passenger.documentExpiry),
         specialAssistance: this.reveal(passenger.specialAssistance),
       })),
+      confirmedAt: booking.confirmedAt?.toISOString() ?? null,
+      cancelledAt: booking.cancelledAt?.toISOString() ?? null,
+      changeRequests: booking.changeRequests.map((row) =>
+        changeRequestView(row, booking.reference, notes),
+      ),
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };
@@ -362,6 +371,8 @@ export class BookingsService {
     options: {
       context?: Partial<TransitionContext>;
       override?: { reason: string };
+      /** Added to the event's payload (never personal data). */
+      event?: Prisma.InputJsonObject;
     } = {},
   ): Promise<BookingStatus> {
     const context = { ...contextOf(booking), ...options.context };
@@ -382,7 +393,7 @@ export class BookingsService {
     }
     const { count } = await tx.booking.updateMany({
       where: { id: booking.id, status: booking.status },
-      data: { status: to },
+      data: { status: to, ...statusTimestamps(to, new Date()) },
     });
     if (count !== 1) {
       throw new AppException(
@@ -401,7 +412,13 @@ export class BookingsService {
         toStatus: to,
         actorId: by?.id ?? null,
         actorRole: by?.role ?? null,
-        payload: reason ? { override: true, reason } : undefined,
+        payload:
+          reason || options.event
+            ? {
+                ...options.event,
+                ...(reason ? { override: true, reason } : {}),
+              }
+            : undefined,
       },
     });
     await this.audit.record(
