@@ -16,6 +16,13 @@ import {
   validateSync,
 } from 'class-validator';
 
+/**
+ * The payment secrets outside production. Public (they are in the
+ * repository): the mock gateway protects nothing and moves no money.
+ */
+export const DEV_PAYMENT_KEY_SECRET = 'mock-payment-key-secret';
+export const DEV_PAYMENT_WEBHOOK_SECRET = 'mock-payment-webhook-secret';
+
 export enum NodeEnv {
   Development = 'development',
   Test = 'test',
@@ -328,6 +335,23 @@ export class EnvironmentVariables {
   PAYMENT_PROVIDER: string = 'mock';
 
   /**
+   * The gateway's key secret (signs the checkout result) and webhook secret
+   * (signs every notification). Only in the API's environment, never logged
+   * or sent to the browser. Required in production; elsewhere they default
+   * to the mock's development values (`DEV_PAYMENT_KEY_SECRET`,
+   * `DEV_PAYMENT_WEBHOOK_SECRET`), which tests sign with.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(16)
+  PAYMENT_KEY_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(16)
+  PAYMENT_WEBHOOK_SECRET?: string;
+
+  /**
    * How collected money reaches operators (open decision 8). `manual`:
    * Flyviman collects and settlements are recorded and paid by hand.
    * `razorpay_route` (automatic split to operators' linked accounts) is
@@ -413,6 +437,25 @@ export function validateEnv(
       .join('; ');
     throw new Error(`Invalid environment configuration: ${problems}`);
   }
+
+  // A deployed server signs with its own secrets: the development values
+  // are in the repository, so anyone could forge a payment with them.
+  if (validated.NODE_ENV === NodeEnv.Production) {
+    for (const name of ['PAYMENT_KEY_SECRET', 'PAYMENT_WEBHOOK_SECRET'] as const) {
+      const value = validated[name];
+      if (
+        !value ||
+        value === DEV_PAYMENT_KEY_SECRET ||
+        value === DEV_PAYMENT_WEBHOOK_SECRET
+      ) {
+        throw new Error(
+          `Invalid environment configuration: set ${name} to this server's own secret in production.`,
+        );
+      }
+    }
+  }
+  validated.PAYMENT_KEY_SECRET ??= DEV_PAYMENT_KEY_SECRET;
+  validated.PAYMENT_WEBHOOK_SECRET ??= DEV_PAYMENT_WEBHOOK_SECRET;
 
   // Enquiries are emailed to the operations inbox. In production with a
   // provider that really sends, the reserved .test default would lose them
