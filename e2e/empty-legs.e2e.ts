@@ -700,15 +700,30 @@ test.describe('alternatives in charter search', () => {
     playwright,
     baseURL,
   }) => {
-    const { trip, offer } = await draftOffer(request, playwright, baseURL);
-    await publish(request, offer.id);
+    const { trip, offer: draft } = await draftOffer(
+      request,
+      playwright,
+      baseURL,
+    );
+    // Later runs leave offers on this route in the database, and only the
+    // closest few are returned: leave in a window of its own, 12:00 to
+    // 14:00 UTC, and search at 13:00 so this offer always ranks first.
+    const moved = await request.patch(`operator/empty-legs/${draft.id}`, {
+      headers: await csrfHeaders(request),
+      data: {
+        departureFrom: inDays(6, 12).toISOString(),
+        departureTo: inDays(6, 14).toISOString(),
+      },
+    });
+    expect(moved.status()).toBe(200);
+    const offer = await publish(request, draft.id);
     const search = async (data: Record<string, unknown>, path = 'charter') => {
       const response = await request.post(`search/${path}`, {
         headers: await csrfHeaders(request),
         data: {
           originId: trip.goa,
           destinationId: trip.mumbai,
-          departureAt: inDays(6, 6).toISOString(),
+          departureAt: inDays(6, 13).toISOString(),
           passengerCount: 3,
           ...data,
         },
