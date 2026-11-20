@@ -1,4 +1,15 @@
-import { NodeEnv, validateEnv } from './env.validation.js';
+import {
+  DEV_PAYMENT_KEY_SECRET,
+  DEV_PAYMENT_WEBHOOK_SECRET,
+  NodeEnv,
+  validateEnv,
+} from './env.validation.js';
+
+/** What a deployed server sets: its own payment secrets. */
+const PAYMENT_SECRETS = {
+  PAYMENT_KEY_SECRET: 'k'.repeat(24),
+  PAYMENT_WEBHOOK_SECRET: 'w'.repeat(24),
+};
 
 const valid = {
   NODE_ENV: 'development',
@@ -76,6 +87,7 @@ describe('validateEnv', () => {
   it('runs a proof-of-concept server with the sink and local storage, never the dev tools', () => {
     const poc = {
       ...valid,
+      ...PAYMENT_SECRETS,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'sink',
@@ -118,6 +130,7 @@ describe('validateEnv', () => {
   it('needs the real operations inbox in production when messages are really sent', () => {
     const production = {
       ...valid,
+      ...PAYMENT_SECRETS,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'mock',
@@ -194,5 +207,35 @@ describe('validateEnv', () => {
     expect(() =>
       validateEnv({ ...valid, SETTLEMENT_MODE: 'automatic' }),
     ).toThrow(/SETTLEMENT_MODE/);
+  });
+
+  it('defaults the payment secrets outside production and needs real ones in production', () => {
+    const env = validateEnv(valid);
+    expect(env.PAYMENT_KEY_SECRET).toBe(DEV_PAYMENT_KEY_SECRET);
+    expect(env.PAYMENT_WEBHOOK_SECRET).toBe(DEV_PAYMENT_WEBHOOK_SECRET);
+
+    const production = {
+      ...valid,
+      ...PAYMENT_SECRETS,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'sink',
+      STORAGE_PROVIDER: 'local',
+      API_PUBLIC_URL: 'https://flyviman-api.example.com',
+    };
+    expect(validateEnv(production).PAYMENT_WEBHOOK_SECRET).toBe('w'.repeat(24));
+    for (const [name, value] of [
+      ['PAYMENT_KEY_SECRET', undefined],
+      ['PAYMENT_WEBHOOK_SECRET', undefined],
+      ['PAYMENT_KEY_SECRET', DEV_PAYMENT_KEY_SECRET],
+      ['PAYMENT_WEBHOOK_SECRET', DEV_PAYMENT_WEBHOOK_SECRET],
+    ] as const) {
+      expect(() => validateEnv({ ...production, [name]: value })).toThrow(
+        new RegExp(name),
+      );
+    }
+    expect(() =>
+      validateEnv({ ...valid, PAYMENT_WEBHOOK_SECRET: 'short' }),
+    ).toThrow(/PAYMENT_WEBHOOK_SECRET/);
   });
 });

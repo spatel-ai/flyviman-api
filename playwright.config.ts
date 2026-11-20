@@ -84,6 +84,9 @@ export default defineConfig({
         STORAGE_PROVIDER: 'local',
         API_PUBLIC_URL: POC_ORIGIN,
         WEB_ORIGIN: 'https://flyviman-web.example.com',
+        // Production needs its own payment secrets (never the defaults).
+        PAYMENT_KEY_SECRET: 'e2e-poc-payment-key-secret',
+        PAYMENT_WEBHOOK_SECRET: 'e2e-poc-payment-webhook-secret',
         PORT: String(PORT + 2),
       },
     },

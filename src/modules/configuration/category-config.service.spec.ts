@@ -45,6 +45,7 @@ describe('CategoryConfigService.resolve', () => {
       isEnabled: true,
       bookingMode: 'INSTANT',
       paymentModel: 'A_INSTANT',
+      depositPercent: 25,
     });
     expect(modeOverrides).not.toHaveBeenCalled();
   });

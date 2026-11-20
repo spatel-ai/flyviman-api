@@ -66,6 +66,7 @@ describe('resolveCategoryConfig', () => {
       isEnabled: true,
       bookingMode: 'REQUEST',
       paymentModel: 'B_OPERATOR_CONFIRMED',
+      depositPercent: 25,
     });
   });
 
@@ -95,6 +96,7 @@ describe('resolveCategoryConfig', () => {
       isEnabled: true,
       bookingMode: BookingMode.INSTANT,
       paymentModel: PaymentModel.A_INSTANT,
+      depositPercent: 25,
     };
     expect(
       resolveCategoryConfig('AIR_AMBULANCE', 'IN', instantRow).bookingMode,
@@ -121,6 +123,7 @@ describe('resolveCategoryConfig', () => {
       isEnabled: false,
       bookingMode: 'REQUEST',
       paymentModel: 'B_OPERATOR_CONFIRMED',
+      depositPercent: 25,
     });
   });
 

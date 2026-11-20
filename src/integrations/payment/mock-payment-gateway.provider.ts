@@ -1,5 +1,8 @@
-import { Injectable } from '@nestjs/common';
 import type { IncomingHttpHeaders } from 'node:http';
+import {
+  DEV_PAYMENT_KEY_SECRET,
+  DEV_PAYMENT_WEBHOOK_SECRET,
+} from '../../config/payment-defaults.js';
 import {
   CheckoutResult,
   CreateOrderInput,
@@ -16,13 +19,26 @@ import {
 import { hmacSha256Hex, signatureMatches } from './payment-signature.js';
 
 /**
- * The mock's credentials. Not secrets: they are in the repository so tests
- * can sign webhooks, which is why the mock must never move real money
- * (PAYMENT_PROVIDER accepts only `mock` in this build).
+ * The mock's public key ID, and the development secrets it signs with when
+ * none are configured (`PAYMENT_KEY_SECRET`, `PAYMENT_WEBHOOK_SECRET`). The
+ * development values are in the repository so tests can sign webhooks,
+ * which is why the mock must never move real money (PAYMENT_PROVIDER
+ * accepts only `mock` in this build).
  */
 export const MOCK_PAYMENT_KEY_ID = 'rzp_mock_key';
-export const MOCK_PAYMENT_KEY_SECRET = 'mock-payment-key-secret';
-export const MOCK_PAYMENT_WEBHOOK_SECRET = 'mock-payment-webhook-secret';
+export const MOCK_PAYMENT_KEY_SECRET = DEV_PAYMENT_KEY_SECRET;
+export const MOCK_PAYMENT_WEBHOOK_SECRET = DEV_PAYMENT_WEBHOOK_SECRET;
+
+export interface MockPaymentGatewayOptions {
+  keySecret: string;
+  webhookSecret: string;
+  /**
+   * Makes IDs unique per process (`order_mock_<run>_000001`): the counters
+   * restart with the process while stored payments outlive it. Empty in
+   * unit tests, so they see deterministic IDs.
+   */
+  runId: string;
+}
 
 /** Header names as Razorpay sends them, so the mock is a faithful stand-in. */
 export const MOCK_SIGNATURE_HEADER = 'x-razorpay-signature';
@@ -56,13 +72,23 @@ export interface SimulatedPayment {
  * card, contact or personal data: payloads carry references and amounts only.
  * State is per process and lost on restart.
  */
-@Injectable()
 export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
   readonly name = 'mock';
+  readonly checkoutKeyId = MOCK_PAYMENT_KEY_ID;
 
   private readonly orders = new Map<string, GatewayOrder>();
   private readonly payments = new Map<string, GatewayPayment>();
   private sequence = 0;
+
+  constructor(
+    private readonly options: MockPaymentGatewayOptions = {
+      keySecret: MOCK_PAYMENT_KEY_SECRET,
+      webhookSecret: MOCK_PAYMENT_WEBHOOK_SECRET,
+      runId: '',
+    },
+  ) {
+    super();
+  }
 
   async createOrder(input: CreateOrderInput): Promise<GatewayOrder> {
     if (!Number.isInteger(input.amountMinor)) {
@@ -97,7 +123,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
 
   verifyCheckoutSignature(result: CheckoutResult): boolean {
     const expected = hmacSha256Hex(
-      MOCK_PAYMENT_KEY_SECRET,
+      this.options.keySecret,
       `${result.providerOrderId}|${result.providerPaymentId}`,
     );
     return signatureMatches(expected, result.signature);
@@ -108,7 +134,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
     headers: IncomingHttpHeaders,
   ): WebhookParseResult {
     const signature = headers[MOCK_SIGNATURE_HEADER];
-    const expected = hmacSha256Hex(MOCK_PAYMENT_WEBHOOK_SECRET, rawBody);
+    const expected = hmacSha256Hex(this.options.webhookSecret, rawBody);
     if (
       typeof signature !== 'string' ||
       !signatureMatches(expected, signature)
@@ -202,7 +228,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
             providerOrderId,
             providerPaymentId: payment.providerPaymentId,
             signature: hmacSha256Hex(
-              MOCK_PAYMENT_KEY_SECRET,
+              this.options.keySecret,
               `${providerOrderId}|${payment.providerPaymentId}`,
             ),
           }
@@ -238,7 +264,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
       headers: {
         'content-type': 'application/json',
         [MOCK_SIGNATURE_HEADER]: hmacSha256Hex(
-          MOCK_PAYMENT_WEBHOOK_SECRET,
+          this.options.webhookSecret,
           body,
         ),
         [MOCK_EVENT_ID_HEADER]: this.nextId('evt'),
@@ -248,7 +274,8 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
 
   private nextId(prefix: string): string {
     this.sequence += 1;
-    return `${prefix}_mock_${String(this.sequence).padStart(6, '0')}`;
+    const run = this.options.runId ? `${this.options.runId}_` : '';
+    return `${prefix}_mock_${run}${String(this.sequence).padStart(6, '0')}`;
   }
 }
 

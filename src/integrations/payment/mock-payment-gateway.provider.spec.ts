@@ -67,6 +67,34 @@ describe('MockPaymentGatewayProvider', () => {
       expect(b.paid).toEqual(a.paid);
     });
 
+    it('signs with the configured secrets and prefixes IDs with its run', async () => {
+      const gateway = new MockPaymentGatewayProvider({
+        keySecret: 'configured-key-secret',
+        webhookSecret: 'configured-webhook-secret',
+        runId: 'ab12',
+      });
+      const created = await gateway.createOrder(order);
+      expect(created.providerOrderId).toBe('order_mock_ab12_000001');
+      const paid = gateway.simulatePayment(created.providerOrderId, 'success');
+      expect(paid.checkout!.signature).toBe(
+        hmacSha256Hex(
+          'configured-key-secret',
+          `${created.providerOrderId}|${paid.checkout!.providerPaymentId}`,
+        ),
+      );
+      expect(parse(gateway, paid.webhook).ok).toBe(true);
+      // The development secret no longer verifies.
+      expect(parse(gateway, signed(paid.webhook.body))).toEqual({
+        ok: false,
+        reason: 'signature',
+      });
+      expect(
+        new MockPaymentGatewayProvider().verifyCheckoutSignature(
+          paid.checkout!,
+        ),
+      ).toBe(false);
+    });
+
     it('refuses fractional, too small and non-INR amounts', async () => {
       const gateway = new MockPaymentGatewayProvider();
       for (const input of [

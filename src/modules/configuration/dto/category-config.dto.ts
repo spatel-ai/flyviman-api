@@ -30,6 +30,15 @@ export class CategoryConfigResponseDto {
   })
   paymentModel: PaymentModel;
 
+  @ApiProperty({
+    example: 25,
+    minimum: 1,
+    maximum: 100,
+    description:
+      'The deposit taken under payment model C, in whole percent of the confirmed total, rounded up to the next paisa.',
+  })
+  depositPercent: number;
+
   @ApiProperty({ format: 'date-time' })
   updatedAt: string;
 }

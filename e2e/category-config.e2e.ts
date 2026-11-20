@@ -38,6 +38,7 @@ test.describe('GET /admin/category-config', () => {
         expect(Object.keys(row).sort()).toEqual([
           'bookingMode',
           'category',
+          'depositPercent',
           'isEnabled',
           'paymentModel',
           'region',

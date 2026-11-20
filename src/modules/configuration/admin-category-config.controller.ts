@@ -21,7 +21,7 @@ export class AdminCategoryConfigController {
   @ApiOperation({
     summary: 'Service category configuration',
     description:
-      'Platform booking mode and payment model per category and region, by region then category. Read only until M10.',
+      'Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.',
   })
   @ApiOkResponse({ type: [CategoryConfigResponseDto] })
   async list(): Promise<CategoryConfigResponseDto[]> {
@@ -32,6 +32,7 @@ export class AdminCategoryConfigController {
       isEnabled: row.isEnabled,
       bookingMode: row.bookingMode,
       paymentModel: row.paymentModel,
+      depositPercent: row.depositPercent,
       updatedAt: row.updatedAt.toISOString(),
     }));
   }

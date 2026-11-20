@@ -40,7 +40,7 @@ export class PaymentWebhooksController {
   @ApiOperation({
     summary: 'Gateway notification',
     description:
-      'For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).',
+      'For the payment gateway only. The signature over the exact body is verified before anything else, and a refused call is stored nowhere; `:provider` is the configured gateway (`mock` in this build). A verified event is stored once (unique per provider event ID) and applied in the same transaction before the 200: a repeated delivery is acknowledged and changes nothing. Outcomes only move a payment forward (a failure after a success is ignored); a success never changes the booking’s status, only its `paymentStatus`; a success for a closed or already-paid booking is recorded and flagged for operations. An event for an unknown order is stored and acknowledged. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).',
   })
   @ApiHeader({ name: 'x-razorpay-signature', required: true })
   @ApiHeader({ name: 'x-razorpay-event-id', required: true })
@@ -53,7 +53,7 @@ export class PaymentWebhooksController {
   receive(
     @Param('provider') provider: string,
     @Req() request: Request,
-  ): WebhookAckResponseDto {
+  ): Promise<WebhookAckResponseDto> {
     return this.webhooks.receive(
       provider,
       request.body as unknown,

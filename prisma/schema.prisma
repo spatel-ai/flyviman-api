@@ -845,14 +845,17 @@ enum PaymentModel {
 /// Platform setting per category and region. An operator's override lives in
 /// Operator.bookingMode and Operator.paymentModel (jsonb per category).
 model ServiceCategoryConfig {
-  id           String          @id @default(uuid()) @db.Uuid
-  category     ServiceCategory
-  region       String          @default("IN")
-  isEnabled    Boolean         @default(true)
-  bookingMode  BookingMode
-  paymentModel PaymentModel
-  createdAt    DateTime        @default(now()) @db.Timestamptz
-  updatedAt    DateTime        @updatedAt @db.Timestamptz
+  id             String          @id @default(uuid()) @db.Uuid
+  category       ServiceCategory
+  region         String          @default("IN")
+  isEnabled      Boolean         @default(true)
+  bookingMode    BookingMode
+  paymentModel   PaymentModel
+  /// The Model C deposit, in whole percent of the confirmed total (1 to 100,
+  /// CHECK). Rounded up to the next paisa (payments/payment-amount.ts).
+  depositPercent Int             @default(25)
+  createdAt      DateTime        @default(now()) @db.Timestamptz
+  updatedAt      DateTime        @updatedAt @db.Timestamptz
 
   @@unique([category, region])
 }
@@ -1277,6 +1280,19 @@ enum PaymentStatus {
 
 enum PaymentProvider {
   RAZORPAY
+  /// The in-memory mock gateway (PAYMENT_PROVIDER=mock): never real money.
+  MOCK
+}
+
+/// Why operations must look at a payment (M9). A late success, or a second
+/// payment for an already-paid booking, is kept and refunded (W4-1).
+enum PaymentReviewReason {
+  /// Succeeded for a booking that had EXPIRED or been CANCELLED.
+  BOOKING_CLOSED
+  /// Succeeded although the booking was already paid by another payment.
+  ALREADY_PAID
+  /// The gateway reported another amount or currency than the order's.
+  AMOUNT_MISMATCH
 }
 
 enum PaymentPurpose {
@@ -1303,24 +1319,26 @@ enum SettlementStatus {
 /// ids and the method type only: never card data (rule 10). The provider ids
 /// are unique per provider, so a callback can never be applied to two rows.
 model Payment {
-  id                String          @id @default(uuid()) @db.Uuid
-  reference         String          @unique
-  bookingId         String          @db.Uuid
+  id                String               @id @default(uuid()) @db.Uuid
+  reference         String               @unique
+  bookingId         String               @db.Uuid
   provider          PaymentProvider
   providerOrderId   String?
   providerPaymentId String?
   purpose           PaymentPurpose
   amountMinor       BigInt
-  currency          String          @db.Char(3)
-  status            PaymentStatus   @default(INITIATED)
+  currency          String               @db.Char(3)
+  status            PaymentStatus        @default(INITIATED)
   /// The method type the gateway reports (`card`, `upi`, `netbanking`, ...).
   method            String?
   failureCode       String?
   /// From the `Idempotency-Key` of the request that created it (rule 5).
-  idempotencyKey    String          @unique
-  paidAt            DateTime?       @db.Timestamptz
-  createdAt         DateTime        @default(now()) @db.Timestamptz
-  updatedAt         DateTime        @updatedAt @db.Timestamptz
+  idempotencyKey    String               @unique
+  paidAt            DateTime?            @db.Timestamptz
+  /// Set when a verified event needs operations (late success, double payment).
+  reviewReason      PaymentReviewReason?
+  createdAt         DateTime             @default(now()) @db.Timestamptz
+  updatedAt         DateTime             @updatedAt @db.Timestamptz
 
   booking Booking        @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   events  PaymentEvent[]
@@ -1330,6 +1348,7 @@ model Payment {
   @@unique([provider, providerPaymentId])
   @@index([bookingId, createdAt])
   @@index([status, createdAt])
+  @@index([reviewReason, createdAt])
 }
 
 /// Every gateway webhook, stored once (rule 5): unique on the provider's
