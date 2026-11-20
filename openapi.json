@@ -5339,7 +5339,7 @@
     },
     "/api/v1/bookings": {
       "post": {
-        "description": "Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); a result priced on request (`price: null`) is requested without `expectedTotalMinor` and asks the operator for a quote (409 `BOOKING_PRICE_CHANGED` with `details` (field `price`, issue `ON_REQUEST`) when an amount is sent for a result now on request, and with the new estimate when none is sent for a result now priced); 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search or result that is not found (searches are public: any customer may book from one), or a passenger that is not found or not the caller’s; 409 `BOOKING_DUPLICATE` when the caller already has an open request (`REQUESTED` or `OPERATOR_PENDING`) for this aircraft at an overlapping time; 409 `BOOKING_LIMIT_REACHED` when the caller already has the most open requests allowed (5 by default, `BOOKING_MAX_OPEN_PER_CUSTOMER`). Limited per caller (10 per 10 minutes by default; 429 `RATE_LIMITED`). Holds the aircraft for 48 hours by default (`BOOKING_HOLD_HOURS`, never past the trip’s end) while the operator answers. `specialRequests` is stored encrypted. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); a result priced on request (`price: null`) is requested without `expectedTotalMinor` and asks the operator for a quote (409 `BOOKING_PRICE_CHANGED` with `details` (field `price`, issue `ON_REQUEST`) when an amount is sent for a result now on request, and with the new estimate when none is sent for a result now priced); 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search or result that is not found (searches are public: any customer may book from one), or a passenger that is not found or not the caller’s; 409 `BOOKING_DUPLICATE` when the caller already has an open request (`REQUESTED`, `OPERATOR_PENDING` or `CLARIFICATION_REQUESTED`) for this aircraft at an overlapping time; 409 `BOOKING_LIMIT_REACHED` when the caller already has the most open requests allowed (5 by default, `BOOKING_MAX_OPEN_PER_CUSTOMER`). Limited per caller (10 per 10 minutes by default; 429 `RATE_LIMITED`). Holds the aircraft for 48 hours by default (`BOOKING_HOLD_HOURS`, never past the trip’s end) while the operator answers. `specialRequests` is stored encrypted. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "BookingsController_create",
         "parameters": [
           {
@@ -5418,6 +5418,43 @@
           }
         ],
         "summary": "One of the caller’s bookings: itinerary, price, statuses, terms",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/decline": {
+      "post": {
+        "description": "Only from `PRICE_CONFIRMED`: the booking becomes `QUOTE_DECLINED` and the aircraft’s hold is released. A confirmed price normally moves on to `AWAITING_PAYMENT` at once, from where the customer cancels instead; 409 `BOOKING_INVALID_TRANSITION` from any other status. Another customer’s booking is 404.",
+        "operationId": "BookingsController_decline",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Turn down a confirmed price before paying",
         "tags": [
           "bookings"
         ]
@@ -5632,9 +5669,72 @@
         ]
       }
     },
+    "/api/v1/operator/change-requests": {
+      "get": {
+        "description": "Requests on your operator’s bookings (staff: aircraft in reach, with `MANAGE_BOOKINGS`, 403 otherwise), newest first; by default those waiting for an answer. 409 `OPERATOR_NOT_APPROVED` for an operator that is not approved. Paged.",
+        "operationId": "OperatorChangeRequestsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Default `REQUESTED`: the requests waiting for an answer.",
+            "schema": {
+              "$ref": "#/components/schemas/ChangeRequestStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChangeRequestResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change and cancellation requests",
+        "tags": [
+          "operator-bookings"
+        ]
+      }
+    },
     "/api/v1/operator/change-requests/{id}/decide": {
       "post": {
-        "description": "Operator administrators for their operator’s bookings; staff for bookings on aircraft in their reach. Another operator’s request is 404; an operator that is not approved gets 409 `OPERATOR_NOT_APPROVED`. The note is shown to the customer. 409 `CHANGE_REQUEST_DECIDED` when it has already been answered. A price change goes through a revised quote.",
+        "description": "Operator administrators for their operator’s bookings; staff with `MANAGE_BOOKINGS` (403 otherwise) for bookings on aircraft in their reach. Another operator’s request is 404; an operator that is not approved gets 409 `OPERATOR_NOT_APPROVED`. The note is shown to the customer. 409 `CHANGE_REQUEST_DECIDED` when it has already been answered. A price change goes through a revised quote.",
         "operationId": "OperatorChangeRequestsController_decide",
         "parameters": [
           {
@@ -5676,6 +5776,69 @@
         "summary": "Approve or decline a change request, with a note",
         "tags": [
           "operator-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/change-requests": {
+      "get": {
+        "description": "Every booking’s requests, newest first; by default those waiting for an answer (`status` `REQUESTED`). Filter by `status`. Paged.",
+        "operationId": "AdminChangeRequestsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Default `REQUESTED`: the requests waiting for an answer.",
+            "schema": {
+              "$ref": "#/components/schemas/ChangeRequestStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChangeRequestResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change and cancellation requests",
+        "tags": [
+          "admin-bookings"
         ]
       }
     },
@@ -5721,6 +5884,301 @@
           }
         ],
         "summary": "Approve or decline a change request, with a note",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings": {
+      "get": {
+        "description": "Filters: `q` (the start of a booking reference, or the customer’s exact email address or phone number), `status`, `paymentStatus`, `category`, `operatorId`, `from` and `to` (when the booking was requested). Paged (`pageSize` at most 100).",
+        "operationId": "AdminBookingsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "A booking reference (or its start, `FLY-BK-7K2`), or the customer’s exact email address or phone number (E.164).",
+            "schema": {
+              "maxLength": 254,
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BookingStatus"
+            }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BookingPaymentStatus"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "Requested at or after.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Requested before.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminBookingSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Search all bookings, newest first",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}": {
+      "get": {
+        "description": "Finance gets `passengers`, `specialRequests` and `notes` as null, change requests without their text and timeline entries without override reasons.",
+        "operationId": "AdminBookingsController_detail",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One booking: trip, statuses, timeline, quotes, change requests, payments",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/assign": {
+      "post": {
+        "description": "`assigneeId`: an active operations user or super administrator (400 `VALIDATION_ERROR` otherwise), or `null` to remove the owner. Audited (`booking.assign`).",
+        "operationId": "AdminBookingsController_assign",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Set or remove the operations owner",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/notes": {
+      "post": {
+        "description": "For Flyviman operations only: never shown to the customer, the operator or finance. Stored encrypted.",
+        "operationId": "AdminBookingsController_addNote",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingNoteInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingNoteDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add an internal note",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/status": {
+      "patch": {
+        "description": "Any status to any other, with a `reason` (3–500 characters) kept on the timeline and in the audit trail (before and after). To `CANCELLED` the cancellation terms apply and the refund due is recorded, as for a customer’s cancellation; to `EXPIRED`, `QUOTE_DECLINED` or `OPERATOR_UNAVAILABLE` the aircraft’s hold is released and an open quote closes `EXPIRED`; to `CONFIRMED` the held time is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `BOOKING_INVALID_TRANSITION` when the status is unchanged or the booking changed meanwhile.",
+        "operationId": "AdminBookingsController_override",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideBookingStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Override the status, with a reason",
         "tags": [
           "admin-bookings"
         ]
@@ -14178,6 +14636,240 @@
           "note"
         ]
       },
+      "AdminBookingCustomerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "phone"
+        ]
+      },
+      "AdminBookingPartyDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AdminBookingSummaryDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "price": {
+            "nullable": true,
+            "description": "Null for a quote request until a quote is accepted.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "customer": {
+            "$ref": "#/components/schemas/AdminBookingCustomerDto"
+          },
+          "operator": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminBookingPartyDto"
+              }
+            ]
+          },
+          "aircraftRegistration": {
+            "type": "string",
+            "nullable": true,
+            "example": "VT-ABC"
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The first departure."
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "assignedToId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The operations owner."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "category",
+          "status",
+          "paymentStatus",
+          "price",
+          "customer",
+          "operator",
+          "aircraftRegistration",
+          "originName",
+          "destinationName",
+          "departureAt",
+          "passengerCount",
+          "assignedToId",
+          "createdAt"
+        ]
+      },
+      "BookingEventType": {
+        "type": "string",
+        "enum": [
+          "STATUS_CHANGED",
+          "OPERATOR_RESPONSE",
+          "QUOTE_ISSUED",
+          "PAYMENT_UPDATE",
+          "NOTE",
+          "MESSAGE",
+          "CHANGE_REQUESTED",
+          "CANCELLATION_REQUESTED"
+        ]
+      },
+      "AdminBookingEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingEventType"
+              }
+            ]
+          },
+          "fromStatus": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "toStatus": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "actorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "actorRole": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "overrideReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "The reason of a status override. Operations and super administrators only; null for finance."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "fromStatus",
+          "toStatus",
+          "actorId",
+          "actorRole",
+          "overrideReason",
+          "createdAt"
+        ]
+      },
+      "BookingNoteDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "createdAt"
+        ]
+      },
       "QuoteStatus": {
         "type": "string",
         "enum": [
@@ -14316,6 +15008,335 @@
           "conditions",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "PaymentPurpose": {
+        "type": "string",
+        "enum": [
+          "FULL",
+          "DEPOSIT",
+          "BALANCE"
+        ]
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "INITIATED",
+          "PENDING",
+          "SUCCEEDED",
+          "FAILED",
+          "REFUND_PENDING",
+          "PARTIALLY_REFUNDED",
+          "REFUNDED"
+        ]
+      },
+      "PaymentReviewReason": {
+        "type": "string",
+        "enum": [
+          "BOOKING_CLOSED",
+          "ALREADY_PAID",
+          "AMOUNT_MISMATCH"
+        ]
+      },
+      "AdminBookingPaymentDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "purpose": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "price": {
+            "description": "The amount of the order, always a `CONFIRMED` price.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "reviewReason": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentReviewReason"
+              }
+            ]
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "purpose",
+          "status",
+          "price",
+          "reviewReason",
+          "paidAt",
+          "createdAt"
+        ]
+      },
+      "AdminBookingDetailDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "price": {
+            "nullable": true,
+            "description": "Null for a quote request until a quote is accepted.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "customer": {
+            "$ref": "#/components/schemas/AdminBookingCustomerDto"
+          },
+          "operator": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminBookingPartyDto"
+              }
+            ]
+          },
+          "aircraftRegistration": {
+            "type": "string",
+            "nullable": true,
+            "example": "VT-ABC"
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The first departure."
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "assignedToId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The operations owner."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bookingMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "paymentModel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentModel"
+              }
+            ]
+          },
+          "itinerary": {
+            "$ref": "#/components/schemas/ItineraryDto"
+          },
+          "cancellationTerms": {
+            "$ref": "#/components/schemas/CancellationTermsDto"
+          },
+          "operatorAcceptedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "passengers": {
+            "nullable": true,
+            "description": "Operations and super administrators; null for finance (rule 8). Document numbers show the last four characters only.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingPassengerDto"
+            }
+          },
+          "specialRequests": {
+            "type": "string",
+            "nullable": true,
+            "description": "Operations and super administrators; null for finance."
+          },
+          "events": {
+            "description": "Oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBookingEventDto"
+            }
+          },
+          "notes": {
+            "nullable": true,
+            "description": "Internal notes by operations, oldest first. Operations and super administrators; null for finance.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingNoteDto"
+            }
+          },
+          "quotes": {
+            "description": "Newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteResponseDto"
+            }
+          },
+          "changeRequests": {
+            "description": "Newest first. For finance, `details` and `decisionNote` are empty and null.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeRequestResponseDto"
+            }
+          },
+          "payments": {
+            "description": "Newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminBookingPaymentDto"
+            }
+          }
+        },
+        "required": [
+          "reference",
+          "category",
+          "status",
+          "paymentStatus",
+          "price",
+          "customer",
+          "operator",
+          "aircraftRegistration",
+          "originName",
+          "destinationName",
+          "departureAt",
+          "passengerCount",
+          "assignedToId",
+          "createdAt",
+          "bookingMode",
+          "paymentModel",
+          "itinerary",
+          "cancellationTerms",
+          "operatorAcceptedAt",
+          "confirmedAt",
+          "cancelledAt",
+          "passengers",
+          "specialRequests",
+          "events",
+          "notes",
+          "quotes",
+          "changeRequests",
+          "payments"
+        ]
+      },
+      "AssignBookingDto": {
+        "type": "object",
+        "properties": {
+          "assigneeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "An active operations user or super administrator; `null` removes the owner."
+          }
+        },
+        "required": [
+          "assigneeId"
+        ]
+      },
+      "BookingNoteInputDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "An internal note: never shown to the customer."
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "OverrideBookingStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the status is overridden. Kept on the timeline and in the audit trail; never put passenger or medical details here."
+          }
+        },
+        "required": [
+          "status",
+          "reason"
         ]
       },
       "BookingMessageDto": {
@@ -14459,27 +15480,6 @@
           "quote",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "BookingNoteDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "body": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "body",
-          "createdAt"
         ]
       },
       "OperatorBookingRequestDetailDto": {
@@ -14701,19 +15701,6 @@
           "conditions"
         ]
       },
-      "BookingNoteInputDto": {
-        "type": "object",
-        "properties": {
-          "note": {
-            "type": "string",
-            "maxLength": 2000,
-            "description": "An internal note: never shown to the customer."
-          }
-        },
-        "required": [
-          "note"
-        ]
-      },
       "CreatePaymentDto": {
         "type": "object",
         "properties": {
@@ -14733,28 +15720,6 @@
           "expectedAmountMinor",
           "currency"
         ]
-      },
-      "PaymentStatus": {
-        "type": "string",
-        "enum": [
-          "INITIATED",
-          "PENDING",
-          "SUCCEEDED",
-          "FAILED",
-          "REFUND_PENDING",
-          "PARTIALLY_REFUNDED",
-          "REFUNDED"
-        ],
-        "description": "Only a verified gateway notice makes it `SUCCEEDED` or `FAILED`; the checkout result makes it `PENDING` at most."
-      },
-      "PaymentPurpose": {
-        "type": "string",
-        "enum": [
-          "FULL",
-          "DEPOSIT",
-          "BALANCE"
-        ],
-        "description": "`FULL` (models A and B) or `DEPOSIT` (model C)."
       },
       "PaymentPriceDto": {
         "type": "object",

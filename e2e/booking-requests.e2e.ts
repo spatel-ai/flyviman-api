@@ -339,7 +339,7 @@ test.describe('operator booking request inbox', () => {
     ).toBe(200);
   });
 
-  test('accepts at the proposed price, once: PRICE_CONFIRMED, audited, customer told', async ({
+  test('accepts at the proposed price, once: price CONFIRMED, on to payment at once, audited, customer told', async ({
     request,
     playwright,
     baseURL,
@@ -352,15 +352,16 @@ test.describe('operator booking request inbox', () => {
     const accepted = await post(request, path, undefined, key);
     expect(accepted.status()).toBe(200);
     const body = (await accepted.json()).data;
+    // Every payment model asks for payment once the price is confirmed.
     expect(body).toMatchObject({
       reference,
-      status: 'PRICE_CONFIRMED',
+      status: 'AWAITING_PAYMENT',
       price: { priceType: 'CONFIRMED', amountMinor: created.price.amountMinor },
     });
     // The same key returns the same answer; a new key is a second accept.
     const repeat = await post(request, path, undefined, key);
     expect(repeat.status()).toBe(200);
-    expect((await repeat.json()).data.status).toBe('PRICE_CONFIRMED');
+    expect((await repeat.json()).data.status).toBe('AWAITING_PAYMENT');
     const again = await post(request, path, undefined, randomUUID());
     expect(again.status()).toBe(409);
     expect((await again.json()).error.code).toBe('BOOKING_INVALID_TRANSITION');
@@ -369,7 +370,11 @@ test.describe('operator booking request inbox', () => {
 
     const own = (await (await customer.get(`bookings/${reference}`)).json())
       .data;
-    expect(own.status).toBe('PRICE_CONFIRMED');
+    // Not confirmed: nothing is paid yet (confirmation rule).
+    expect(own).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
+    });
     expect(own.price).toMatchObject({
       priceType: 'CONFIRMED',
       amountMinor: created.price.amountMinor,
@@ -383,7 +388,12 @@ test.describe('operator booking request inbox', () => {
       row.events
         .filter((event) => event.type === 'STATUS_CHANGED')
         .map((event) => event.toStatus),
-    ).toEqual(['REQUESTED', 'OPERATOR_PENDING', 'PRICE_CONFIRMED']);
+    ).toEqual([
+      'REQUESTED',
+      'OPERATOR_PENDING',
+      'PRICE_CONFIRMED',
+      'AWAITING_PAYMENT',
+    ]);
     const actions = await withPrisma(async (prisma) =>
       (
         await prisma.auditLog.findMany({
@@ -675,7 +685,8 @@ test.describe('quotes', () => {
     const own = (await (await customer.get(`bookings/${reference}`)).json())
       .data;
     expect(own).toMatchObject({
-      status: 'PRICE_CONFIRMED',
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
       price: { priceType: 'CONFIRMED', amountMinor: 59_000_000 },
       cancellationTerms: {
         source: 'OPERATOR_QUOTE',
@@ -850,9 +861,123 @@ test.describe('quotes', () => {
       (await (await customer.get(`bookings/${reference}`)).json()).data.price,
     ).toMatchObject({ priceType: 'CONFIRMED', amountMinor: QUOTE.totalMinor });
   });
+
+  test('rejects while its question waits for the customer', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { reference } = await requested(contexts);
+    const asked = await post(
+      request,
+      `operator/booking-requests/${reference}/clarify`,
+      { message: 'Which terminal?' },
+    );
+    expect(asked.status()).toBe(200);
+    const rejected = await post(
+      request,
+      `operator/booking-requests/${reference}/reject`,
+      { reason: 'Aircraft grounded' },
+    );
+    expect(rejected.status()).toBe(200);
+    expect((await rejected.json()).data.status).toBe('OPERATOR_UNAVAILABLE');
+    const row = await stored(reference);
+    expect(row.holds[0].expiresAt!.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  test('an operator that is not approved is refused the inbox (409)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { reference, trip } = await requested(contexts);
+    const operatorId = await withPrisma(async (prisma) => {
+      const aircraft = await prisma.aircraft.findUniqueOrThrow({
+        where: { id: trip.aircraftId },
+      });
+      await prisma.operator.update({
+        where: { id: aircraft.operatorId },
+        data: { status: 'SUSPENDED' },
+      });
+      return aircraft.operatorId;
+    });
+    try {
+      const calls = [
+        await request.get('operator/booking-requests'),
+        await request.get(`operator/booking-requests/${reference}`),
+        await post(request, `operator/booking-requests/${reference}/reject`, {
+          reason: 'No',
+        }),
+        await post(request, `operator/booking-requests/${reference}/clarify`, {
+          message: 'Which terminal?',
+        }),
+        await post(request, `operator/bookings/${reference}/notes`, {
+          note: 'Call back',
+        }),
+      ];
+      for (const response of calls) {
+        expect(response.status()).toBe(409);
+        expect((await response.json()).error.code).toBe(
+          'OPERATOR_NOT_APPROVED',
+        );
+      }
+      expect((await stored(reference)).status).toBe('OPERATOR_PENDING');
+    } finally {
+      await withPrisma((prisma) =>
+        prisma.operator.update({
+          where: { id: operatorId },
+          data: { status: 'APPROVED' },
+        }),
+      );
+    }
+  });
 });
 
 test.describe('hold-expiry job', () => {
+  test('expires an unpaid booking whose payment window lapsed; a paid one stays', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    // One operator per request, each in its own session.
+    const accept = async () => {
+      const operator = await playwright.request.newContext({ baseURL });
+      const made = await requested({ ...contexts, request: operator });
+      const accepted = await post(
+        operator,
+        `operator/booking-requests/${made.reference}/accept`,
+        undefined,
+        randomUUID(),
+      );
+      expect((await accepted.json()).data.status).toBe('AWAITING_PAYMENT');
+      await lapseHold(made.reference);
+      return made;
+    };
+    const unpaid = await accept();
+    const paid = await accept();
+    // Paid, but the operator's acceptance is not recorded: still waiting,
+    // and never expired by the job once money has arrived.
+    await withPrisma((prisma) =>
+      prisma.booking.update({
+        where: { reference: paid.reference },
+        data: { paymentStatus: 'PAID', operatorAcceptedAt: null },
+      }),
+    );
+    await runJob(request);
+    const expired = await stored(unpaid.reference);
+    expect(expired.status).toBe('EXPIRED');
+    expect(
+      expired.events.find((event) => event.toStatus === 'EXPIRED')?.actorId,
+    ).toBeNull();
+    expect(expired.holds[0].expiresAt!.getTime()).toBeLessThanOrEqual(
+      Date.now(),
+    );
+    expect((await stored(paid.reference)).status).toBe('AWAITING_PAYMENT');
+  });
+
   test('closes a request whose hold lapsed unanswered, once', async ({
     request,
     playwright,

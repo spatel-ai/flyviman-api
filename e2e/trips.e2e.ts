@@ -368,6 +368,123 @@ test.describe('POST /bookings/:reference/cancel', () => {
     );
   });
 
+  test('cancelling closes the operator’s open quote (EXPIRED)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference } = await bookedTrip({
+      request,
+      playwright,
+      baseURL,
+    });
+    const quoted = await request.post(
+      `operator/booking-requests/${reference}/revise-quote`,
+      {
+        headers: await csrfHeaders(request),
+        data: {
+          totalMinor: 61_000_000,
+          currency: 'INR',
+          conditions: {
+            summary: 'Free cancellation.',
+            charges: [],
+            inclusions: [],
+            exclusions: [],
+          },
+        },
+      },
+    );
+    expect(quoted.status()).toBe(201);
+    const sent = (await quoted.json()).data.reference as string;
+    expect(
+      (
+        await cancel(customer, reference, {
+          expectedChargeMinor: 0,
+          currency: 'INR',
+        })
+      ).status(),
+    ).toBe(200);
+    const row = await withPrisma((prisma) =>
+      prisma.quote.findUniqueOrThrow({ where: { reference: sent } }),
+    );
+    expect(row.status).toBe('EXPIRED');
+  });
+
+  test('cancelling waits while a payment is being processed (409)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference } = await bookedTrip({
+      request,
+      playwright,
+      baseURL,
+    });
+    const paymentId = await withPrisma(async (prisma) => {
+      const booking = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+      });
+      const payment = await prisma.payment.create({
+        data: {
+          reference: `FLY-PY-${randomUUID().slice(0, 6).toUpperCase()}`,
+          bookingId: booking.id,
+          provider: 'MOCK',
+          purpose: 'FULL',
+          amountMinor: booking.totalMinor,
+          currency: 'INR',
+          status: 'PENDING',
+          idempotencyKey: `e2e:${randomUUID()}`,
+        },
+      });
+      return payment.id;
+    });
+    const body = { expectedChargeMinor: 0, currency: 'INR' };
+    const refused = await cancel(customer, reference, body);
+    expect(refused.status()).toBe(409);
+    expect((await refused.json()).error.code).toBe(
+      'BOOKING_PAYMENT_IN_PROGRESS',
+    );
+    // Once the gateway has answered, the cancellation goes ahead.
+    await withPrisma((prisma) =>
+      prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: 'FAILED' },
+      }),
+    );
+    expect((await cancel(customer, reference, body)).status()).toBe(200);
+  });
+
+  test('the customer declines a confirmed price before paying: QUOTE_DECLINED, hold released', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { customer, reference } = await bookedTrip(contexts);
+    const decline = async (who: APIRequestContext) =>
+      who.post(`bookings/${reference}/decline`, {
+        headers: await csrfHeaders(who),
+      });
+    // Not while the operator has not answered.
+    const early = await decline(customer);
+    expect(early.status()).toBe(409);
+    expect((await early.json()).error.code).toBe('BOOKING_INVALID_TRANSITION');
+    await setBooking(reference, {
+      status: 'PRICE_CONFIRMED',
+      priceType: 'CONFIRMED',
+    });
+    expect((await decline(await newCustomer(contexts))).status()).toBe(404);
+    const declined = await decline(customer);
+    expect(declined.status()).toBe(200);
+    expect((await declined.json()).data.status).toBe('QUOTE_DECLINED');
+    const holds = await withPrisma((prisma) =>
+      prisma.availabilityBlock.findMany({
+        where: { booking: { reference } },
+      }),
+    );
+    expect(holds[0].expiresAt!.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
   test('a completed booking cannot be cancelled', async ({
     request,
     playwright,
