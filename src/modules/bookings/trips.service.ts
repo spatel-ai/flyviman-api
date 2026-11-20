@@ -13,7 +13,6 @@ import {
   ChangeRequestKind,
   ChangeRequestStatus,
   OperatorStatus,
-  PaymentStatus,
   PriceType,
   Role,
 } from '../../generated/prisma/enums.js';
@@ -29,6 +28,7 @@ import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import { evaluateCancellation } from './cancellation.js';
 import { readPaidMinor } from './paid-amount.js';
+import { paymentInProgressWhere } from './payment-in-progress.js';
 import {
   changeRequestView,
   decisionNotes,
@@ -596,7 +596,7 @@ async function assertNoPaymentPending(
   bookingId: string,
 ): Promise<void> {
   const pending = await tx.payment.count({
-    where: { bookingId, status: PaymentStatus.PENDING },
+    where: { bookingId, ...paymentInProgressWhere() },
   });
   if (pending > 0) {
     throw new AppException(
@@ -657,7 +657,7 @@ function explain(
   }
   const percent = outcome.appliedCharge.chargePercent;
   if (!outcome.amountKnown) {
-    return `The operator’s terms charge ${percent}% at this notice, but the price is not confirmed yet (${priceType}), so nothing is charged.`;
+    return `Flyviman’s cancellation terms charge ${percent}% at this notice, but the price is not confirmed yet (${priceType}), so nothing is charged.`;
   }
-  return `The operator’s terms charge ${percent}% of the confirmed price at this notice.`;
+  return `Flyviman’s cancellation terms charge ${percent}% of the confirmed price at this notice.`;
 }

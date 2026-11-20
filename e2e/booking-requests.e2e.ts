@@ -1070,6 +1070,52 @@ test.describe('hold-expiry job', () => {
     expect((await stored(paid.reference)).status).toBe('AWAITING_PAYMENT');
   });
 
+  test('waits for a payment in progress, but not for a stale one (rules 2 and 5)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    // A lapsed payment window with a payment `PENDING` since `createdAt`.
+    const paying = async (createdAt: Date) => {
+      const operator = await playwright.request.newContext({ baseURL });
+      const made = await requested({ ...contexts, request: operator });
+      const accepted = await post(
+        operator,
+        `operator/booking-requests/${made.reference}/accept`,
+        undefined,
+        randomUUID(),
+      );
+      expect((await accepted.json()).data.status).toBe('AWAITING_PAYMENT');
+      await lapseHold(made.reference);
+      await withPrisma(async (prisma) => {
+        const booking = await prisma.booking.findUniqueOrThrow({
+          where: { reference: made.reference },
+        });
+        await prisma.payment.create({
+          data: {
+            reference: `PAY-${randomUUID()}`,
+            bookingId: booking.id,
+            provider: 'MOCK',
+            providerOrderId: `order_${randomUUID()}`,
+            purpose: 'FULL',
+            amountMinor: 100_000n,
+            currency: 'INR',
+            status: 'PENDING',
+            idempotencyKey: randomUUID(),
+            createdAt,
+          },
+        });
+      });
+      return made;
+    };
+    const fresh = await paying(new Date());
+    const stale = await paying(new Date(Date.now() - 49 * 3_600_000));
+    await runJob(request);
+    expect((await stored(fresh.reference)).status).toBe('AWAITING_PAYMENT');
+    expect((await stored(stale.reference)).status).toBe('EXPIRED');
+  });
+
   test('closes a request whose hold lapsed unanswered, once', async ({
     request,
     playwright,

@@ -7,8 +7,8 @@ import type { CancellationCharge, CancellationTerms } from './booking-json.js';
  * and the cancel route both call it, the cancel route inside its
  * transaction.
  *
- * The operator's terms apply from the moment the request is sent (owner,
- * 2026-11-20). A charge is a percentage of the price, so it is money only
+ * Flyviman's cancellation terms (its own tier table, D-172) apply from the
+ * moment the request is sent (owner, 2026-11-20). A charge is a percentage of the price, so it is money only
  * once the price is `CONFIRMED`: before that the rule that would apply is
  * shown and the charge is 0, and `amountKnown` says so. No amount is ever
  * invented.

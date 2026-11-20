@@ -25,6 +25,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { REDIS } from '../../redis/redis.module.js';
 import { AuditService } from '../audit/audit.service.js';
+import { PAYMENT_IN_PROGRESS_MAX_AGE_HOURS } from '../bookings/payment-in-progress.js';
 import {
   BookingsService,
   type PayableBookingRow,
@@ -49,8 +50,11 @@ export const REFUSAL_LOG_WINDOW_MS = 60_000;
  * after its last change: long enough for the checkout and its notice.
  */
 export const PAYMENT_SWEEP_AFTER_MINUTES = 15;
-/** ...and stops asking about an order nobody paid after this long. */
-export const PAYMENT_SWEEP_MAX_AGE_HOURS = 48;
+/**
+ * ...and stops asking about an order nobody paid after this long; the
+ * booking hold-expiry job waits for a pending payment as long.
+ */
+export const PAYMENT_SWEEP_MAX_AGE_HOURS = PAYMENT_IN_PROGRESS_MAX_AGE_HOURS;
 const SWEEP_LOCK_KEY = 'payments:sweep:lock';
 const SWEEP_LOCK_SECONDS = 5 * 60;
 const SWEEP_BATCH = 100;

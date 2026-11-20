@@ -56,6 +56,10 @@ import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
+import {
+  holdsHoldExpiry,
+  paymentInProgressWhere,
+} from './payment-in-progress.js';
 import type { BookingPriceDto } from './dto/booking.dto.js';
 import type { OverridePriceDto } from './dto/price-override.dto.js';
 import type {
@@ -871,7 +875,9 @@ export class BookingRequestsService {
    *    becomes `EXPIRED`;
    * 4. a booking `AWAITING_PAYMENT` with nothing paid whose hold (the
    *    payment window, renewed when the price was confirmed) lapsed
-   *    becomes `EXPIRED`.
+   *    becomes `EXPIRED`, unless a payment is in progress
+   *    (`payment-in-progress.ts`): it waits for the gateway's answer, for
+   *    `PAYMENT_IN_PROGRESS_MAX_AGE_HOURS` at most (rules 2 and 5).
    * Holds are released and the customer told. Each change is guarded by
    * the status read, so a second run (or a run racing an answer) changes
    * nothing twice. One instance at a time (Redis lock).
@@ -922,6 +928,7 @@ export class BookingRequestsService {
               {
                 status: BookingStatus.AWAITING_PAYMENT,
                 paymentStatus: BookingPaymentStatus.UNPAID,
+                payments: { none: paymentInProgressWhere(now) },
               },
             ],
             // Only requests that held the aircraft and whose hold lapsed;
@@ -1022,9 +1029,16 @@ export class BookingRequestsService {
           where: { id: row.id },
           select: { status: true, paymentStatus: true },
         });
+        // A payment waiting on the gateway may still succeed: never expire
+        // the booking under it, until the payment is stale.
+        const payments = await tx.payment.findMany({
+          where: { bookingId: row.id, ...paymentInProgressWhere() },
+          select: { status: true, createdAt: true },
+        });
         if (
           current.status !== BookingStatus.AWAITING_PAYMENT ||
-          current.paymentStatus !== BookingPaymentStatus.UNPAID
+          current.paymentStatus !== BookingPaymentStatus.UNPAID ||
+          holdsHoldExpiry(payments, now)
         ) {
           return [];
         }
