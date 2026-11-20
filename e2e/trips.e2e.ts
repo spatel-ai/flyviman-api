@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import type { ConfigService } from '@nestjs/config';
 import { APIRequestContext, expect, test } from '@playwright/test';
+import { FieldCipher, isEncrypted } from '../src/common/crypto/field-cipher.js';
+import { encryptLegacyFreeText } from '../src/modules/bookings/free-text-backfill.js';
 import { registerCustomer } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { approvedOperator } from './support/fleet.js';
@@ -538,5 +541,136 @@ test.describe('Change requests', () => {
         })
       ).status(),
     ).toBe(409);
+  });
+
+  test('the customer’s and the decision’s words are encrypted at rest; older plain rows still read', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference } = await bookedTrip({
+      request,
+      playwright,
+      baseURL,
+    });
+    const words = `Please add a stop at Jaipur ${randomUUID().slice(0, 6)}`;
+    const created = await askChange(customer, reference, words);
+    expect(created.status()).toBe(201);
+    const change = (await created.json()).data;
+    expect(change.details).toBe(words);
+    const answered = await decide(request, 'operator', change.id, {
+      decision: 'REJECTED',
+      note: 'No stop is possible on this aircraft.',
+    });
+    expect(answered.status()).toBe(200);
+    expect(
+      (
+        await cancel(customer, reference, {
+          expectedChargeMinor: 0,
+          currency: 'INR',
+          reason: 'Plans changed at work',
+        })
+      ).status(),
+    ).toBe(200);
+
+    const stored = () =>
+      withPrisma(async (prisma) => {
+        const booking = await prisma.booking.findUniqueOrThrow({
+          where: { reference },
+          include: { changeRequests: true, events: true },
+        });
+        return {
+          reason: booking.cancellationReason as string,
+          details: booking.changeRequests.map((row) => row.details),
+          events: JSON.stringify(booking.events.map((event) => event.payload)),
+        };
+      });
+    const atRest = await stored();
+    for (const value of [atRest.reason, ...atRest.details]) {
+      expect(isEncrypted(value)).toBe(true);
+    }
+    const everything = JSON.stringify(atRest);
+    for (const plain of [
+      words,
+      'No stop is possible',
+      'Plans changed at work',
+      'Closed because',
+      'Cancelled by the customer',
+    ]) {
+      expect(everything).not.toContain(plain);
+    }
+
+    const shown = async () =>
+      (await (await customer.get(`bookings/${reference}`)).json()).data
+        .changeRequests as {
+        id: string;
+        details: string;
+        decisionNote: string;
+      }[];
+    expect(await shown()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: change.id,
+          details: words,
+          decisionNote: 'No stop is possible on this aircraft.',
+        }),
+        expect.objectContaining({
+          kind: 'CANCELLATION',
+          details: 'Cancelled by the customer.',
+        }),
+      ]),
+    );
+
+    // Rows written before encryption: plain details and reason, and a
+    // plain note on an (append-only) event.
+    await withPrisma(async (prisma) => {
+      await prisma.changeRequest.update({
+        where: { id: change.id },
+        data: { details: 'An older plain request' },
+      });
+      await prisma.booking.update({
+        where: { reference },
+        data: { cancellationReason: 'An older plain reason' },
+      });
+      const { id: bookingId } = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+        select: { id: true },
+      });
+      await prisma.bookingEvent.create({
+        data: {
+          bookingId,
+          type: 'NOTE',
+          payload: {
+            changeRequestId: change.id,
+            decision: 'REJECTED',
+            note: 'An older plain note',
+          },
+        },
+      });
+    });
+    expect((await shown()).find((row) => row.id === change.id)).toMatchObject({
+      details: 'An older plain request',
+      decisionNote: 'An older plain note',
+    });
+
+    // The start-up data migration encrypts the mutable columns, once.
+    const cipher = new FieldCipher({
+      getOrThrow: () => process.env.DATA_ENCRYPTION_KEY,
+    } as unknown as ConfigService);
+    const migrate = () =>
+      withPrisma((prisma) =>
+        encryptLegacyFreeText(prisma, (plain) => cipher.encrypt(plain)),
+      );
+    expect(await migrate()).toBeGreaterThanOrEqual(2);
+    const migrated = await stored();
+    expect(isEncrypted(migrated.reason)).toBe(true);
+    expect(migrated.details.every(isEncrypted)).toBe(true);
+    expect(JSON.stringify(migrated.details)).not.toContain('older plain');
+    expect(cipher.decrypt(migrated.reason)).toBe('An older plain reason');
+    await migrate();
+    expect((await stored()).details).toEqual(migrated.details);
+    expect((await shown()).find((row) => row.id === change.id)).toMatchObject({
+      details: 'An older plain request',
+    });
   });
 });

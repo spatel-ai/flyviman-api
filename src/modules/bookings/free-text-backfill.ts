@@ -1,15 +1,8 @@
 import {
-  Injectable,
-  Logger,
-  type OnApplicationBootstrap,
-} from '@nestjs/common';
-import {
   ENCRYPTED_PATTERN,
-  FieldCipher,
   isEncrypted,
 } from '../../common/crypto/field-cipher.js';
 import { Prisma, type PrismaClient } from '../../generated/prisma/client.js';
-import { PrismaService } from '../../prisma/prisma.service.js';
 
 const BATCH = 500;
 
@@ -25,9 +18,11 @@ export const FREE_TEXT_COLUMNS = [
 /**
  * Data migration for `FREE_TEXT_COLUMNS`, as `encryptLegacySpecialAssistance`
  * does for passengers: encrypts every value still in plain text and returns
- * how many it changed. Safe to repeat (ciphertext is never selected again),
- * and each row is replaced only if it still holds the value read, so
- * instances starting together never overwrite each other. Raw SQL, so
+ * how many it changed. Runs when the API starts
+ * (`BookingsService.onApplicationBootstrap`). Safe to repeat (ciphertext is
+ * never selected again), and each row is replaced only if it still holds
+ * the value read, so instances starting together never overwrite each
+ * other. Raw SQL, so
  * `updatedAt` keeps the time of the real change. Values are never logged.
  * Decision notes are kept in append-only booking events and stay as written;
  * they are read as plain text (`change-requests.ts`).
@@ -59,35 +54,4 @@ export async function encryptLegacyFreeText(
     }
   }
   return changed;
-}
-
-/**
- * Runs the data migration before the API accepts requests. A failure stops
- * the start; only the error's name is kept, since a database error can
- * repeat the value.
- */
-@Injectable()
-export class FreeTextBackfill implements OnApplicationBootstrap {
-  private readonly logger = new Logger(FreeTextBackfill.name);
-
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly cipher: FieldCipher,
-  ) {}
-
-  async onApplicationBootstrap(): Promise<void> {
-    let changed: number;
-    try {
-      changed = await encryptLegacyFreeText(this.prisma, (plain) =>
-        this.cipher.encrypt(plain),
-      );
-    } catch (error) {
-      throw new Error(
-        `Encrypting booking free text failed: ${error instanceof Error ? error.name : 'unknown error'}`,
-      );
-    }
-    if (changed > 0) {
-      this.logger.log(`Encrypted ${changed} booking free-text values`);
-    }
-  }
 }
