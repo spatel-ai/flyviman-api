@@ -1293,6 +1293,9 @@ enum PaymentReviewReason {
   ALREADY_PAID
   /// The gateway reported another amount or currency than the order's.
   AMOUNT_MISMATCH
+  /// A second capture, with another gateway payment id, on an order
+  /// already paid: money moved twice.
+  DUPLICATE_CAPTURE
 }
 
 enum PaymentPurpose {
