@@ -821,7 +821,7 @@
     },
     "/api/v1/admin/content/policies/{slug}": {
       "put": {
-        "description": "Always a new version: the text customers accepted is kept and never overwritten. The version is the UTC date, with `.2`, `.3` for further versions that day. Sending the current text again changes nothing. Audited.",
+        "description": "Always a new version: the text customers accepted is kept and never overwritten. The version is the UTC date, with `.2`, `.3` for further versions that day. Send `baseVersion` (the `versionCount` loaded) to be refused with 409 `CONTENT_VERSION_CONFLICT` if another version was published meanwhile; nothing is written. Sending the current text again is refused with 422 `CONTENT_UNCHANGED`. Audited.",
         "operationId": "AdminPoliciesController_publishPolicy",
         "parameters": [
           {
@@ -6159,6 +6159,12 @@
             "type": "string",
             "maxLength": 50000,
             "description": "Plain text with blank lines between paragraphs."
+          },
+          "baseVersion": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000,
+            "description": "The `versionCount` the editor loaded (0 for a policy with no version). When sent and another version has been published since, 409 `CONTENT_VERSION_CONFLICT` and nothing is written. Leave it out to publish regardless."
           }
         },
         "required": [

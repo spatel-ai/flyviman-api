@@ -195,7 +195,7 @@ export class AdminPoliciesController {
   @ApiOperation({
     summary: 'Publish a new version of a policy',
     description:
-      'Always a new version: the text customers accepted is kept and never overwritten. The version is the UTC date, with `.2`, `.3` for further versions that day. Sending the current text again changes nothing. Audited.',
+      'Always a new version: the text customers accepted is kept and never overwritten. The version is the UTC date, with `.2`, `.3` for further versions that day. Send `baseVersion` (the `versionCount` loaded) to be refused with 409 `CONTENT_VERSION_CONFLICT` if another version was published meanwhile; nothing is written. Sending the current text again is refused with 422 `CONTENT_UNCHANGED`. Audited.',
   })
   @ApiOkResponse({ type: AdminPolicyResponseDto })
   async publishPolicy(

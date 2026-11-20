@@ -173,9 +173,16 @@ export class AdminContentService {
   /**
    * Publishes a new version. The text a customer accepted is never changed:
    * the current text is kept as a `PolicyVersion` first, and the new text
-   * gets a new version string. Sending the current text again changes nothing.
+   * gets a new version string. `baseVersion`, when sent, is the version count
+   * the editor loaded: if another version was published since, 409
+   * `CONTENT_VERSION_CONFLICT`. Sending the current text again is refused
+   * (422 `CONTENT_UNCHANGED`). Both are checked under the per-policy lock, so
+   * two publishes at once cannot both pass.
    */
-  async publishPolicy(slug: string, input: { title: string; body: string }) {
+  async publishPolicy(
+    slug: string,
+    input: { title: string; body: string; baseVersion?: number },
+  ) {
     return this.prisma.$transaction(async (tx) => {
       // One publisher per policy at a time.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`policy:${slug}`}))`;
@@ -188,6 +195,16 @@ export class AdminContentService {
         select: { version: true },
       });
       const used = new Set(versions.map((row) => row.version));
+      // The count the editor saw (`listPolicies`), before anything is written.
+      const latest = Math.max(versions.length, current?.version ? 1 : 0);
+      if (input.baseVersion !== undefined && input.baseVersion !== latest) {
+        throw new AppException(
+          'CONTENT_VERSION_CONFLICT',
+          'Another version of this policy was published after you opened it. Reload it and make your changes again.',
+          HttpStatus.CONFLICT,
+          [{ field: 'baseVersion', issue: `The latest version is ${latest}.` }],
+        );
+      }
       if (
         current?.version &&
         current.publishedAt &&
@@ -209,8 +226,13 @@ export class AdminContentService {
         current.title === input.title &&
         current.body === input.body
       ) {
-        return { item: current, versionCount: used.size };
+        throw new AppException(
+          'CONTENT_UNCHANGED',
+          'This text is already the published version.',
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
       }
+      const text = { title: input.title, body: input.body };
 
       let version = isoDay();
       for (let n = 2; used.has(version); n += 1) version = `${isoDay()}.${n}`;
@@ -227,8 +249,8 @@ export class AdminContentService {
       });
       const item = await tx.contentItem.upsert({
         where: { kind_slug: key },
-        create: { ...key, ...input, version, publishedAt },
-        update: { ...input, version, publishedAt },
+        create: { ...key, ...text, version, publishedAt },
+        update: { ...text, version, publishedAt },
       });
       await this.audit.record(
         {

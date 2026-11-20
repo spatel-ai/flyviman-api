@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { type APIRequestContext, expect, test } from '@playwright/test';
 import { withPrisma } from './support/db.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
@@ -144,15 +144,13 @@ test.describe('policies', () => {
     expect(one.version).toBe(new Date().toISOString().slice(0, 10));
     expect(one.versionCount).toBe(2);
 
-    // The same text again is not a new version.
+    // The same text again is not a new version: refused, nothing written.
     const again = await request.put(`admin/content/policies/${slug}`, {
       headers,
       data: { title: 'New title', body: 'New text.' },
     });
-    expect((await again.json()).data).toMatchObject({
-      version: one.version,
-      versionCount: 2,
-    });
+    expect(again.status()).toBe(422);
+    expect((await again.json()).error.code).toBe('CONTENT_UNCHANGED');
 
     const second = await request.put(`admin/content/policies/${slug}`, {
       headers,
@@ -208,6 +206,143 @@ test.describe('policies', () => {
       data: { title: 'T', body: 'B' },
     });
     expect(bad.status()).toBe(400);
+  });
+});
+
+test.describe('policy versions and concurrent editors', () => {
+  const put = async (
+    request: APIRequestContext,
+    slug: string,
+    data: Record<string, unknown>,
+  ) =>
+    request.put(`admin/content/policies/${slug}`, {
+      headers: await csrfHeaders(request),
+      data,
+    });
+  const stored = (slug: string) =>
+    withPrisma(async (prisma) => ({
+      versions: await prisma.policyVersion.count({ where: { slug } }),
+      audits: await prisma.auditLog.count({
+        where: { entityType: 'Policy', entityId: slug },
+      }),
+    }));
+
+  test('a stale base version is refused with 409 and writes nothing', async ({
+    request,
+  }) => {
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    await signIn(request, 'superAdmin');
+
+    // A new policy: the editor loaded nothing, so its base is 0.
+    const first = await put(request, slug, {
+      title: 'Terms',
+      body: 'One.',
+      baseVersion: 0,
+    });
+    expect(first.status()).toBe(200);
+    expect((await first.json()).data.versionCount).toBe(1);
+
+    // A second editor still holding base 0 is refused.
+    const stale = await put(request, slug, {
+      title: 'Terms',
+      body: 'Two, from a stale screen.',
+      baseVersion: 0,
+    });
+    expect(stale.status()).toBe(409);
+    const error = (await stale.json()).error;
+    expect(error.code).toBe('CONTENT_VERSION_CONFLICT');
+    expect(error.details).toEqual([
+      { field: 'baseVersion', issue: 'The latest version is 1.' },
+    ]);
+    // A base ahead of the latest is just as stale.
+    expect(
+      (
+        await put(request, slug, { title: 'T', body: 'x', baseVersion: 5 })
+      ).status(),
+    ).toBe(409);
+    expect(await stored(slug)).toEqual({ versions: 1, audits: 1 });
+
+    // With the current base it publishes; without one it publishes as before.
+    const current = await put(request, slug, {
+      title: 'Terms',
+      body: 'Two.',
+      baseVersion: 1,
+    });
+    expect(current.status()).toBe(200);
+    expect((await current.json()).data.versionCount).toBe(2);
+    const noBase = await put(request, slug, { title: 'Terms', body: 'Three.' });
+    expect(noBase.status()).toBe(200);
+    expect((await noBase.json()).data.versionCount).toBe(3);
+
+    // The stale-base check comes before the unchanged-text check.
+    const both = await put(request, slug, {
+      title: 'Terms',
+      body: 'Three.',
+      baseVersion: 2,
+    });
+    expect((await both.json()).error.code).toBe('CONTENT_VERSION_CONFLICT');
+    const unchanged = await put(request, slug, {
+      title: 'Terms',
+      body: 'Three.',
+      baseVersion: 3,
+    });
+    expect(unchanged.status()).toBe(422);
+    expect((await unchanged.json()).error.code).toBe('CONTENT_UNCHANGED');
+    // A changed title alone is a new version.
+    const retitled = await put(request, slug, {
+      title: 'Terms of carriage',
+      body: 'Three.',
+      baseVersion: 3,
+    });
+    expect((await retitled.json()).data.versionCount).toBe(4);
+    expect(await stored(slug)).toEqual({ versions: 4, audits: 4 });
+
+    for (const baseVersion of [-1, 1.5, '2', null]) {
+      const bad = await put(request, slug, {
+        title: 'Terms',
+        body: 'Four.',
+        baseVersion,
+      });
+      expect(bad.status(), String(baseVersion)).toBe(400);
+      expect((await bad.json()).error.code).toBe('VALIDATION_ERROR');
+    }
+  });
+
+  test('two editors publishing from the same base at once: one wins, one gets 409', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    await signIn(request, 'superAdmin');
+    expect(
+      (
+        await put(request, slug, { title: 'T', body: 'Base.', baseVersion: 0 })
+      ).status(),
+    ).toBe(200);
+
+    const other = await playwright.request.newContext({ baseURL });
+    await signIn(other, 'superAdmin');
+    const [a, b] = await Promise.all([
+      put(request, slug, { title: 'T', body: 'Editor A.', baseVersion: 1 }),
+      put(other, slug, { title: 'T', body: 'Editor B.', baseVersion: 1 }),
+    ]);
+    expect([a.status(), b.status()].sort()).toEqual([200, 409]);
+    const loser = a.status() === 409 ? a : b;
+    expect((await loser.json()).error.code).toBe('CONTENT_VERSION_CONFLICT');
+    expect(await stored(slug)).toEqual({ versions: 2, audits: 2 });
+
+    // Without a base, two at once both publish, each as its own version.
+    const [c, d] = await Promise.all([
+      put(request, slug, { title: 'T', body: 'Editor C.' }),
+      put(other, slug, { title: 'T', body: 'Editor D.' }),
+    ]);
+    expect([c.status(), d.status()]).toEqual([200, 200]);
+    const versions = await withPrisma((prisma) =>
+      prisma.policyVersion.findMany({ where: { slug } }),
+    );
+    expect(new Set(versions.map((v) => v.version)).size).toBe(4);
+    await other.dispose();
   });
 });
 
