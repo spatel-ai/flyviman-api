@@ -23,6 +23,7 @@ import {
   OperatorStatus,
   PriceType,
   QuoteStatus,
+  Role,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { REDIS } from '../../redis/redis.module.js';
@@ -424,9 +425,11 @@ export class BookingRequestsService {
    * A price set by Flyviman staff (M10; state-machines.md, Quote): a new
    * quote that supersedes the open one, never an edit of it, with its own
    * calculation (`PricingService.saveOverride`) holding who set it and why.
-   * Only while the request waits for a quote (`OPERATOR_PENDING`) and
-   * nothing is paid, so the customer accepts or declines it as any quote;
-   * the conditions are carried from the latest quote unless given. Rechecks
+   * Only while the request waits for an answer (`OPERATOR_PENDING`), once
+   * the operator has quoted (so the operator's acceptance recorded when the
+   * customer accepts is real), and before anything is paid; the customer
+   * accepts or declines it as any quote. The conditions are carried from the
+   * latest quote unless given. Rechecks
    * the aircraft and the hold (rule 3). Audited with before, after and the
    * reason (`booking.price_override`).
    */
@@ -453,6 +456,19 @@ export class BookingRequestsService {
           if (row.paymentStatus !== BookingPaymentStatus.UNPAID) {
             throw invalidTransition('a payment has been made');
           }
+          // Only once the operator has quoted: accepting a quote records the
+          // operator's acceptance, which an override alone must never stand
+          // in for (state-machines.md, confirmation rule 1).
+          const operatorQuoted = await tx.bookingEvent.count({
+            where: {
+              bookingId: row.id,
+              type: BookingEventType.QUOTE_ISSUED,
+              actorRole: { in: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF] },
+            },
+          });
+          if (operatorQuoted === 0) {
+            throw invalidTransition('the operator has not quoted yet');
+          }
           const departure = departureOf(row);
           if (
             requested &&
@@ -471,23 +487,12 @@ export class BookingRequestsService {
               ],
             );
           }
+          // The operator has quoted, so there is a latest quote to carry
+          // the conditions from (rule 9).
           const latest = row.quotes[0] ?? null;
           const conditions =
             input.conditions ?? (latest && this.quotes.conditionsOf(latest));
-          if (!conditions || !conditions.summary) {
-            throw new AppException(
-              'VALIDATION_ERROR',
-              'The request is not valid.',
-              HttpStatus.BAD_REQUEST,
-              [
-                {
-                  field: 'conditions',
-                  issue:
-                    'required: the booking has no quote to carry them from',
-                },
-              ],
-            );
-          }
+          if (!conditions) throw quoteNotFound();
           const validUntil = quoteValidUntil(
             now,
             departure,

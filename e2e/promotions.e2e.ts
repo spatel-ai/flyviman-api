@@ -487,6 +487,59 @@ test.describe('promotions: customers use a code', () => {
   });
 });
 
+test.describe('promotions: caps under concurrency', () => {
+  test('two bookings at once on a code with one use left: one wins', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const finance = await as(contexts, 'finance');
+    const once = await createPromotion(finance, { maxUses: 1 });
+    const trips = [
+      await pricedTrip(contexts),
+      await pricedTrip(await anotherOperator(contexts)),
+    ];
+    const customers = [
+      await newCustomer(contexts),
+      await newCustomer(contexts),
+    ];
+    // Both previews pass: the cap is decided under the promotion's lock.
+    const totals: number[] = [];
+    for (const [index, trip] of trips.entries()) {
+      const previewed = await preview(
+        customers[index],
+        trip.searched,
+        once.code,
+      );
+      expect(previewed.status()).toBe(200);
+      totals.push((await previewed.json()).data.price.amountMinor);
+    }
+    const responses = await Promise.all(
+      trips.map((trip, index) =>
+        book(customers[index], trip.searched, totals[index], once.code),
+      ),
+    );
+    const statuses = responses
+      .map((response) => response.status())
+      .sort((a, b) => a - b);
+    expect(statuses).toEqual([201, 422]);
+    const loser = responses.find((response) => response.status() === 422)!;
+    expect((await loser.json()).error.code).toBe('PROMO_CODE_LIMIT_REACHED');
+    const stored = await withPrisma(async (prisma) => ({
+      redemptions: await prisma.promotionRedemption.count({
+        where: { promotionId: once.id },
+      }),
+      bookings: await prisma.booking.count({
+        where: {
+          aircraftId: { in: trips.map((trip) => trip.trip.aircraftId) },
+        },
+      }),
+    }));
+    expect(stored).toEqual({ redemptions: 1, bookings: 1 });
+  });
+});
+
 test.describe('price override', () => {
   async function requested(contexts: Contexts) {
     const { trip, searched } = await pricedTrip(contexts);
@@ -502,6 +555,20 @@ test.describe('price override', () => {
     return { trip, customer, reference: created.reference as string };
   }
 
+  /** The operator (`request`) quotes the request. */
+  async function operatorQuote(request: APIRequestContext, reference: string) {
+    const response = await post(
+      request,
+      `operator/booking-requests/${reference}/revise-quote`,
+      { totalMinor: 61_000_000, currency: 'INR', conditions: CONDITIONS },
+    );
+    expect(response.status()).toBe(201);
+    return (await response.json()).data as {
+      reference: string;
+      conditions: unknown;
+    };
+  }
+
   test('finance sets a new price with a reason: a new quote and calculation, audited', async ({
     request,
     playwright,
@@ -511,13 +578,21 @@ test.describe('price override', () => {
     const { customer, reference } = await requested(contexts);
     const finance = await as(contexts, 'finance');
 
-    // No quote yet to carry conditions from.
-    const bare = await post(
+    // Not before the operator has answered: accepting the override would
+    // otherwise record an operator acceptance that never happened.
+    const early = await post(
       finance,
       `admin/bookings/${reference}/price-override`,
       { totalMinor: 40_000_000, currency: 'INR', reason: 'Goodwill' },
     );
-    expect(bare.status()).toBe(400);
+    expect(early.status()).toBe(409);
+    expect((await early.json()).error).toMatchObject({
+      code: 'BOOKING_INVALID_TRANSITION',
+      details: [{ field: 'status', issue: 'the operator has not quoted yet' }],
+    });
+    const first = await operatorQuote(request, reference);
+
+    // A reason is required.
     expect(
       (
         await post(finance, `admin/bookings/${reference}/price-override`, {
@@ -535,7 +610,7 @@ test.describe('price override', () => {
         totalMinor: 40_000_000,
         currency: 'INR',
         reason: 'Goodwill after a delay',
-        conditions: CONDITIONS,
+        conditions: { ...CONDITIONS, summary: 'No charge until departure.' },
       },
     );
     expect(overridden.status()).toBe(200);
@@ -545,7 +620,7 @@ test.describe('price override', () => {
       status: 'SENT',
       open: true,
       price: { priceType: 'QUOTE', amountMinor: 40_000_000, currency: 'INR' },
-      conditions: { summary: CONDITIONS.summary },
+      conditions: { summary: 'No charge until departure.' },
     });
 
     const stored = await withPrisma(async (prisma) => {
@@ -582,7 +657,8 @@ test.describe('price override', () => {
     expect(stored.audit).toMatchObject({
       reason: 'Goodwill after a delay',
       before: expect.objectContaining({
-        totalMinor: Number(original.totalMinor),
+        totalMinor: 61_000_000,
+        quoteReference: first.reference,
       }),
       after: expect.objectContaining({
         totalMinor: 40_000_000,
@@ -610,13 +686,7 @@ test.describe('price override', () => {
   }) => {
     const contexts = { request, playwright, baseURL };
     const { customer, reference } = await requested(contexts);
-    const operatorQuote = await post(
-      request,
-      `operator/booking-requests/${reference}/revise-quote`,
-      { totalMinor: 61_000_000, currency: 'INR', conditions: CONDITIONS },
-    );
-    expect(operatorQuote.status()).toBe(201);
-    const first = (await operatorQuote.json()).data;
+    const first = await operatorQuote(request, reference);
 
     const ops = await as(contexts, 'ops');
     const overridden = await post(
@@ -662,6 +732,7 @@ test.describe('price override', () => {
   }) => {
     const contexts = { request, playwright, baseURL };
     const { customer, reference } = await requested(contexts);
+    await operatorQuote(request, reference);
     const body = {
       totalMinor: 40_000_000,
       currency: 'INR',

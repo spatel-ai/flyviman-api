@@ -61,7 +61,7 @@ export class OverridePriceDto {
   @ApiPropertyOptional({
     type: QuoteConditionsInputDto,
     description:
-      'The conditions shown with the price (rule 9). Left out: those of the booking’s latest quote; required when it has none.',
+      'The conditions shown with the price (rule 9). Left out: those of the booking’s latest quote.',
   })
   @OptionalNotNull()
   @ValidateNested()
