@@ -1,4 +1,5 @@
 import type { NotificationChannel } from '../../generated/prisma/enums.js';
+import { eventTemplates } from './event-templates.js';
 
 export interface TemplateDefinition {
   key: string;
@@ -14,7 +15,7 @@ export interface TemplateDefinition {
  * `{{name}}`. SMS and WhatsApp wording must be registered with the provider
  * before launch in India.
  */
-export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
+const WRITTEN_TEMPLATES: TemplateDefinition[] = [
   {
     key: 'auth.verification_code',
     channel: 'EMAIL',
@@ -322,6 +323,12 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     subject: 'New enquiry {{reference}}: {{topic}}',
     body: 'A new enquiry arrived from the contact page.\nReference: {{reference}}\nTopic: {{topic}}\nReceived: {{receivedAt}}\nName: {{name}}\nEmail: {{email}}\nPhone: {{phone}}\n\n{{message}}',
   },
+];
+
+/** The written templates and the ones the notification matrix adds (`matrix.ts`). */
+export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
+  ...WRITTEN_TEMPLATES,
+  ...eventTemplates(WRITTEN_TEMPLATES),
 ];
 
 /**

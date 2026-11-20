@@ -67,6 +67,46 @@ describe('priceOperatorQuote (D-172 B)', () => {
     });
   });
 
+  it("keeps the booking's promotion code: after tax-free charges, before tax, capped with any discount at Flyviman's charges", () => {
+    const promotion = {
+      id: 'promo1',
+      code: 'WELCOME',
+      name: 'Welcome offer',
+      kind: 'FIXED' as const,
+      amountMinor: 1_000_000,
+    };
+    const result = priceOperatorQuote({
+      operatorPriceMinor: 40_000_000,
+      rules: resolved([COMMISSION, TAX]),
+      promotion,
+    });
+    // 40,00,000 + 4,00,000 fee − 1,00,000 code = 43,00,000; 18% GST on it.
+    expect(result).toMatchObject({
+      discountMinor: 1_000_000,
+      taxMinor: 7_740_000,
+      totalMinor: 50_740_000,
+      operatorPayableMinor: 40_000_000,
+      platformRevenueMinor: 3_000_000,
+    });
+    expect(result.breakdown).toContainEqual(
+      expect.objectContaining({ code: 'PROMOTION', amountMinor: -1_000_000 }),
+    );
+    expect(result.appliedRules).toContainEqual(
+      expect.objectContaining({ id: 'promo1', type: 'PROMOTION' }),
+    );
+    // Never more than Flyviman earns: the operator's payable never moves.
+    const capped = priceOperatorQuote({
+      operatorPriceMinor: 40_000_000,
+      rules: resolved([COMMISSION, TAX]),
+      promotion: { ...promotion, amountMinor: 9_000_000 },
+    });
+    expect(capped).toMatchObject({
+      discountMinor: 4_000_000,
+      platformRevenueMinor: 0,
+      operatorPayableMinor: 40_000_000,
+    });
+  });
+
   it('rounds each percentage half up to whole paise, once', () => {
     // 12,345 × 0.57% = 70.3665 → 70; 12,345 × 10% = 1,234.5 → 1,235.
     const result = priceOperatorQuote({

@@ -17,6 +17,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { AircraftPricingModel } from '../../../generated/prisma/enums.js';
 import { hasHiddenCharacter } from '../../../common/validation/text.js';
 
 /** Largest amount accepted for one input: ₹10 crore, in paise. */
@@ -419,4 +420,44 @@ export class AircraftPricingResponseDto extends AircraftPricingDto {
     description: 'Empty when none is set.',
   })
   declare fixedRoutes: FixedRouteResponseDto[];
+}
+
+/** One aircraft's rate in the internal read, with what identifies it. */
+export class AdminAircraftPricingDto extends AircraftPricingResponseDto {
+  @ApiProperty({ example: 'VT-ABC' })
+  registration: string;
+
+  @ApiProperty()
+  manufacturer: string;
+
+  @ApiProperty()
+  model: string;
+
+  @ApiProperty({
+    enum: AircraftPricingModel,
+    enumName: 'AircraftPricingModel',
+    description: 'Which of the rates the engine uses.',
+  })
+  pricingModel: AircraftPricingModel;
+}
+
+/** An operator's pricing inputs, read-only, for Flyviman staff (M10). */
+export class AdminOperatorPricingDto {
+  @ApiProperty({ format: 'uuid' })
+  operatorId: string;
+
+  @ApiProperty()
+  operatorName: string;
+
+  @ApiProperty({ type: OperatorPricingResponseDto })
+  operator: OperatorPricingResponseDto;
+
+  @ApiProperty({
+    type: [AdminAircraftPricingDto],
+    description: 'Newest first, at most 100.',
+  })
+  aircraft: AdminAircraftPricingDto[];
+
+  @ApiProperty({ description: 'All of the operator’s aircraft.' })
+  aircraftTotal: number;
 }

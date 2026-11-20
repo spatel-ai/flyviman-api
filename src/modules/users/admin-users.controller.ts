@@ -20,6 +20,7 @@ import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import {
+  ChangeUserRoleDto,
   CreateStaffDto,
   ListUsersDto,
   SetUserStatusDto,
@@ -78,7 +79,7 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'Suspend or reinstate a user',
     description:
-      'Needs a reason and is audited. A suspended user is refused on their next request.',
+      'Needs a reason and is audited. A suspended user is refused on their next request. 409 `USER_LAST_SUPER_ADMIN` when suspending the last active super administrator.',
   })
   @ApiOkResponse({ type: AdminUserResponseDto })
   async setStatus(
@@ -88,6 +89,24 @@ export class AdminUsersController {
   ): Promise<AdminUserResponseDto> {
     return toDto(
       await this.users.setStatus(actor, id, body.status, body.reason),
+    );
+  }
+
+  @Patch('users/:id/role')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary: "Change an internal account's role",
+    description:
+      'OPS, FINANCE_ADMIN or SUPER_ADMIN, for internal accounts only. Needs a reason and is audited (`user.role_change`). Ends every sign-in of the account. 409 `USER_INVALID_TRANSITION` for your own account, a non-staff account or the same role; 409 `USER_LAST_SUPER_ADMIN` when it would leave no active super administrator.',
+  })
+  @ApiOkResponse({ type: AdminUserResponseDto })
+  async changeRole(
+    @CurrentUser() actor: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ChangeUserRoleDto,
+  ): Promise<AdminUserResponseDto> {
+    return toDto(
+      await this.users.changeRole(actor, id, body.role, body.reason),
     );
   }
 

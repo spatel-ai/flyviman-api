@@ -4,6 +4,7 @@ import { BookingsModule } from '../bookings/bookings.module.js';
 import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { AdminPaymentsController } from './admin-payments.controller.js';
 import { DevPaymentJobsController } from './dev-payment-jobs.controller.js';
+import { NotificationEventsModule } from '../notifications/events/notification-events.module.js';
 import { PaymentWebhooksController } from './payment-webhooks.controller.js';
 import { PaymentWebhooksService } from './payment-webhooks.service.js';
 import { PaymentsController } from './payments.controller.js';
@@ -16,7 +17,12 @@ import { RefundsService } from './refunds.service.js';
  * status sweep, refunds and receipts.
  */
 @Module({
-  imports: [PaymentModule, BookingsModule, ConfigurationModule],
+  imports: [
+    PaymentModule,
+    BookingsModule,
+    ConfigurationModule,
+    NotificationEventsModule,
+  ],
   controllers: [
     PaymentsController,
     PaymentWebhooksController,

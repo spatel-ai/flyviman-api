@@ -32,6 +32,10 @@ These routes answer 404 unless `ENABLE_DEV_TOOLS=true` (`DevToolsGuard`). The sa
 
 **Development tools are for a developer's own machine and for automated tests only.** Do not turn them on for any server other people can reach, staging and demo servers included: the outbox route is public and returns password-reset and invitation links for any address. Such a server needs a real provider, or a sink provider that delivers only to an allow-listed mailbox, before it exists.
 
+## WhatsApp (W4-8)
+
+WhatsApp goes through the same messaging adapter, so with the mock it appears in `GET /api/v1/dev/outbox` like email and SMS. `WHATSAPP_ENABLED` controls it: default `true`, but `false` in production when unset; set it to `true` in production only once a provider and registered message templates exist. With it off, the notification matrix drops the WhatsApp channel and the other channels are unchanged.
+
 ## Proof-of-concept host (D-064)
 
 A shared server with no real providers yet can start without development tools:

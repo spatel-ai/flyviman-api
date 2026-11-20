@@ -11,7 +11,17 @@ import {
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SearchRateLimit } from '../../common/rate-limit/rate-limit.js';
-import { Public } from '../auth/auth.decorators.js';
+import { Role } from '../../generated/prisma/enums.js';
+import {
+  OptionalUser,
+  Public,
+  PublicOptionalUser,
+} from '../auth/auth.decorators.js';
+import type { AuthUser } from '../auth/auth-user.js';
+import {
+  ApplyPromoCodeDto,
+  PromoPreviewResponseDto,
+} from '../pricing/dto/promotion.dto.js';
 import {
   CharterSearchDto,
   HelicopterSearchDto,
@@ -84,5 +94,29 @@ export class SearchController {
     @Param('resultId', ParseUUIDPipe) resultId: string,
   ): Promise<SearchResultDetailDto> {
     return this.search.result(searchId, resultId);
+  }
+
+  @Post(':searchId/results/:resultId/promo-code')
+  @PublicOptionalUser()
+  @SearchRateLimit()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Apply a promotion code to one result (preview, nothing stored)',
+    description:
+      'The trip priced again with the code, as a booking with `promoCode` would be: an `ESTIMATE` with the discount as its own line. 422 `PROMO_CODE_INVALID` (unknown or not started), `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (another category or route, or priced on request), `PROMO_CODE_LIMIT_REACHED` (overall, or the signed-in customer’s own); 409 `BOOKING_UNAVAILABLE`. On the search rate tier.',
+  })
+  @ApiOkResponse({ type: PromoPreviewResponseDto })
+  promoCode(
+    @OptionalUser() user: AuthUser | null,
+    @Param('searchId', ParseUUIDPipe) searchId: string,
+    @Param('resultId', ParseUUIDPipe) resultId: string,
+    @Body() dto: ApplyPromoCodeDto,
+  ): Promise<PromoPreviewResponseDto> {
+    return this.search.previewPromoCode(
+      searchId,
+      resultId,
+      dto.code,
+      user?.role === Role.CUSTOMER ? user.id : null,
+    );
   }
 }

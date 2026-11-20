@@ -102,7 +102,8 @@ export class QuotesService {
       operatorId: string;
       /** The customer's total, priced by Flyviman's rules (D-172). */
       totalMinor: number;
-      /** The stored calculation behind `totalMinor`. */
+      /** The stored calculation behind `totalMinor`: Flyviman's pricing of
+       * the operator's price, or a manual override's (M10). */
       calculationId: string;
       currency: string;
       validUntil: Date;

@@ -273,6 +273,34 @@
         ]
       }
     },
+    "/api/v1/admin/roles": {
+      "get": {
+        "description": "Generated from the route metadata the role guard enforces. Route-level only: services narrow further by record and field.",
+        "operationId": "AdminRolesController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleMatrixResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Roles, the routes each may call, and staff capabilities",
+        "tags": [
+          "admin: users"
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "description": "Newest first.",
@@ -390,7 +418,7 @@
     },
     "/api/v1/admin/users/{id}/status": {
       "patch": {
-        "description": "Needs a reason and is audited. A suspended user is refused on their next request.",
+        "description": "Needs a reason and is audited. A suspended user is refused on their next request. 409 `USER_LAST_SUPER_ADMIN` when suspending the last active super administrator.",
         "operationId": "AdminUsersController_setStatus",
         "parameters": [
           {
@@ -430,6 +458,53 @@
           }
         ],
         "summary": "Suspend or reinstate a user",
+        "tags": [
+          "admin: users"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/role": {
+      "patch": {
+        "description": "OPS, FINANCE_ADMIN or SUPER_ADMIN, for internal accounts only. Needs a reason and is audited (`user.role_change`). Ends every sign-in of the account. 409 `USER_INVALID_TRANSITION` for your own account, a non-staff account or the same role; 409 `USER_LAST_SUPER_ADMIN` when it would leave no active super administrator.",
+        "operationId": "AdminUsersController_changeRole",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeUserRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change an internal account's role",
         "tags": [
           "admin: users"
         ]
@@ -4690,6 +4765,56 @@
         ]
       }
     },
+    "/api/v1/search/{searchId}/results/{resultId}/promo-code": {
+      "post": {
+        "description": "The trip priced again with the code, as a booking with `promoCode` would be: an `ESTIMATE` with the discount as its own line. 422 `PROMO_CODE_INVALID` (unknown or not started), `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (another category or route, or priced on request), `PROMO_CODE_LIMIT_REACHED` (overall, or the signed-in customer’s own); 409 `BOOKING_UNAVAILABLE`. On the search rate tier.",
+        "operationId": "SearchController_promoCode",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resultId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPromoCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoPreviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Apply a promotion code to one result (preview, nothing stored)",
+        "tags": [
+          "search"
+        ]
+      }
+    },
     "/api/v1/admin/category-config": {
       "get": {
         "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.",
@@ -5286,6 +5411,193 @@
           }
         ],
         "summary": "Change the cancellation tiers (creates a new version)",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/promotions": {
+      "get": {
+        "description": "`status`: `SCHEDULED` (not started), `ACTIVE`, `ENDED` (past `endsAt` or ended early). Each carries its `uses` so far.",
+        "operationId": "AdminPromotionsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SCHEDULED",
+                "ACTIVE",
+                "ENDED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PromotionResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "List promotion codes, newest first",
+        "tags": [
+          "admin: pricing"
+        ]
+      },
+      "post": {
+        "description": "A percentage (`percent`) or a fixed amount (`amountMinor`) off the price before tax, funded by Flyviman and limited, with any `DISCOUNT` rule, to its charges on the trip. Optional category and route (both ends, either direction), validity window, caps overall and per customer. 409 `PROMOTION_CODE_EXISTS`. Audited (`promotion.create`) with the reason.",
+        "operationId": "AdminPromotionsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromotionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a promotion code",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/promotions/{id}/end": {
+      "post": {
+        "description": "The code stops applying at once; bookings already made keep their price. 409 `PROMOTION_ENDED` when it has already ended. Audited (`promotion.end`) with before, after and the reason.",
+        "operationId": "AdminPromotionsController_end",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndPromotionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "End a promotion now",
+        "tags": [
+          "admin: pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/operators/{id}/pricing": {
+      "get": {
+        "description": "The operator-wide defaults and each aircraft’s rate in force now, as the operator set them. Finance and super administrators only (403 for operations). 404 for an unknown operator.",
+        "operationId": "AdminOperatorPricingController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorPricingDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "An operator's rates and charges (read-only)",
         "tags": [
           "admin: pricing"
         ]
@@ -6244,6 +6556,53 @@
         "summary": "Override the status, with a reason",
         "tags": [
           "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/price-override": {
+      "post": {
+        "description": "Issues a new quote (`QUOTE`) at `totalMinor`, superseding the open one, which is never edited; the customer accepts or declines it as any quote. Only while the request is `OPERATOR_PENDING`, after the operator has sent a quote, and before anything is paid: otherwise 409 `BOOKING_INVALID_TRANSITION`. Conditions carry over from the latest quote unless given. The booking’s calculation is copied with the override, its reason and who set it (`overrideReason`); Flyviman absorbs the difference. 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip. Audited (`booking.price_override`) with before, after and the reason.",
+        "operationId": "AdminPriceOverrideController_override",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverridePriceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Override the price of a booking request with a new quote",
+        "tags": [
+          "admin: bookings"
         ]
       }
     },
@@ -7822,7 +8181,7 @@
     },
     "/api/v1/admin/air-ambulance/requests/{reference}/status": {
       "patch": {
-        "description": "ASSIGNED to SOURCING to FEASIBILITY_CHECK; ACCEPTED to CONFIRMED; CONFIRMED to COMPLETED; DECLINED or CANCELLED from any open status. CONFIRMED needs every feasibility item checked (422 `AIR_AMBULANCE_FEASIBILITY_INCOMPLETE`, the missing items in `details`) and the selected operator still approved (409 `OPERATOR_NOT_APPROVED`); it is never reached any other way (rule 7). 409 `AIR_AMBULANCE_INVALID_TRANSITION` for any other move. Writes a timeline entry and an audit record.",
+        "description": "ASSIGNED to SOURCING to FEASIBILITY_CHECK; ACCEPTED to CONFIRMED; CONFIRMED to COMPLETED; DECLINED or CANCELLED from any open status. CONFIRMED needs every feasibility item checked (422 `AIR_AMBULANCE_FEASIBILITY_INCOMPLETE`, the missing items in `details`) and the selected operator still approved (409 `OPERATOR_NOT_APPROVED`) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`); it is never reached any other way (rule 7). 409 `AIR_AMBULANCE_INVALID_TRANSITION` for any other move. Writes a timeline entry and an audit record.",
         "operationId": "AdminAirAmbulanceController_move",
         "parameters": [
           {
@@ -7916,7 +8275,7 @@
     },
     "/api/v1/admin/air-ambulance/requests/{reference}/quote": {
       "post": {
-        "description": "From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation. 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.",
+        "description": "From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation. 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.",
         "operationId": "AdminAirAmbulanceController_quote",
         "parameters": [
           {
@@ -7958,6 +8317,128 @@
         "summary": "Send the customer a quotation",
         "tags": [
           "admin: air ambulance"
+        ]
+      }
+    },
+    "/api/v1/admin/air-ambulance/operators": {
+      "get": {
+        "description": "Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name (a short list: only operators with an approved air ambulance aircraft). Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.",
+        "operationId": "AdminAirAmbulanceOperatorsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AirAmbulanceOperatorDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Operators that may be quoted for a mission",
+        "tags": [
+          "admin: air ambulance"
+        ]
+      }
+    },
+    "/api/v1/operator/air-ambulance/requests": {
+      "get": {
+        "description": "Requests where this operator is selected and the status is ACCEPTED, CONFIRMED or COMPLETED. Approved operator only (409 `OPERATOR_NOT_APPROVED`). Summary rows: no medical, contact or price data.",
+        "operationId": "OperatorAirAmbulanceController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorAirAmbulanceSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Missions the operator was selected for, newest first",
+        "tags": [
+          "operator: air ambulance"
+        ]
+      }
+    },
+    "/api/v1/operator/air-ambulance/requests/{reference}": {
+      "get": {
+        "description": "Every read of the medical details is audited (`air_ambulance_request.medical_read`, no medical data). 404 for a request this operator was not selected for, one not yet accepted, or when the operator is not approved. No customer contact details or quotation amount.",
+        "operationId": "OperatorAirAmbulanceController_get",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorAirAmbulanceRequestDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One mission, with the places and medical details",
+        "tags": [
+          "operator: air ambulance"
         ]
       }
     },
@@ -8407,6 +8888,124 @@
           "password"
         ]
       },
+      "RoleDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "A Flyviman staff role (admin portal)."
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "internal",
+          "description"
+        ]
+      },
+      "RouteAccessDto": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "example": "PATCH"
+          },
+          "path": {
+            "type": "string",
+            "example": "/admin/users/:id/role",
+            "description": "Without the `/api/v1` prefix."
+          },
+          "summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Open to anyone, signed in or not."
+          },
+          "roles": {
+            "type": "array",
+            "description": "The roles the role check lets through; empty for a public route. Services may narrow further by record or field (ownership, staff capabilities, finance-only figures).",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            }
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "summary",
+          "public",
+          "roles"
+        ]
+      },
+      "StaffCapability": {
+        "type": "string",
+        "enum": [
+          "MANAGE_AIRCRAFT",
+          "MANAGE_AVAILABILITY",
+          "MANAGE_EMPTY_LEGS",
+          "MANAGE_BOOKINGS"
+        ]
+      },
+      "CapabilityDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "capability": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StaffCapability"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "description"
+        ]
+      },
+      "RoleMatrixResponseDto": {
+        "type": "object",
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleDefinitionDto"
+            }
+          },
+          "routes": {
+            "description": "Every route with the roles allowed, read from the same metadata the role guard enforces. Sorted by path, then method.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteAccessDto"
+            }
+          },
+          "capabilities": {
+            "description": "Operator staff capabilities, which operator administrators give their staff. Administrators hold them all.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityDefinitionDto"
+            }
+          }
+        },
+        "required": [
+          "roles",
+          "routes",
+          "capabilities"
+        ]
+      },
       "AdminUserResponseDto": {
         "type": "object",
         "properties": {
@@ -8487,6 +9086,28 @@
         },
         "required": [
           "status",
+          "reason"
+        ]
+      },
+      "ChangeUserRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "OPS",
+              "FINANCE_ADMIN",
+              "SUPER_ADMIN"
+            ],
+            "description": "The new internal role. Only internal staff change role."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the role is being changed. Audited."
+          }
+        },
+        "required": [
+          "role",
           "reason"
         ]
       },
@@ -8832,6 +9453,12 @@
           "body": {
             "type": "string"
           },
+          "href": {
+            "type": "string",
+            "nullable": true,
+            "example": "/account/trips/FV-ABC123",
+            "description": "The site path the message is about (a booking, an air ambulance request), for the reader's own portal; null when there is none."
+          },
           "readAt": {
             "type": "string",
             "format": "date-time",
@@ -8847,6 +9474,7 @@
           "templateKey",
           "title",
           "body",
+          "href",
           "readAt",
           "createdAt"
         ]
@@ -9235,15 +9863,6 @@
           "APPROVED",
           "REJECTED",
           "SUSPENDED"
-        ]
-      },
-      "StaffCapability": {
-        "type": "string",
-        "enum": [
-          "MANAGE_AIRCRAFT",
-          "MANAGE_AVAILABILITY",
-          "MANAGE_EMPTY_LEGS",
-          "MANAGE_BOOKINGS"
         ]
       },
       "OperatorAccessDto": {
@@ -13865,6 +14484,108 @@
           "cancellationTerms"
         ]
       },
+      "ApplyPromoCodeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "WINTER10",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "PromoPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise, with the code applied."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency",
+          "validUntil"
+        ]
+      },
+      "PromoLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "amountMinor"
+        ]
+      },
+      "PromoPreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "WINTER10"
+          },
+          "name": {
+            "type": "string",
+            "description": "The label of the discount line."
+          },
+          "amountOffMinor": {
+            "type": "number",
+            "description": "Paise the code takes off this trip; 0 when it lowers nothing here (it is then not worth sending)."
+          },
+          "price": {
+            "$ref": "#/components/schemas/PromoPriceDto"
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromoLineDto"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "amountOffMinor",
+          "price",
+          "breakdown",
+          "assumptions"
+        ]
+      },
       "PaymentModel": {
         "type": "string",
         "enum": [
@@ -14827,6 +15548,363 @@
           "reason"
         ]
       },
+      "PromotionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PERCENT",
+              "FIXED"
+            ]
+          },
+          "percent": {
+            "type": "number",
+            "nullable": true
+          },
+          "amountMinor": {
+            "type": "number",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "PRIVATE_CHARTER",
+              "HELICOPTER"
+            ],
+            "nullable": true
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "originName": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxUses": {
+            "type": "number",
+            "nullable": true
+          },
+          "maxUsesPerCustomer": {
+            "type": "number",
+            "nullable": true
+          },
+          "uses": {
+            "type": "number",
+            "description": "Bookings made with the code so far."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "ACTIVE",
+              "ENDED"
+            ]
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "endable": {
+            "type": "boolean",
+            "description": "Whether it can still be ended."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "kind",
+          "percent",
+          "amountMinor",
+          "currency",
+          "category",
+          "originId",
+          "originName",
+          "destinationId",
+          "destinationName",
+          "startsAt",
+          "endsAt",
+          "maxUses",
+          "maxUsesPerCustomer",
+          "uses",
+          "status",
+          "endedAt",
+          "endable",
+          "createdAt"
+        ]
+      },
+      "CreatePromotionDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Letters, digits and dashes, 3–32 characters; kept upper case. Unique: 409 `PROMOTION_CODE_EXISTS`.",
+            "example": "WINTER10"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 60,
+            "description": "Shown to the customer on the discount line.",
+            "example": "Winter offer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PERCENT",
+              "FIXED"
+            ]
+          },
+          "percent": {
+            "type": "number",
+            "description": "PERCENT only: a share of the price before tax, more than 0 and at most 100, two decimals at most.",
+            "example": 10
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "FIXED only: paise off (₹500 is 50000).",
+            "example": 50000
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "PRIVATE_CHARTER",
+              "HELICOPTER"
+            ],
+            "nullable": true,
+            "description": "Left out or null: charter and helicopter."
+          },
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "With `destinationId`: only trips between the two places, either direction. Both or neither."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "After `startsAt`, and in the future."
+          },
+          "maxUses": {
+            "type": "number",
+            "nullable": true,
+            "description": "Bookings that may use the code in all. Null: no limit."
+          },
+          "maxUsesPerCustomer": {
+            "type": "number",
+            "nullable": true,
+            "description": "Bookings one customer may make with it. Null: no limit."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the promotion is created. Kept in the audit record."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "kind",
+          "currency",
+          "startsAt",
+          "endsAt",
+          "reason"
+        ]
+      },
+      "EndPromotionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why it is ended early. Kept in the audit record."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "AdminAircraftPricingDto": {
+        "type": "object",
+        "properties": {
+          "hourlyRateMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Hourly rate in paise (₹1,80,000 is 18000000).",
+            "example": 18000000
+          },
+          "taxInclusive": {
+            "type": "boolean",
+            "description": "The aircraft's rates (hourly, sector, fixed routes) already include GST. They are reduced before tax is added."
+          },
+          "commissionInclusive": {
+            "type": "boolean",
+            "description": "The aircraft's rates (hourly, sector, fixed routes) already include Flyviman's commission. They are reduced before commission is added."
+          },
+          "minBillableHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.5,
+            "maximum": 12,
+            "description": "Overrides the operator's minimum billable hours for this aircraft. Required; `null` clears the override."
+          },
+          "minBillableHoursPer": {
+            "type": "string",
+            "enum": [
+              "LEG",
+              "DAY"
+            ],
+            "nullable": true,
+            "description": "Null when no minimum is set."
+          },
+          "sectorRateMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Price per flight in paise, used when the aircraft's pricing model is `SECTOR`. Left out: unchanged; `null` clears.",
+            "example": 25000000
+          },
+          "fixedRoutes": {
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Empty when none is set.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedRouteResponseDto"
+            }
+          },
+          "aircraftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "registration": {
+            "type": "string",
+            "example": "VT-ABC"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "pricingModel": {
+            "description": "Which of the rates the engine uses.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftPricingModel"
+              }
+            ]
+          }
+        },
+        "required": [
+          "hourlyRateMinor",
+          "taxInclusive",
+          "commissionInclusive",
+          "minBillableHours",
+          "minBillableHoursPer",
+          "sectorRateMinor",
+          "fixedRoutes",
+          "aircraftId",
+          "currency",
+          "registration",
+          "manufacturer",
+          "model",
+          "pricingModel"
+        ]
+      },
+      "AdminOperatorPricingDto": {
+        "type": "object",
+        "properties": {
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/OperatorPricingResponseDto"
+          },
+          "aircraft": {
+            "description": "Newest first, at most 100.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAircraftPricingDto"
+            }
+          },
+          "aircraftTotal": {
+            "type": "number",
+            "description": "All of the operator’s aircraft."
+          }
+        },
+        "required": [
+          "operatorId",
+          "operatorName",
+          "operator",
+          "aircraft",
+          "aircraftTotal"
+        ]
+      },
       "AuditLogResponseDto": {
         "type": "object",
         "properties": {
@@ -14943,6 +16021,11 @@
           "specialRequests": {
             "type": "string",
             "maxLength": 1000
+          },
+          "promoCode": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "A promotion code, already previewed with `POST /search/:searchId/results/:resultId/promo-code`; `expectedTotalMinor` is then the price with the code. Checked again, with the caps, as the booking is made: 422 `PROMO_CODE_INVALID`, `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (also for a result priced on request) or `PROMO_CODE_LIMIT_REACHED`, and nothing is booked. One use of the code per booking."
           }
         },
         "required": [
@@ -16516,6 +17599,69 @@
           "reason"
         ]
       },
+      "QuoteConditionsInputDto": {
+        "type": "object",
+        "properties": {
+          "inclusions": {
+            "description": "What the price includes.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "description": "What the price leaves out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "inclusions",
+          "exclusions"
+        ]
+      },
+      "OverridePriceDto": {
+        "type": "object",
+        "properties": {
+          "totalMinor": {
+            "type": "number",
+            "description": "Paise: the all-in price the customer pays (taxes and fees included)."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the price is overridden. Kept on the calculation and in the audit record; never shown to the customer."
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Until when the customer may accept. Left out: 48 hours from now (`BOOKING_HOLD_HOURS`). Never after the first departure; at least an hour ahead."
+          },
+          "conditions": {
+            "description": "What the price includes and leaves out. Left out: those of the booking’s latest quote. The cancellation terms are always the latest quote’s (Flyviman’s, rule 9).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteConditionsInputDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "totalMinor",
+          "currency",
+          "reason"
+        ]
+      },
       "BookingMessageDto": {
         "type": "object",
         "properties": {
@@ -16892,29 +18038,6 @@
         },
         "required": [
           "reason"
-        ]
-      },
-      "QuoteConditionsInputDto": {
-        "type": "object",
-        "properties": {
-          "inclusions": {
-            "description": "What the price includes.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "exclusions": {
-            "description": "What the price leaves out.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "inclusions",
-          "exclusions"
         ]
       },
       "ReviseQuoteDto": {
@@ -18714,6 +19837,162 @@
           "amountMinor",
           "currency",
           "conditions"
+        ]
+      },
+      "AirAmbulanceOperatorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "example": "Skyline Medevac"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "OperatorAirAmbulanceSummaryDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-AA-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AirAmbulanceStatus"
+              }
+            ]
+          },
+          "originName": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "patientCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "originName",
+          "destinationName",
+          "preferredAt",
+          "patientCount",
+          "createdAt"
+        ]
+      },
+      "OperatorAirAmbulanceRequestDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-AA-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AirAmbulanceStatus"
+              }
+            ]
+          },
+          "originName": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "patientCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "pickupAddress": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decrypted."
+          },
+          "destinationFacility": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decrypted."
+          },
+          "accompanyingPersons": {
+            "type": "number"
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "medical": {
+            "nullable": true,
+            "description": "Every read is audited (`air_ambulance_request.medical_read`). Null only if the details are missing.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MedicalDetailsDto"
+              }
+            ]
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirAmbulanceTimelineEntryDto"
+            }
+          },
+          "emergencyNotice": {
+            "type": "string",
+            "example": "For an immediate medical emergency, call 112 or your local emergency services now. An air ambulance request is not an emergency response."
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "originName",
+          "destinationName",
+          "preferredAt",
+          "patientCount",
+          "createdAt",
+          "pickupAddress",
+          "destinationFacility",
+          "accompanyingPersons",
+          "confirmedAt",
+          "completedAt",
+          "medical",
+          "timeline",
+          "emergencyNotice"
         ]
       },
       "EnquiryTopic": {

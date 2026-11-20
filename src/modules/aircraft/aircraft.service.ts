@@ -59,6 +59,12 @@ import {
 } from './aircraft.mappers.js';
 
 /** Documents required before an aircraft can be submitted (D-047). */
+/** Aircraft fitted for air ambulance work (W4-6). */
+const AIR_AMBULANCE_CATEGORIES: AircraftCategory[] = [
+  AircraftCategory.AIR_AMBULANCE_FIXED,
+  AircraftCategory.AIR_AMBULANCE_ROTARY,
+];
+
 export const REQUIRED_AIRCRAFT_DOCUMENTS: AircraftDocumentType[] = [
   AircraftDocumentType.REGISTRATION,
   AircraftDocumentType.AIRWORTHINESS,
@@ -308,6 +314,42 @@ export class AircraftService implements OnModuleInit {
       select: { id: true, registration: true },
     });
     return new Map(rows.map((row) => [row.id, row.registration]));
+  }
+
+  /**
+   * Operators with at least one approved air ambulance aircraft (category
+   * `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`, listing `APPROVED`):
+   * the ones operations may quote for a mission (owner, 2026-11-20). The
+   * operator's own status is the caller's check.
+   */
+  async airAmbulanceOperatorIds(): Promise<string[]> {
+    const rows = await this.prisma.aircraft.findMany({
+      where: {
+        category: { in: AIR_AMBULANCE_CATEGORIES },
+        listingStatus: AircraftListingStatus.APPROVED,
+      },
+      distinct: ['operatorId'],
+      select: { operatorId: true },
+    });
+    return rows.map((row) => row.operatorId);
+  }
+
+  /**
+   * Whether the operator has an approved air ambulance aircraft. Inside a
+   * transaction the aircraft is share-locked, so its approval cannot be
+   * withdrawn between this check and the caller's change.
+   */
+  async hasAirAmbulanceAircraft(
+    operatorId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Aircraft"
+      WHERE "operatorId" = ${operatorId}::uuid
+        AND "listingStatus" = 'APPROVED'
+        AND category IN ('AIR_AMBULANCE_FIXED', 'AIR_AMBULANCE_ROTARY')
+      LIMIT 1 FOR SHARE`;
+    return rows.length > 0;
   }
 
   /** IDs of every aircraft within the caller's reach. */
