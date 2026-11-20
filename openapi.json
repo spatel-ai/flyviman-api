@@ -5287,7 +5287,7 @@
     },
     "/api/v1/bookings": {
       "post": {
-        "description": "Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); 422 `BOOKING_PRICE_ON_REQUEST` for a result without a price; 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search or result that is not found (searches are public: any customer may book from one), or a passenger that is not found or not the caller’s; 409 `BOOKING_DUPLICATE` when the caller already has an open request (`REQUESTED` or `OPERATOR_PENDING`) for this aircraft at an overlapping time; 409 `BOOKING_LIMIT_REACHED` when the caller already has the most open requests allowed (5 by default, `BOOKING_MAX_OPEN_PER_CUSTOMER`). Limited per caller (10 per 10 minutes by default; 429 `RATE_LIMITED`). Holds the aircraft for 24 hours (or until the trip ends) while the operator answers. `specialRequests` is stored encrypted. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); a result priced on request (`price: null`) is requested without `expectedTotalMinor` and asks the operator for a quote (409 `BOOKING_PRICE_CHANGED` with `details` (field `price`, issue `ON_REQUEST`) when an amount is sent for a result now on request, and with the new estimate when none is sent for a result now priced); 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search or result that is not found (searches are public: any customer may book from one), or a passenger that is not found or not the caller’s; 409 `BOOKING_DUPLICATE` when the caller already has an open request (`REQUESTED` or `OPERATOR_PENDING`) for this aircraft at an overlapping time; 409 `BOOKING_LIMIT_REACHED` when the caller already has the most open requests allowed (5 by default, `BOOKING_MAX_OPEN_PER_CUSTOMER`). Limited per caller (10 per 10 minutes by default; 429 `RATE_LIMITED`). Holds the aircraft for 48 hours by default (`BOOKING_HOLD_HOURS`, never past the trip’s end) while the operator answers. `specialRequests` is stored encrypted. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "BookingsController_create",
         "parameters": [
           {
@@ -5328,7 +5328,7 @@
             "cookie": []
           }
         ],
-        "summary": "Request a booking from a charter or helicopter search result",
+        "summary": "Request a booking, or a quote for a result priced on request, from a charter or helicopter search result",
         "tags": [
           "bookings"
         ]
@@ -5368,6 +5368,595 @@
         "summary": "One of the caller’s bookings: itinerary, price, statuses, terms",
         "tags": [
           "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/quotes": {
+      "get": {
+        "operationId": "BookingConversationController_quotes",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QuoteResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The quotes sent on one of your bookings, newest first",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/messages": {
+      "get": {
+        "operationId": "BookingConversationController_messages",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookingMessageDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The operator’s questions and your answers, oldest first",
+        "tags": [
+          "bookings"
+        ]
+      },
+      "post": {
+        "description": "Moves `CLARIFICATION_REQUESTED` back to `OPERATOR_PENDING` (409 `BOOKING_INVALID_TRANSITION` from another status) and keeps the aircraft held another 48 hours if the time is still free. Stored encrypted. Answers with the whole conversation.",
+        "operationId": "BookingConversationController_answer",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingMessageInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookingMessageDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Answer the operator’s question",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/quotes/{reference}": {
+      "get": {
+        "operationId": "CustomerQuotesController_get",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "A quote: price (`QUOTE`), conditions, validity",
+        "tags": [
+          "quotes"
+        ]
+      }
+    },
+    "/api/v1/quotes/{reference}/accept": {
+      "post": {
+        "description": "The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. A repeat with the same `Idempotency-Key` returns the first answer.",
+        "operationId": "CustomerQuotesController_accept",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each acceptance and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Accept a quote",
+        "tags": [
+          "quotes"
+        ]
+      }
+    },
+    "/api/v1/quotes/{reference}/reject": {
+      "post": {
+        "description": "The quote becomes `REJECTED` and the booking `QUOTE_DECLINED`; the aircraft’s hold is released. Same 409 answers as accept.",
+        "operationId": "CustomerQuotesController_reject",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Decline a quote",
+        "tags": [
+          "quotes"
+        ]
+      }
+    },
+    "/api/v1/operator/booking-requests": {
+      "get": {
+        "description": "By default the requests waiting for you (`OPERATOR_PENDING`, `CLARIFICATION_REQUESTED`); filter by `status` and `aircraftId`. Each carries the proposed price (null when priced on request), when the hold lapses, and the newest quote.",
+        "operationId": "OperatorBookingRequestsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Left out: the requests waiting for you (`OPERATOR_PENDING`, `CLARIFICATION_REQUESTED`).",
+            "schema": {
+              "$ref": "#/components/schemas/BookingStatus"
+            }
+          },
+          {
+            "name": "aircraftId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorBookingRequestDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Booking requests for your aircraft, newest first",
+        "tags": [
+          "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/operator/booking-requests/{reference}": {
+      "get": {
+        "operationId": "OperatorBookingRequestsController_detail",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingRequestDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "A booking request: trip, proposed price, quotes, questions, notes",
+        "tags": [
+          "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/operator/booking-requests/{reference}/accept": {
+      "post": {
+        "description": "Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED`: the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.",
+        "operationId": "OperatorBookingRequestsController_accept",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each acceptance and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingRequestDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Accept the request at its proposed price",
+        "tags": [
+          "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/operator/booking-requests/{reference}/reject": {
+      "post": {
+        "description": "Moves `OPERATOR_PENDING` to `OPERATOR_UNAVAILABLE`; an open quote closes as `EXPIRED` and the aircraft’s hold is released. The reason is kept for you and Flyviman, not shown to the customer, who is told the request was not accepted. 409 `BOOKING_INVALID_TRANSITION` from another status.",
+        "operationId": "OperatorBookingRequestsController_reject",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectBookingRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingRequestDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reject the request with a reason",
+        "tags": [
+          "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/operator/booking-requests/{reference}/clarify": {
+      "post": {
+        "description": "Moves `OPERATOR_PENDING` to `CLARIFICATION_REQUESTED`; the customer’s answer returns it to `OPERATOR_PENDING`. The hold is kept another 48 hours for the answer; unanswered by then, the request expires. 409 `BOOKING_INVALID_TRANSITION` from another status.",
+        "operationId": "OperatorBookingRequestsController_clarify",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingMessageInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingRequestDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Ask the customer a question",
+        "tags": [
+          "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/operator/booking-requests/{reference}/revise-quote": {
+      "post": {
+        "description": "Only while the request is `OPERATOR_PENDING` (409 `BOOKING_INVALID_TRANSITION`). The quote is `SENT` with `priceType` `QUOTE`; an open quote is `SUPERSEDED` (a sent quote is never edited). Valid for 48 hours (`BOOKING_HOLD_HOURS`) unless `validUntil` is given (at least an hour ahead, never after departure; 400 otherwise); the hold is kept as long. Checks approval and the held time like accept (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`, `BOOKING_UNAVAILABLE`). Audited; the customer is notified.",
+        "operationId": "OperatorBookingRequestsController_reviseQuote",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseQuoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Send a quote, or a revision that replaces the open one",
+        "tags": [
+          "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/operator/bookings/{reference}/notes": {
+      "post": {
+        "description": "Kept with the booking for your team; never shown to the customer. Stored encrypted.",
+        "operationId": "OperatorBookingRequestsController_addNote",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingNoteInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingNoteDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Add an internal note to a booking",
+        "tags": [
+          "operator-booking-requests"
         ]
       }
     },
@@ -6683,7 +7272,8 @@
         "enum": [
           "MANAGE_AIRCRAFT",
           "MANAGE_AVAILABILITY",
-          "MANAGE_EMPTY_LEGS"
+          "MANAGE_EMPTY_LEGS",
+          "MANAGE_BOOKINGS"
         ]
       },
       "OperatorAccessDto": {
@@ -12252,7 +12842,7 @@
           },
           "expectedTotalMinor": {
             "type": "number",
-            "description": "Paise: the estimate the customer saw and agrees to. The price is worked out again; if it differs, 409 `BOOKING_PRICE_CHANGED` carries the new estimate, and the customer can agree to it by sending it here with a new `Idempotency-Key`."
+            "description": "Paise: the estimate the customer saw and agrees to. The price is worked out again; if it differs, 409 `BOOKING_PRICE_CHANGED` carries the new estimate, and the customer can agree to it by sending it here with a new `Idempotency-Key`. Left out for a result priced on request (`price: null`): the request then asks the operator for a quote."
           },
           "currency": {
             "type": "string",
@@ -12277,7 +12867,6 @@
         "required": [
           "searchId",
           "resultId",
-          "expectedTotalMinor",
           "currency"
         ]
       },
@@ -12362,7 +12951,14 @@
             ]
           },
           "price": {
-            "$ref": "#/components/schemas/BookingPriceDto"
+            "nullable": true,
+            "description": "Null for a quote request (a result priced on request) until the customer accepts the operator’s quote.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -12680,7 +13276,14 @@
             "description": "As resolved when the booking was made."
           },
           "price": {
-            "$ref": "#/components/schemas/BookingPriceDto"
+            "nullable": true,
+            "description": "Null for a quote request (a result priced on request) until the customer accepts the operator’s quote.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
           },
           "itinerary": {
             "$ref": "#/components/schemas/ItineraryDto"
@@ -12721,6 +13324,542 @@
           "passengers",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "QuoteStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "SENT",
+          "ACCEPTED",
+          "REJECTED",
+          "EXPIRED",
+          "SUPERSEDED"
+        ]
+      },
+      "QuotePriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "description": "`QUOTE` until the customer accepts it, then `CONFIRMED`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The quote can be accepted until then."
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency",
+          "validUntil"
+        ]
+      },
+      "QuoteChargeDto": {
+        "type": "object",
+        "properties": {
+          "minHoursBeforeDeparture": {
+            "type": "number"
+          },
+          "chargePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "minHoursBeforeDeparture",
+          "chargePercent"
+        ]
+      },
+      "QuoteConditionsDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteChargeDto"
+            }
+          },
+          "inclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "charges",
+          "inclusions",
+          "exclusions"
+        ]
+      },
+      "QuoteResponseDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-QT-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteStatus"
+              }
+            ]
+          },
+          "open": {
+            "type": "boolean",
+            "description": "True while the customer can still accept or decline it (sent, and before `validUntil`)."
+          },
+          "price": {
+            "$ref": "#/components/schemas/QuotePriceDto"
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/QuoteConditionsDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "open",
+          "price",
+          "conditions",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "BookingMessageDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "enum": [
+              "OPERATOR",
+              "CUSTOMER"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "from",
+          "body",
+          "createdAt"
+        ]
+      },
+      "BookingMessageInputDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "BookingRequestAircraftDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "registration": {
+            "type": "string",
+            "example": "VT-ABC"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "registration",
+          "manufacturer",
+          "model"
+        ]
+      },
+      "OperatorBookingRequestDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/BookingRequestAircraftDto"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "price": {
+            "nullable": true,
+            "description": "The proposed price (an `ESTIMATE` from the search), or the confirmed one. Null for a request priced on request: send a quote.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "holdExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the hold on the aircraft lapses: answer before then, or the request closes as `OPERATOR_UNAVAILABLE`."
+          },
+          "quote": {
+            "nullable": true,
+            "description": "The newest quote sent, if any.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteResponseDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "category",
+          "aircraft",
+          "legs",
+          "passengerCount",
+          "price",
+          "holdExpiresAt",
+          "quote",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "BookingNoteDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "createdAt"
+        ]
+      },
+      "OperatorBookingRequestDetailDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/BookingRequestAircraftDto"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "price": {
+            "nullable": true,
+            "description": "The proposed price (an `ESTIMATE` from the search), or the confirmed one. Null for a request priced on request: send a quote.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "holdExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the hold on the aircraft lapses: answer before then, or the request closes as `OPERATOR_UNAVAILABLE`."
+          },
+          "quote": {
+            "nullable": true,
+            "description": "The newest quote sent, if any.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteResponseDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "itinerary": {
+            "$ref": "#/components/schemas/ItineraryDto"
+          },
+          "cancellationTerms": {
+            "$ref": "#/components/schemas/CancellationTermsDto"
+          },
+          "specialRequests": {
+            "type": "string",
+            "nullable": true
+          },
+          "quotes": {
+            "description": "Newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteResponseDto"
+            }
+          },
+          "messages": {
+            "description": "Questions and answers, oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingMessageDto"
+            }
+          },
+          "notes": {
+            "description": "Internal notes, oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingNoteDto"
+            }
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "category",
+          "aircraft",
+          "legs",
+          "passengerCount",
+          "price",
+          "holdExpiresAt",
+          "quote",
+          "createdAt",
+          "updatedAt",
+          "itinerary",
+          "cancellationTerms",
+          "specialRequests",
+          "quotes",
+          "messages",
+          "notes"
+        ]
+      },
+      "RejectBookingRequestDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Why the request cannot be taken. Kept with the booking for the operator and Flyviman; the customer is told the request was not accepted."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "QuoteChargeInputDto": {
+        "type": "object",
+        "properties": {
+          "minHoursBeforeDeparture": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8760,
+            "description": "Applies when cancelling at least this many hours before departure."
+          },
+          "chargePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Of the total."
+          }
+        },
+        "required": [
+          "minHoursBeforeDeparture",
+          "chargePercent"
+        ]
+      },
+      "QuoteConditionsInputDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "The cancellation conditions in words, shown to the customer before they accept (business rule 9)."
+          },
+          "charges": {
+            "description": "Cancellation charges by notice, longest notice first, each notice once. Empty: nothing is charged on cancellation.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteChargeInputDto"
+            }
+          },
+          "inclusions": {
+            "description": "What the price includes.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "description": "What the price leaves out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "charges",
+          "inclusions",
+          "exclusions"
+        ]
+      },
+      "ReviseQuoteDto": {
+        "type": "object",
+        "properties": {
+          "totalMinor": {
+            "type": "number",
+            "description": "Paise: the all-in price the customer pays (taxes and fees included)."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Until when the customer may accept. Left out: 48 hours from now (`BOOKING_HOLD_HOURS`). Never after the first departure; must be at least an hour ahead."
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/QuoteConditionsInputDto"
+          }
+        },
+        "required": [
+          "totalMinor",
+          "currency",
+          "conditions"
+        ]
+      },
+      "BookingNoteInputDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "An internal note: never shown to the customer."
+          }
+        },
+        "required": [
+          "note"
         ]
       },
       "WebhookAckResponseDto": {

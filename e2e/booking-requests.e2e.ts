@@ -9,6 +9,7 @@ import {
   uniqueEmail,
 } from './support/data.js';
 import { withPrisma } from './support/db.js';
+import { aircraftBody } from './support/fleet.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders } from './support/session.js';
 
@@ -63,11 +64,19 @@ async function newCustomer(contexts: Contexts) {
  * An approved jet on `contexts.request` (its operator administrator) and a
  * customer's request for it: priced, or on request when `priced` is false.
  */
-async function requested(contexts: Contexts, priced = true) {
+async function requested(
+  contexts: Contexts,
+  priced = true,
+  before?: (
+    customer: APIRequestContext,
+    searched: Awaited<ReturnType<typeof searchFor>>,
+  ) => Promise<void>,
+) {
   const trip = await listedJet(contexts);
   if (priced) await setRate(contexts.request, trip);
   const searched = await searchFor(contexts.request, trip);
   const { customer, email } = await newCustomer(contexts);
+  await before?.(customer, searched);
   const response = await customer.post('bookings', {
     headers: {
       ...(await csrfHeaders(customer)),
@@ -123,10 +132,18 @@ async function quote(
   return (await response.json()).data;
 }
 
+/** Runs the job, waiting out a run another test holds the lock for. */
 async function runJob(request: APIRequestContext) {
-  const response = await request.post('dev/jobs/booking-hold-expiry');
-  expect(response.status()).toBe(200);
-  return (await response.json()).data;
+  let result: { skipped: boolean } = { skipped: true };
+  await expect
+    .poll(async () => {
+      const response = await post(request, 'dev/jobs/booking-hold-expiry');
+      expect(response.status()).toBe(200);
+      result = (await response.json()).data;
+      return result.skipped;
+    })
+    .toBe(false);
+  return result;
 }
 
 function stored(reference: string) {
@@ -296,9 +313,16 @@ test.describe('operator booking request inbox', () => {
       403,
     );
 
+    // Staff assigned only another aircraft of the same operator.
+    const another = await post(
+      request,
+      'operator/aircraft',
+      aircraftBody(trip.mumbai),
+    );
+    expect(another.status()).toBe(201);
     const outOfReach = await staffMember(contexts, {
       capabilities: ['MANAGE_BOOKINGS'],
-      aircraftIds: [],
+      aircraftIds: [(await another.json()).data.id],
     });
     expect(
       (await outOfReach.get(`operator/booking-requests/${reference}`)).status(),
@@ -386,8 +410,7 @@ test.describe('operator booking request inbox', () => {
   }) => {
     const contexts = { request, playwright, baseURL };
     const { reference, trip } = await requested(contexts);
-    // The hold lapsed and the time was taken by maintenance meanwhile.
-    await lapseHold(reference);
+    // Maintenance was booked over the held time meanwhile.
     const row = await stored(reference);
     await withPrisma((prisma) =>
       prisma.availabilityBlock.create({
@@ -730,6 +753,26 @@ test.describe('quotes', () => {
     const { reference, customer, created, searched } = await requested(
       contexts,
       false,
+      async (customer, searched) => {
+        // An amount sent for a result on request is a change to show first.
+        const withAmount = await customer.post('bookings', {
+          headers: {
+            ...(await csrfHeaders(customer)),
+            'Idempotency-Key': randomUUID(),
+          },
+          data: {
+            searchId: searched.searchId,
+            resultId: searched.result.resultId,
+            currency: 'INR',
+            expectedTotalMinor: 1000,
+          },
+        });
+        expect(withAmount.status()).toBe(409);
+        expect((await withAmount.json()).error).toMatchObject({
+          code: 'BOOKING_PRICE_CHANGED',
+          details: [{ field: 'price', issue: 'ON_REQUEST' }],
+        });
+      },
     );
     expect(searched.result.price).toBeNull();
     expect(created).toMatchObject({ status: 'OPERATOR_PENDING', price: null });
@@ -741,25 +784,6 @@ test.describe('quotes', () => {
       ).json()
     ).data;
     expect(detail.confirmationRequirements.join(' ')).toMatch(/quote/);
-
-    // An amount sent for a result on request is a change to show first.
-    const withAmount = await customer.post('bookings', {
-      headers: {
-        ...(await csrfHeaders(customer)),
-        'Idempotency-Key': randomUUID(),
-      },
-      data: {
-        searchId: searched.searchId,
-        resultId: searched.result.resultId,
-        currency: 'INR',
-        expectedTotalMinor: 1000,
-      },
-    });
-    expect(withAmount.status()).toBe(409);
-    expect((await withAmount.json()).error).toMatchObject({
-      code: 'BOOKING_PRICE_CHANGED',
-      details: [{ field: 'price', issue: 'ON_REQUEST' }],
-    });
 
     expect(
       (await (await customer.get(`bookings/${reference}`)).json()).data.price,
