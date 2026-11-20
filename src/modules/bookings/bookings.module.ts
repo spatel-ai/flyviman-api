@@ -17,6 +17,7 @@ import {
   CustomerQuotesController,
 } from './customer-quotes.controller.js';
 import { DevBookingJobsController } from './dev-booking-jobs.controller.js';
+import { FreeTextBackfill } from './free-text-backfill.js';
 import { MeBookingsController } from './me-bookings.controller.js';
 import { OperatorBookingRequestsController } from './operator-booking-requests.controller.js';
 import { OperatorChangeRequestsController } from './operator-change-requests.controller.js';
@@ -48,7 +49,13 @@ import { TripsService } from './trips.service.js';
     OperatorBookingRequestsController,
     DevBookingJobsController,
   ],
-  providers: [BookingsService, TripsService, BookingRequestsService, FieldCipher],
+  providers: [
+    BookingsService,
+    TripsService,
+    BookingRequestsService,
+    FieldCipher,
+    FreeTextBackfill,
+  ],
   exports: [BookingsService],
 })
 export class BookingsModule {}

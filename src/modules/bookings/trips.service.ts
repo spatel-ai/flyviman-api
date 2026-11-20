@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import {
   type IdempotencyClaim,
@@ -73,6 +74,8 @@ function notCancellable(status: BookingStatus): AppException {
  * go through `BookingsService.transition`. No passenger data, special
  * requests or free text reaches the audit trail or the events' payloads,
  * except a decision's note, which is written to be shown to the customer.
+ * Free text (a request's details, a decision's note, the cancellation
+ * reason) is encrypted at rest (`FieldCipher`).
  */
 @Injectable()
 export class TripsService {
@@ -82,6 +85,7 @@ export class TripsService {
     private readonly bookings: BookingsService,
     private readonly operators: OperatorsService,
     private readonly availability: AvailabilityService,
+    private readonly cipher: FieldCipher,
   ) {}
 
   async list(
@@ -214,7 +218,7 @@ export class TripsService {
         data:
           input.reason === undefined
             ? {}
-            : { cancellationReason: input.reason },
+            : { cancellationReason: this.cipher.encrypt(input.reason) },
         select: { cancelledAt: true },
       });
       if (!cancelledAt)
@@ -243,6 +247,7 @@ export class TripsService {
             actorId: user.id,
             actorRole: user.role,
             payload: decisionPayload(
+              this.cipher,
               id,
               ChangeRequestStatus.REJECTED,
               CLOSED_BY_CANCELLATION,
@@ -254,7 +259,7 @@ export class TripsService {
         data: {
           bookingId: booking.id,
           kind: ChangeRequestKind.CANCELLATION,
-          details: CANCELLED_BY_CUSTOMER,
+          details: this.cipher.encrypt(CANCELLED_BY_CUSTOMER),
           chargeMinor: BigInt(quote.chargeMinor),
           refundMinor:
             quote.refundMinor === null ? null : BigInt(quote.refundMinor),
@@ -310,7 +315,7 @@ export class TripsService {
           data: {
             bookingId: booking.id,
             kind: ChangeRequestKind.CHANGE,
-            details: input.details,
+            details: this.cipher.encrypt(input.details),
             currency: booking.currency,
           },
         });
@@ -337,7 +342,12 @@ export class TripsService {
           },
           tx,
         );
-        return changeRequestView(row, booking.reference, new Map());
+        return changeRequestView(
+          row,
+          booking.reference,
+          new Map(),
+          this.cipher,
+        );
       });
     } catch (error) {
       if (
@@ -406,7 +416,7 @@ export class TripsService {
           type: BookingEventType.NOTE,
           actorId: user.id,
           actorRole: user.role,
-          payload: decisionPayload(id, input.decision, input.note),
+          payload: decisionPayload(this.cipher, id, input.decision, input.note),
         },
       });
       // The note is free text: kept on the timeline, not in the audit trail.
@@ -423,7 +433,7 @@ export class TripsService {
         },
         tx,
       );
-      const notes = await decisionNotes(tx, row.booking.id);
+      const notes = await decisionNotes(tx, this.cipher, row.booking.id);
       return changeRequestView(
         {
           ...row,
@@ -433,6 +443,7 @@ export class TripsService {
         },
         row.booking.reference,
         notes,
+        this.cipher,
       );
     });
   }

@@ -343,7 +343,7 @@ export class BookingsService {
       },
     });
     if (!booking) throw notFound();
-    const notes = await decisionNotes(this.prisma, booking.id);
+    const notes = await decisionNotes(this.prisma, this.cipher, booking.id);
     const estimate = booking.priceType === PriceType.ESTIMATE;
     return {
       reference: booking.reference,
@@ -380,7 +380,7 @@ export class BookingsService {
       confirmedAt: booking.confirmedAt?.toISOString() ?? null,
       cancelledAt: booking.cancelledAt?.toISOString() ?? null,
       changeRequests: booking.changeRequests.map((row) =>
-        changeRequestView(row, booking.reference, notes),
+        changeRequestView(row, booking.reference, notes, this.cipher),
       ),
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
