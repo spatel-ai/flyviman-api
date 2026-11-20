@@ -41,21 +41,33 @@ function isMatchingLimitsRecord(log: AuditContents): boolean {
 }
 
 /**
- * Passenger and medical fields (rule 8), by exact key at any depth, with the
- * audit-log readers allowed to see each group (security-rbac.md). Audit
- * payloads should never hold them; this is the backstop if one ever does.
+ * Passenger and medical fields (rule 8), by key at any depth, with the
+ * audit-log readers allowed to see each group (security-rbac.md). Keys are
+ * compared lowercased with `_` and `-` removed, so `first_name` and
+ * `First-Name` match `firstName`. Audit payloads should never hold them; this
+ * is the backstop if one ever does.
  * - Medical: the super administrator only (operations only as a request's
  *   assigned owner, which an audit row cannot show).
  * - Identity documents: masked except to the owner and the fulfilling
- *   operator, neither of whom reads the audit log.
- * - Passenger details: operations and the super administrator.
+ *   operator, neither of whom reads the audit log. Any key starting with
+ *   `documentnumber` or `passport` counts.
+ * - Passenger details: operations and the super administrator. A passenger
+ *   container (`passengers`, `passenger`, ...) is redacted whole.
  */
+const normaliseKey = (key: string): string =>
+  key.toLowerCase().replace(/[_-]/g, '');
+
+const keySet = (...keys: string[]): ((key: string) => boolean) => {
+  const set = new Set(keys.map(normaliseKey));
+  return (key) => set.has(key);
+};
+
 const RESTRICTED_FIELDS: ReadonlyArray<{
-  keys: ReadonlySet<string>;
+  matches: (normalisedKey: string) => boolean;
   readers: ReadonlySet<Role>;
 }> = [
   {
-    keys: new Set([
+    matches: keySet(
       'medical',
       'medicalDetails',
       'medicalNotes',
@@ -66,41 +78,61 @@ const RESTRICTED_FIELDS: ReadonlyArray<{
       'medications',
       'allergies',
       'specialAssistance',
-    ]),
+    ),
     readers: new Set([Role.SUPER_ADMIN]),
   },
   {
-    keys: new Set(['documentNumber', 'documentExpiry', 'passportNumber']),
+    matches: (key) =>
+      key.startsWith('documentnumber') ||
+      key.startsWith('passport') ||
+      key === 'documentexpiry',
     readers: new Set(),
   },
   {
-    keys: new Set([
+    matches: keySet(
       'passengers',
+      'passenger',
+      'bookingPassengers',
+      'passengerDetails',
+      'firstName',
+      'lastName',
+      'gender',
+      'documentType',
       'dateOfBirth',
       'nationality',
       'specialRequests',
-    ]),
+    ),
     readers: new Set([Role.OPS, Role.SUPER_ADMIN]),
   },
 ];
 
-/** Replaces each restricted field the role may not read with null. */
+/**
+ * Replaces each restricted field the role may not read with null. A value
+ * that is not an object, array or null (for example a JSON string, whose keys
+ * cannot be inspected) is withheld whole from every role but the super
+ * administrator.
+ */
 export function redactRestricted(
   value: unknown,
   role: Role,
 ): { value: unknown; redacted: boolean } {
-  const hidden = new Set(
-    RESTRICTED_FIELDS.filter((group) => !group.readers.has(role)).flatMap(
-      (group) => [...group.keys],
-    ),
-  );
+  if (value !== null && value !== undefined && typeof value !== 'object') {
+    return role === Role.SUPER_ADMIN
+      ? { value, redacted: false }
+      : { value: null, redacted: true };
+  }
+  const groups = RESTRICTED_FIELDS.filter((group) => !group.readers.has(role));
+  const isHidden = (key: string) => {
+    const normalised = normaliseKey(key);
+    return groups.some((group) => group.matches(normalised));
+  };
   let redacted = false;
   const walk = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(walk);
     if (node === null || typeof node !== 'object') return node;
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(node)) {
-      if (hidden.has(key) && child !== null && child !== undefined) {
+      if (isHidden(key) && child !== null && child !== undefined) {
         out[key] = null;
         redacted = true;
       } else {

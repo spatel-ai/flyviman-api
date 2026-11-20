@@ -128,7 +128,7 @@ test.describe('policies', () => {
     const opsHeaders = await csrfHeaders(request);
     const forbidden = await request.put(`admin/content/policies/${slug}`, {
       headers: opsHeaders,
-      data: { title: 'T', body: 'B' },
+      data: { title: 'T', body: 'B', baseVersion: 1 },
     });
     expect(forbidden.status()).toBe(403);
     expect((await request.get('admin/content/policies')).status()).toBe(200);
@@ -137,7 +137,7 @@ test.describe('policies', () => {
     const headers = await csrfHeaders(request);
     const first = await request.put(`admin/content/policies/${slug}`, {
       headers,
-      data: { title: 'New title', body: 'New text.' },
+      data: { title: 'New title', body: 'New text.', baseVersion: 1 },
     });
     expect(first.status()).toBe(200);
     const one = (await first.json()).data;
@@ -147,14 +147,14 @@ test.describe('policies', () => {
     // The same text again is not a new version: refused, nothing written.
     const again = await request.put(`admin/content/policies/${slug}`, {
       headers,
-      data: { title: 'New title', body: 'New text.' },
+      data: { title: 'New title', body: 'New text.', baseVersion: 2 },
     });
     expect(again.status()).toBe(422);
     expect((await again.json()).error.code).toBe('CONTENT_UNCHANGED');
 
     const second = await request.put(`admin/content/policies/${slug}`, {
       headers,
-      data: { title: 'New title', body: 'Newer text.' },
+      data: { title: 'New title', body: 'Newer text.', baseVersion: 2 },
     });
     expect((await second.json()).data.version).toBe(`${one.version}.2`);
 
@@ -189,12 +189,16 @@ test.describe('policies', () => {
     // Paragraphs are separated by blank lines; other hidden characters are refused.
     const hidden = await request.put(`admin/content/policies/${slug}`, {
       headers,
-      data: { title: 'New title', body: 'Fees \u202Eapply.' },
+      data: { title: 'New title', body: 'Fees \u202Eapply.', baseVersion: 3 },
     });
     expect(hidden.status()).toBe(400);
     const paragraphs = await request.put(`admin/content/policies/${slug}`, {
       headers,
-      data: { title: 'New title', body: 'First paragraph.\n\nSecond.' },
+      data: {
+        title: 'New title',
+        body: 'First paragraph.\n\nSecond.',
+        baseVersion: 3,
+      },
     });
     expect(paragraphs.status()).toBe(200);
     expect((await paragraphs.json()).data.body).toBe(
@@ -203,7 +207,7 @@ test.describe('policies', () => {
 
     const bad = await request.put('admin/content/policies/Bad_Slug', {
       headers,
-      data: { title: 'T', body: 'B' },
+      data: { title: 'T', body: 'B', baseVersion: 0 },
     });
     expect(bad.status()).toBe(400);
   });
@@ -262,7 +266,7 @@ test.describe('policy versions and concurrent editors', () => {
     ).toBe(409);
     expect(await stored(slug)).toEqual({ versions: 1, audits: 1 });
 
-    // With the current base it publishes; without one it publishes as before.
+    // With the current base it publishes; without one it is refused.
     const current = await put(request, slug, {
       title: 'Terms',
       body: 'Two.',
@@ -271,8 +275,15 @@ test.describe('policy versions and concurrent editors', () => {
     expect(current.status()).toBe(200);
     expect((await current.json()).data.versionCount).toBe(2);
     const noBase = await put(request, slug, { title: 'Terms', body: 'Three.' });
-    expect(noBase.status()).toBe(200);
-    expect((await noBase.json()).data.versionCount).toBe(3);
+    expect(noBase.status()).toBe(400);
+    expect((await noBase.json()).error.code).toBe('VALIDATION_ERROR');
+    const third = await put(request, slug, {
+      title: 'Terms',
+      body: 'Three.',
+      baseVersion: 2,
+    });
+    expect(third.status()).toBe(200);
+    expect((await third.json()).data.versionCount).toBe(3);
 
     // The stale-base check comes before the unchanged-text check.
     const both = await put(request, slug, {
@@ -332,16 +343,10 @@ test.describe('policy versions and concurrent editors', () => {
     expect((await loser.json()).error.code).toBe('CONTENT_VERSION_CONFLICT');
     expect(await stored(slug)).toEqual({ versions: 2, audits: 2 });
 
-    // Without a base, two at once both publish, each as its own version.
-    const [c, d] = await Promise.all([
-      put(request, slug, { title: 'T', body: 'Editor C.' }),
-      put(other, slug, { title: 'T', body: 'Editor D.' }),
-    ]);
-    expect([c.status(), d.status()]).toEqual([200, 200]);
-    const versions = await withPrisma((prisma) =>
-      prisma.policyVersion.findMany({ where: { slug } }),
-    );
-    expect(new Set(versions.map((v) => v.version)).size).toBe(4);
+    // A publish without a base is refused, and writes nothing.
+    const noBase = await put(other, slug, { title: 'T', body: 'Editor C.' });
+    expect(noBase.status()).toBe(400);
+    expect(await stored(slug)).toEqual({ versions: 2, audits: 2 });
     await other.dispose();
   });
 });

@@ -159,17 +159,16 @@ export class PublishPolicyDto {
   @IsPlainText()
   body: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     minimum: 0,
     maximum: 1000000,
     description:
-      'The `versionCount` the editor loaded (0 for a policy with no version). When sent and another version has been published since, 409 `CONTENT_VERSION_CONFLICT` and nothing is written. Leave it out to publish regardless.',
+      'The `versionCount` the editor loaded (0 for a policy with no version). Required. When another version has been published since, 409 `CONTENT_VERSION_CONFLICT` and nothing is written.',
   })
-  @OptionalNotNull()
   @IsInt()
   @Min(0)
   @Max(1000000)
-  baseVersion?: number;
+  baseVersion: number;
 }
 
 export class NotificationTemplateResponseDto {

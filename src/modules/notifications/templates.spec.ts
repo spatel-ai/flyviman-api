@@ -61,4 +61,10 @@ describe('oneLine', () => {
       oneLine(render('Re {{operatorName}}', { operatorName: 'A\r\nBcc: x@y' })),
     ).toBe('Re A Bcc: x@y');
   });
+
+  it('replaces other control characters and U+2028/U+2029 with one space', () => {
+    expect(oneLine('a\u0000b\tc\u2028d\u2029e\u0085f\u007fg')).toBe(
+      'a b c d e f g',
+    );
+  });
 });

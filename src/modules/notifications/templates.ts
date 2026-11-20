@@ -292,7 +292,7 @@ export function toEmailHtml(text: string): string {
     .replace(/\r?\n/g, '<br>\n');
 }
 
-/** A subject is one header line: line breaks in values become spaces. */
+/** A subject is one header line: control characters and line separators in values become one space. */
 export function oneLine(text: string): string {
-  return text.replace(/[\r\n]+/g, ' ');
+  return text.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ');
 }

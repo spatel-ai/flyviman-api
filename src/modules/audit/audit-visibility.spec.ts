@@ -112,6 +112,99 @@ describe('redactRestricted', () => {
     });
   });
 
+  it('matches keys ignoring case, underscores and hyphens', () => {
+    const { value, redacted } = redactRestricted(
+      {
+        Medical_Details: 'x',
+        'special-assistance': 'y',
+        PASSPORT_NUMBER: 'P1',
+        'document-number': 'D1',
+        keep: 'ok',
+      },
+      Role.FINANCE_ADMIN,
+    );
+    expect(redacted).toBe(true);
+    expect(value).toEqual({
+      Medical_Details: null,
+      'special-assistance': null,
+      PASSPORT_NUMBER: null,
+      'document-number': null,
+      keep: 'ok',
+    });
+  });
+
+  it('redacts a whole passenger container for roles without passenger access', () => {
+    const payload = {
+      passenger: { name: 'Asha' },
+      bookingPassengers: [{ seat: '1A' }],
+      booking_passengers: ['x'],
+      passengerDetails: { anything: 1 },
+      passengerCount: 2,
+    };
+    expect(redactRestricted(payload, Role.FINANCE_ADMIN).value).toEqual({
+      passenger: null,
+      bookingPassengers: null,
+      booking_passengers: null,
+      passengerDetails: null,
+      passengerCount: 2,
+    });
+    expect(redactRestricted(payload, Role.OPS)).toEqual({
+      value: payload,
+      redacted: false,
+    });
+  });
+
+  it('treats firstName, lastName, gender and documentType as passenger details', () => {
+    const payload = {
+      first_name: 'Asha',
+      lastName: 'Rao',
+      gender: 'F',
+      documentType: 'PASSPORT',
+    };
+    expect(redactRestricted(payload, Role.FINANCE_ADMIN)).toEqual({
+      value: {
+        first_name: null,
+        lastName: null,
+        gender: null,
+        documentType: null,
+      },
+      redacted: true,
+    });
+    expect(redactRestricted(payload, Role.OPS).redacted).toBe(false);
+  });
+
+  it('treats any key starting with documentNumber or passport as an identity document', () => {
+    const payload = {
+      documentNumberLast4: '4567',
+      document_number_hash: 'h',
+      passportCountry: 'IN',
+      passport: 'P1',
+      documentNumbers: ['a'],
+    };
+    const out = redactRestricted(payload, Role.SUPER_ADMIN);
+    expect(out.redacted).toBe(true);
+    expect(Object.values(out.value as object).every((v) => v === null)).toBe(
+      true,
+    );
+  });
+
+  it('withholds a non-object value (such as a JSON string) from all but the super admin', () => {
+    for (const role of [Role.OPS, Role.FINANCE_ADMIN]) {
+      expect(redactRestricted('{"passengers":[]}', role)).toEqual({
+        value: null,
+        redacted: true,
+      });
+      expect(redactRestricted(42, role)).toEqual({
+        value: null,
+        redacted: true,
+      });
+    }
+    expect(redactRestricted('{"a":1}', Role.SUPER_ADMIN)).toEqual({
+      value: '{"a":1}',
+      redacted: false,
+    });
+  });
+
   it('keeps everything else, including counts, and flags nothing', () => {
     expect(
       redactRestricted(
@@ -167,5 +260,24 @@ describe('presentAuditContents', () => {
         Role.OPS,
       ).restricted,
     ).toBe(false);
+  });
+});
+
+describe('presentAuditContents with a string snapshot', () => {
+  it('marks it restricted and hides it from finance', () => {
+    const log = {
+      entityType: 'Booking',
+      before: null,
+      after: '{"firstName":"Asha"}',
+      reason: null,
+    };
+    expect(presentAuditContents(log, Role.FINANCE_ADMIN)).toMatchObject({
+      after: null,
+      restricted: true,
+    });
+    expect(presentAuditContents(log, Role.SUPER_ADMIN)).toMatchObject({
+      after: '{"firstName":"Asha"}',
+      restricted: false,
+    });
   });
 });

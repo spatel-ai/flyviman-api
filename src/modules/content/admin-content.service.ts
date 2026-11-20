@@ -173,7 +173,7 @@ export class AdminContentService {
   /**
    * Publishes a new version. The text a customer accepted is never changed:
    * the current text is kept as a `PolicyVersion` first, and the new text
-   * gets a new version string. `baseVersion`, when sent, is the version count
+   * gets a new version string. `baseVersion` is the version count
    * the editor loaded: if another version was published since, 409
    * `CONTENT_VERSION_CONFLICT`. Sending the current text again is refused
    * (422 `CONTENT_UNCHANGED`). Both are checked under the per-policy lock, so
@@ -181,7 +181,7 @@ export class AdminContentService {
    */
   async publishPolicy(
     slug: string,
-    input: { title: string; body: string; baseVersion?: number },
+    input: { title: string; body: string; baseVersion: number },
   ) {
     return this.prisma.$transaction(async (tx) => {
       // One publisher per policy at a time.
@@ -197,7 +197,7 @@ export class AdminContentService {
       const used = new Set(versions.map((row) => row.version));
       // The count the editor saw (`listPolicies`), before anything is written.
       const latest = Math.max(versions.length, current?.version ? 1 : 0);
-      if (input.baseVersion !== undefined && input.baseVersion !== latest) {
+      if (input.baseVersion !== latest) {
         throw new AppException(
           'CONTENT_VERSION_CONFLICT',
           'Another version of this policy was published after you opened it. Reload it and make your changes again.',
