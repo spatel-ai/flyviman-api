@@ -110,6 +110,14 @@ services:
         sync: false
       - key: SEED_LOCAL_PASSWORD
         sync: false
+      # The payment gateway's key and webhook secrets (W3-4). Required in
+      # production (at least 16 characters, never the development values).
+      # Only the mock gateway exists, which moves no money, so Render
+      # generates both; set them by hand when a real gateway is configured.
+      - key: PAYMENT_KEY_SECRET
+        generateValue: true
+      - key: PAYMENT_WEBHOOK_SECRET
+        generateValue: true
       # Optional: the same value as WEB_PROXY_SECRET on the web host (openssl
       # rand -base64 48). Then the web host signs each visitor's address and
       # rate limits and the sign-in lockout count visitors apart; unset, the
