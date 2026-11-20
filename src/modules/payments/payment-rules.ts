@@ -9,6 +9,7 @@ import {
   RefundStatus,
 } from '../../generated/prisma/enums.js';
 import type { GatewayPaymentStatus } from '../../integrations/payment/payment-gateway.provider.js';
+import { EXTRA_MONEY } from '../bookings/paid-amount.js';
 
 /**
  * The payment rules (M9), pure so every case is unit tested: what a booking
@@ -24,8 +25,11 @@ export interface PayableBooking {
   operatorAccepted: boolean;
   paymentStatus: BookingPaymentStatus;
   totalMinor: bigint;
-  /** Paid towards the booking (`bookings/paid-amount.ts`). */
-  paidMinor: bigint;
+  /**
+   * Credited towards the price (`bookings/paid-amount.ts`, `creditedMinor`):
+   * refunds are not deducted, so a refund never reopens or grows a balance.
+   */
+  creditedMinor: bigint;
   /** The first departure; the balance is due only before it. */
   departureAt: Date;
 }
@@ -67,7 +71,7 @@ export function depositMinor(totalMinor: bigint, percent: number): bigint {
  * operator has accepted); Model C takes the deposit. After a Model C
  * deposit, the balance (total less what was paid) is due while the booking
  * is `AWAITING_PAYMENT`, `CONFIRMED` or `SCHEDULED` and before the first
- * departure (W4-1).
+ * departure (W4-1), and only once a deposit counts towards it (W5-9d).
  */
 export function amountDue(
   booking: PayableBooking,
@@ -126,7 +130,11 @@ export function amountDue(
   }
 }
 
-/** The Model C balance: the total less what was paid, before departure. */
+/**
+ * The Model C balance: the total less what is credited, before departure.
+ * Nothing is due while no money counts towards the booking: a deposit
+ * flagged for refund (its confirmation was blocked) asks for no balance.
+ */
 function balanceDue(booking: PayableBooking, now: Date): AmountDue {
   const notDue = (reason: string): AmountDue => ({
     due: false,
@@ -145,7 +153,10 @@ function balanceDue(booking: PayableBooking, now: Date): AmountDue {
   if (now.getTime() >= booking.departureAt.getTime()) {
     return notDue('the flight has departed');
   }
-  const balance = booking.totalMinor - booking.paidMinor;
+  if (booking.creditedMinor <= 0n) {
+    return notDue('no deposit counts towards the booking');
+  }
+  const balance = booking.totalMinor - booking.creditedMinor;
   if (balance <= 0n) {
     return {
       due: false,
@@ -154,6 +165,24 @@ function balanceDue(booking: PayableBooking, now: Date): AmountDue {
     };
   }
   return { due: true, purpose: PaymentPurpose.BALANCE, amountMinor: balance };
+}
+
+/**
+ * The money a booking must keep, at the time it is confirmed, for the
+ * confirmation rule's payment condition (W5-9d): the deposit for Model C
+ * (at the configured percent, as `amountDue` asks for it), the total for A
+ * and B. Compared with the money kept (`bookings/paid-amount.ts`,
+ * `netPaidMinor`), so a booking finance refunded in part is never
+ * confirmed on less. Never throws (it runs inside a payment's transaction).
+ */
+export function confirmationKeptMinor(
+  model: PaymentModel,
+  totalMinor: bigint,
+  depositPercent: number,
+): bigint {
+  return model === PaymentModel.C_DEPOSIT && totalMinor > 0n
+    ? depositMinor(totalMinor, depositPercent)
+    : totalMinor;
 }
 
 /**
@@ -334,23 +363,27 @@ export function paymentStatusFromRefunds(
 /** A payment as the booking's summary reads it. */
 export interface SummaryPayment {
   status: PaymentStatus;
+  reviewReason: PaymentReviewReason | null;
   amountMinor: bigint;
   refunds: readonly RefundAmount[];
 }
 
 /**
  * The booking's payment summary from all its payments, after a refund moved
- * (state-machines.md: a summary of its payments), derived from the money
- * kept (succeeded payments less completed refunds). Every payment whose
- * money arrived counts, flagged ones too, since their refunds are counted
- * as well:
+ * (state-machines.md: a summary of its payments). Every payment whose money
+ * arrived counts, flagged ones too, since their refunds are counted as
+ * well; kept is what arrived less the completed refunds:
  * - a refund under way anywhere: `REFUND_PENDING`;
  * - the money kept covers the total: `PAID` (a second payment refunded);
  * - a closed booking with a completed refund: `REFUNDED` (all of it, or the
  *   part above a cancellation charge);
- * - a live booking keeping some money: `PARTIALLY_PAID` (a duplicate
- *   deposit refunded leaves the balance due);
- * - nothing kept: `REFUNDED` once any refund completed, else `UNPAID`.
+ * - nothing kept: `REFUNDED` once any refund completed, else `UNPAID`;
+ * - otherwise, on a live booking, from what is owed (W5-9d): a refund of
+ *   extra money (`BOOKING_CLOSED`, `ALREADY_PAID`) returns money that was
+ *   never paid towards it, any other refund (goodwill) returns money that is
+ *   not owed again. `PAID` when what arrived less refunds of extra money
+ *   covers the total (a goodwill refund on a paid booking), else
+ *   `PARTIALLY_PAID` (a duplicate deposit refunded leaves the balance due).
  */
 export function bookingPaymentSummary(
   totalMinor: bigint,
@@ -371,8 +404,25 @@ export function bookingPaymentSummary(
   if (refunded > 0n && CLOSED.includes(bookingStatus)) {
     return BookingPaymentStatus.REFUNDED;
   }
-  if (kept > 0n) return BookingPaymentStatus.PARTIALLY_PAID;
-  return refunded > 0n
-    ? BookingPaymentStatus.REFUNDED
-    : BookingPaymentStatus.UNPAID;
+  if (kept <= 0n) {
+    return refunded > 0n
+      ? BookingPaymentStatus.REFUNDED
+      : BookingPaymentStatus.UNPAID;
+  }
+  if (CLOSED.includes(bookingStatus)) {
+    return BookingPaymentStatus.PARTIALLY_PAID;
+  }
+  const extraReturned = sum(
+    counted
+      .filter(
+        (payment) =>
+          payment.reviewReason !== null &&
+          EXTRA_MONEY.includes(payment.reviewReason),
+      )
+      .flatMap((payment) => payment.refunds),
+    [RefundStatus.COMPLETED],
+  );
+  return received - extraReturned >= totalMinor
+    ? BookingPaymentStatus.PAID
+    : BookingPaymentStatus.PARTIALLY_PAID;
 }

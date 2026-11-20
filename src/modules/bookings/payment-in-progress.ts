@@ -4,8 +4,9 @@ import { PaymentStatus } from '../../generated/prisma/enums.js';
 /**
  * A payment in progress: one waiting for the gateway's final answer
  * (`PENDING`), so money may be moving. Defined once for the cancellation
- * refusal (`BOOKING_PAYMENT_IN_PROGRESS`) and the hold-expiry job, which
- * must not expire a booking the customer is paying for (rules 2 and 5).
+ * refusal (`BOOKING_PAYMENT_IN_PROGRESS`), the hold-expiry job, which
+ * must not expire a booking the customer is paying for (rules 2 and 5),
+ * and the booking's hold, kept while it waits (W5-9d).
  * An order the customer never paid (`INITIATED`) is not one. The payments
  * table is read here because payments depends on bookings, not the other
  * way round (as `paid-amount.ts`).
@@ -36,6 +37,17 @@ export function paymentInProgressWhere(now?: Date): Prisma.PaymentWhereInput {
     status: PaymentStatus.PENDING,
     ...(now ? { createdAt: { gt: waitedForSince(now) } } : {}),
   };
+}
+
+/**
+ * Until when a payment created at `createdAt` is waited for: the hold-expiry
+ * job waits for it, and the booking's hold is kept for it (W5-9d), until
+ * then and no longer. Mirrors `paymentInProgressWhere(now)`.
+ */
+export function paymentInProgressUntil(createdAt: Date): Date {
+  return new Date(
+    createdAt.getTime() + PAYMENT_IN_PROGRESS_MAX_AGE_HOURS * 3_600_000,
+  );
 }
 
 /**

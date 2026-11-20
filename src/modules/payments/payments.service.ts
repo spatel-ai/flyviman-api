@@ -25,7 +25,7 @@ import {
   BookingsService,
   type PayableBookingRow,
 } from '../bookings/bookings.service.js';
-import { readPaidMinor } from '../bookings/paid-amount.js';
+import { readCreditedMinor } from '../bookings/paid-amount.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import type {
   CreatePaymentDto,
@@ -201,8 +201,10 @@ export class PaymentsService {
    * The checkout result the browser reports. Its signature is checked
    * through the gateway, and it is still not final: a valid one makes the
    * payment `PENDING` at most, never `SUCCEEDED` (state-machines.md,
-   * Payment). Someone else's payment is 404; a result for another order or
-   * with a bad signature is 400 `PAYMENT_SIGNATURE_INVALID`.
+   * Payment). While it waits, the booking's hold on the aircraft is kept,
+   * for 48 hours from the order at most (`keepHoldForPayment`, W5-9d).
+   * Someone else's payment is 404; a result for another order or with a
+   * bad signature is 400 `PAYMENT_SIGNATURE_INVALID`.
    */
   async verify(
     user: AuthUser,
@@ -259,6 +261,7 @@ export class PaymentsService {
         },
         tx,
       );
+      await this.bookings.keepHoldForPayment(tx, booking, payment.createdAt);
       return this.toResponse(updated, booking.reference);
     });
   }
@@ -285,7 +288,7 @@ export class PaymentsService {
         operatorAccepted: booking.operatorAcceptedAt !== null,
         paymentStatus: booking.paymentStatus,
         totalMinor: booking.totalMinor,
-        paidMinor: await readPaidMinor(db, booking.id),
+        creditedMinor: await readCreditedMinor(db, booking.id),
         departureAt: new Date(
           parseItinerary(booking.itinerary).legs[0].departureAt,
         ),

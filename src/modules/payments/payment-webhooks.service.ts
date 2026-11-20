@@ -291,13 +291,21 @@ export class PaymentWebhooksService {
       outcome === PaymentStatus.SUCCEEDED &&
       isDuplicateCapture(payment, report.providerPaymentId)
     ) {
-      // Money moved twice. The first reason found is kept; the audit
-      // record is always written, so no capture goes unrecorded.
-      await this.flag(tx, payment, PaymentReviewReason.DUPLICATE_CAPTURE, {
-        ...origin,
-        reportedProviderPaymentId: report.providerPaymentId ?? null,
-        providerPaymentId: payment.providerPaymentId,
-      });
+      // Money moved twice. The first reason found is kept; each capture is
+      // recorded once (by its gateway payment), so none goes unrecorded.
+      await this.flag(
+        tx,
+        payment,
+        PaymentReviewReason.DUPLICATE_CAPTURE,
+        {
+          ...origin,
+          reportedProviderPaymentId: report.providerPaymentId ?? null,
+          providerPaymentId: payment.providerPaymentId,
+        },
+        report.providerPaymentId
+          ? { reportedProviderPaymentId: report.providerPaymentId }
+          : {},
+      );
       return true;
     }
 
@@ -307,9 +315,9 @@ export class PaymentWebhooksService {
         BigInt(report.amountMinor) !== payment.amountMinor ||
         report.currency !== payment.currency)
     ) {
-      // Never a success for an amount other than the order's. A webhook is
-      // always audited (rule 6); the sweep, which asks again every run,
-      // records a flagged payment only once.
+      // Never a success for an amount other than the order's. Recorded once
+      // per payment (rule 6, `flag`); the sweep, which asks again every
+      // run, records nothing more once the payment is flagged.
       if (payment.reviewReason !== null && origin.source === 'sweep') {
         return false;
       }
@@ -387,19 +395,42 @@ export class PaymentWebhooksService {
       payment.purpose,
     );
     if (summary) {
-      await this.bookings.recordPaymentStatus(tx, booking, summary, {
-        reference: payment.reference,
-        purpose: payment.purpose,
-      });
+      const confirmation = await this.bookings.recordPaymentStatus(
+        tx,
+        booking,
+        summary,
+        { reference: payment.reference, purpose: payment.purpose },
+      );
+      // Money for a trip that can no longer be flown as booked (the held
+      // time taken, the aircraft or operator no longer bookable, departed)
+      // is never stranded: flagged as for a closed booking, it is listed in
+      // full in the finance refunds-due queue (W5-9d, rules 3 and 4). The
+      // booking stays `AWAITING_PAYMENT` and paid for operations.
+      if (!confirmation.confirmed && confirmation.unbookable) {
+        await this.flag(
+          tx,
+          {
+            id: payment.id,
+            reference: payment.reference,
+            status: next,
+            reviewReason: payment.reviewReason ?? reviewReason,
+          },
+          PaymentReviewReason.BOOKING_CLOSED,
+          { ...origin, confirmationBlocked: confirmation.reason },
+        );
+      }
     }
     await this.events.notifyBooking(tx, 'payment.succeeded', booking.id);
     return true;
   }
 
   /**
-   * Sets `reviewReason` if none is set yet (one reason is kept: the first),
-   * and always writes the audit record. Gateway references and amounts
-   * only.
+   * Sets `reviewReason` if none is set yet (one reason is kept: the first)
+   * and writes the audit record. Gateway references and amounts only. The
+   * flag that sets the reason is always recorded; any other is recorded
+   * once per payment and reason (and `once`, the reported fact that makes
+   * it new): a notice stored before its order was known stays unlinked and
+   * is applied again on every redelivery (W5-9d).
    */
   private async flag(
     tx: Prisma.TransactionClient,
@@ -411,6 +442,7 @@ export class PaymentWebhooksService {
     },
     reason: PaymentReviewReason,
     details: Record<string, string | number | null>,
+    once: Record<string, string> = {},
   ): Promise<void> {
     const before = {
       reference: payment.reference,
@@ -422,6 +454,18 @@ export class PaymentWebhooksService {
         where: { id: payment.id },
         data: { reviewReason: reason },
       });
+    } else if (
+      await this.audit.exists(
+        {
+          action: 'payment.flag',
+          entityType: 'Payment',
+          entityId: payment.id,
+          after: { flagged: reason, ...once },
+        },
+        tx,
+      )
+    ) {
+      return;
     }
     await this.audit.record(
       {

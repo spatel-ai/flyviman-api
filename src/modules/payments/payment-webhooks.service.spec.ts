@@ -126,10 +126,13 @@ function paymentWorld(overrides: Record<string, unknown> = {}) {
       findUnique: vi.fn(),
     },
   };
-  const audit = { record: vi.fn() };
+  const audit = {
+    record: vi.fn(),
+    exists: vi.fn().mockResolvedValue(false),
+  };
   const bookings = {
     forPayment: vi.fn().mockResolvedValue(booking),
-    recordPaymentStatus: vi.fn(),
+    recordPaymentStatus: vi.fn().mockResolvedValue({ confirmed: true }),
   };
   const gateway = {
     name: 'mock',
@@ -299,6 +302,119 @@ describe('PaymentWebhooksService applying notices', () => {
         providerEventId: 'evt_1',
       },
     });
+  });
+});
+
+describe('PaymentWebhooksService when the confirmation is blocked', () => {
+  it('flags a success for a trip that can no longer be flown as booked, so it is listed for refund', async () => {
+    const world = paymentWorld();
+    world.bookings.recordPaymentStatus.mockResolvedValue({
+      confirmed: false,
+      reason: 'the aircraft time is no longer free',
+      unbookable: true,
+    });
+    await world.deliver({});
+    // The success and the booking's summary are recorded all the same.
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      reviewReason: 'BOOKING_CLOSED',
+    });
+    expect(world.bookings.recordPaymentStatus.mock.calls[0][2]).toBe('PAID');
+    const flags = world.audit.record.mock.calls
+      .map((call) => call[0])
+      .filter((entry) => entry.action === 'payment.flag');
+    expect(flags).toEqual([
+      expect.objectContaining({
+        actor: null,
+        before: expect.objectContaining({
+          status: 'SUCCEEDED',
+          reviewReason: null,
+        }),
+        after: expect.objectContaining({
+          status: 'SUCCEEDED',
+          reviewReason: 'BOOKING_CLOSED',
+          flagged: 'BOOKING_CLOSED',
+          confirmationBlocked: 'the aircraft time is no longer free',
+          source: 'webhook',
+        }),
+      }),
+    ]);
+  });
+
+  it('never flags a success the confirmation rule is only waiting on (rule 2)', async () => {
+    const world = paymentWorld();
+    world.bookings.recordPaymentStatus.mockResolvedValue({
+      confirmed: false,
+      reason: 'the operator has not accepted',
+      unbookable: false,
+    });
+    await world.deliver({});
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      reviewReason: null,
+    });
+    expect(
+      world.audit.record.mock.calls.map((call) => call[0].action),
+    ).not.toContain('payment.flag');
+  });
+});
+
+describe('PaymentWebhooksService flag records', () => {
+  it('records a refused amount mismatch once per payment, however often its notice comes again', async () => {
+    const world = paymentWorld({ reviewReason: 'ALREADY_PAID' });
+    world.audit.exists.mockResolvedValue(true);
+    world.tx.paymentEvent.createMany.mockResolvedValue({ count: 0 });
+    world.tx.paymentEvent.findUnique.mockResolvedValue({
+      paymentId: null,
+      type: 'payment.captured',
+    });
+    await world.deliver({ amountMinor: 9_000 });
+    expect(world.audit.exists).toHaveBeenCalledWith(
+      {
+        action: 'payment.flag',
+        entityType: 'Payment',
+        entityId: 'p-1',
+        after: { flagged: 'AMOUNT_MISMATCH' },
+      },
+      world.tx,
+    );
+    expect(world.audit.record).not.toHaveBeenCalled();
+    expect(world.tx.payment.update).not.toHaveBeenCalled();
+    expect(world.payment.status).toBe('INITIATED');
+  });
+
+  it('records each duplicate capture once per gateway payment: a new one is still recorded', async () => {
+    const world = paymentWorld({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+      reviewReason: 'DUPLICATE_CAPTURE',
+    });
+    world.audit.exists.mockImplementation(
+      (where: { after: { reportedProviderPaymentId?: string } }) =>
+        Promise.resolve(where.after.reportedProviderPaymentId === 'pay_2'),
+    );
+    await world.deliver({
+      providerEventId: 'evt_2',
+      providerPaymentId: 'pay_2',
+    });
+    expect(world.audit.record).not.toHaveBeenCalled();
+    await world.deliver({
+      providerEventId: 'evt_3',
+      providerPaymentId: 'pay_3',
+    });
+    expect(world.audit.record).toHaveBeenCalledTimes(1);
+    expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
+      flagged: 'DUPLICATE_CAPTURE',
+      reportedProviderPaymentId: 'pay_3',
+    });
+  });
+
+  it('always records the flag that sets the reason', async () => {
+    const world = paymentWorld();
+    world.audit.exists.mockResolvedValue(true);
+    await world.deliver({ amountMinor: 9_000 });
+    expect(world.payment.reviewReason).toBe('AMOUNT_MISMATCH');
+    expect(world.audit.record).toHaveBeenCalledTimes(1);
   });
 });
 

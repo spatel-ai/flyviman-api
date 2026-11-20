@@ -116,7 +116,7 @@ export class RefundDueItemDto {
     enum: REFUND_DUE_KINDS,
     enumName: 'RefundDueKind',
     description:
-      '`CANCELLATION`: a cancellation left money due back (paid less the charge); `BOOKING_CLOSED`: a payment succeeded after the booking expired or was cancelled; `ALREADY_PAID`: a second payment for a paid booking.',
+      '`CANCELLATION`: a cancellation left money due back (paid less the charge); `BOOKING_CLOSED`: a payment succeeded after the booking expired or was cancelled, or for a booking that could not be confirmed because the trip can no longer be flown as booked (the booking stays `AWAITING_PAYMENT`); `ALREADY_PAID`: a second payment for a paid booking.',
   })
   kind: RefundDueKind;
 

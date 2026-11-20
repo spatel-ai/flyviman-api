@@ -65,6 +65,34 @@ export class AuditService {
     });
   }
 
+  /**
+   * Whether `action` was already recorded for the entity with `after`
+   * holding these values, for a record written once per fact (a payment
+   * flag that a repeated gateway notice would otherwise write again).
+   */
+  async exists(
+    where: {
+      action: string;
+      entityType: string;
+      entityId: string;
+      after?: Record<string, string>;
+    },
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
+    const found = await db.auditLog.findFirst({
+      where: {
+        action: where.action,
+        entityType: where.entityType,
+        entityId: where.entityId,
+        AND: Object.entries(where.after ?? {}).map(([key, value]) => ({
+          after: { path: [key], equals: value },
+        })),
+      },
+      select: { id: true },
+    });
+    return found !== null;
+  }
+
   async list(filter: AuditLogFilter): Promise<Paginated<AuditLogRecord>> {
     const where: Prisma.AuditLogWhereInput = {
       entityType: filter.entityType,

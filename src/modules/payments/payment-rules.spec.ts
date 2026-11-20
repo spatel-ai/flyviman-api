@@ -4,14 +4,17 @@ import {
   BookingStatus,
   PaymentModel,
   PaymentPurpose,
+  PaymentReviewReason,
   PaymentStatus,
   PriceType,
   RefundStatus,
 } from '../../generated/prisma/enums.js';
+import { creditedMinor, netPaidMinor } from '../bookings/paid-amount.js';
 import {
   amountDue,
   bookingPaymentStatusAfterSuccess,
   bookingPaymentSummary,
+  confirmationKeptMinor,
   depositMinor,
   isDuplicateCapture,
   nextPaymentStatus,
@@ -31,7 +34,7 @@ const due: PayableBooking = {
   operatorAccepted: true,
   paymentStatus: BookingPaymentStatus.UNPAID,
   totalMinor: 18_000_000n,
-  paidMinor: 0n,
+  creditedMinor: 0n,
   departureAt: new Date('2026-12-01T06:00:00.000Z'),
 };
 
@@ -132,7 +135,7 @@ describe('amountDue: the Model C balance', () => {
     status: BookingStatus.CONFIRMED,
     paymentModel: PaymentModel.C_DEPOSIT,
     paymentStatus: BookingPaymentStatus.PARTIALLY_PAID,
-    paidMinor: 4_500_000n,
+    creditedMinor: 4_500_000n,
   };
 
   it('is the total less what was paid, while confirmed, scheduled or awaiting payment', () => {
@@ -174,8 +177,22 @@ describe('amountDue: the Model C balance', () => {
 
   it('is already paid when nothing is left', () => {
     expect(
-      amountDue({ ...deposited, paidMinor: 18_000_000n }, 25, NOW),
+      amountDue({ ...deposited, creditedMinor: 18_000_000n }, 25, NOW),
     ).toMatchObject({ due: false, code: 'PAYMENT_ALREADY_PAID' });
+  });
+
+  it('is not due when no deposit counts towards the booking (a deposit flagged for refund)', () => {
+    expect(
+      amountDue(
+        {
+          ...deposited,
+          status: BookingStatus.AWAITING_PAYMENT,
+          creditedMinor: 0n,
+        },
+        25,
+        NOW,
+      ),
+    ).toMatchObject({ due: false, code: 'PAYMENT_NOT_DUE' });
   });
 
   it('makes the booking PAID once it succeeds', () => {
@@ -430,7 +447,37 @@ describe('bookingPaymentSummary', () => {
     amountMinor: bigint,
     refunds: { status: RefundStatus; amountMinor: bigint }[] = [],
     status: PaymentStatus = PaymentStatus.SUCCEEDED,
-  ) => ({ status, amountMinor, refunds });
+    reviewReason: PaymentReviewReason | null = null,
+  ) => ({ status, reviewReason, amountMinor, refunds });
+  const extra = (
+    reason: PaymentReviewReason,
+    amountMinor: bigint,
+    refunds: { status: RefundStatus; amountMinor: bigint }[] = [],
+  ) => paid(amountMinor, refunds, PaymentStatus.SUCCEEDED, reason);
+
+  /**
+   * What a live Model C booking of 1,000 (deposit 250) owes after these
+   * payments, through the same functions the services use: the summary,
+   * the money credited (`creditedMinor`) and `amountDue`.
+   */
+  function owed(payments: ReturnType<typeof paid>[]) {
+    const summary = bookingPaymentSummary(1_000n, payments, LIVE);
+    return {
+      summary,
+      due: amountDue(
+        {
+          ...due,
+          status: LIVE,
+          paymentModel: PaymentModel.C_DEPOSIT,
+          paymentStatus: summary,
+          totalMinor: 1_000n,
+          creditedMinor: creditedMinor(payments),
+        },
+        25,
+        NOW,
+      ),
+    };
+  }
 
   it('is REFUND_PENDING while any refund is under way', () => {
     expect(
@@ -460,29 +507,46 @@ describe('bookingPaymentSummary', () => {
   });
 
   it('is PARTIALLY_PAID on a live deposit booking whose duplicate deposit was refunded, so the balance is due', () => {
-    const summary = bookingPaymentSummary(
-      1_000n,
-      [paid(250n), paid(250n, [refund(R.COMPLETED, 250n)])],
-      LIVE,
-    );
-    expect(summary).toBe('PARTIALLY_PAID');
+    // The second deposit was flagged ALREADY_PAID when it succeeded.
     expect(
-      amountDue(
-        {
-          ...due,
-          status: LIVE,
-          paymentModel: PaymentModel.C_DEPOSIT,
-          paymentStatus: summary,
-          totalMinor: 1_000n,
-          paidMinor: 250n,
-        },
-        25,
-        NOW,
-      ),
-    ).toEqual({ due: true, purpose: 'BALANCE', amountMinor: 750n });
+      owed([
+        paid(250n),
+        extra(PaymentReviewReason.ALREADY_PAID, 250n, [
+          refund(R.COMPLETED, 250n),
+        ]),
+      ]),
+    ).toEqual({
+      summary: 'PARTIALLY_PAID',
+      due: { due: true, purpose: 'BALANCE', amountMinor: 750n },
+    });
   });
 
-  it('is REFUNDED on a live booking only when nothing is kept', () => {
+  it('a goodwill refund on a live deposit booking never reopens or grows the balance', () => {
+    // Deposit only: the balance stays the total less the deposit.
+    expect(owed([paid(250n, [refund(R.COMPLETED, 100n)])])).toEqual({
+      summary: 'PARTIALLY_PAID',
+      due: { due: true, purpose: 'BALANCE', amountMinor: 750n },
+    });
+    // Paid in full: still paid, nothing due.
+    expect(owed([paid(250n), paid(750n, [refund(R.COMPLETED, 200n)])])).toEqual(
+      {
+        summary: 'PAID',
+        due: expect.objectContaining({
+          due: false,
+          code: 'PAYMENT_ALREADY_PAID',
+        }),
+      },
+    );
+  });
+
+  it('is PAID after a goodwill refund on a live paid booking; REFUNDED only when nothing is kept', () => {
+    expect(
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.COMPLETED, 200n)])],
+        LIVE,
+      ),
+    ).toBe('PAID');
     expect(
       bookingPaymentSummary(
         1_000n,
@@ -490,23 +554,44 @@ describe('bookingPaymentSummary', () => {
         LIVE,
       ),
     ).toBe('REFUNDED');
-    expect(
-      bookingPaymentSummary(
-        1_000n,
-        [paid(1_000n, [refund(R.COMPLETED, 200n)])],
-        LIVE,
-      ),
-    ).toBe('PARTIALLY_PAID');
   });
 
   it('stays PAID when a second payment for a paid booking is refunded', () => {
     expect(
       bookingPaymentSummary(
         1_000n,
-        [paid(1_000n), paid(1_000n, [refund(R.COMPLETED, 1_000n)])],
+        [
+          paid(1_000n),
+          extra(PaymentReviewReason.ALREADY_PAID, 1_000n, [
+            refund(R.COMPLETED, 1_000n),
+          ]),
+        ],
         LIVE,
       ),
     ).toBe('PAID');
+  });
+
+  it('a live booking whose payment was flagged for refund (confirmation blocked) reads PAID until it is refunded', () => {
+    const AWAITING = BookingStatus.AWAITING_PAYMENT;
+    const flagged = (
+      refunds: { status: RefundStatus; amountMinor: bigint }[],
+    ) => extra(PaymentReviewReason.BOOKING_CLOSED, 1_000n, refunds);
+    expect(
+      bookingPaymentSummary(
+        1_000n,
+        [flagged([refund(R.FAILED, 1_000n)])],
+        AWAITING,
+      ),
+    ).toBe('PAID');
+    expect(
+      bookingPaymentSummary(
+        1_000n,
+        [flagged([refund(R.COMPLETED, 1_000n)])],
+        AWAITING,
+      ),
+    ).toBe('REFUNDED');
+    // Never money towards the booking: nothing credited, nothing kept.
+    expect(creditedMinor([flagged([])])).toBe(0n);
   });
 
   it('goes back after a failed refund, and ignores money that never arrived', () => {
@@ -530,4 +615,47 @@ describe('bookingPaymentSummary', () => {
   function refund(status: RefundStatus, amountMinor: bigint) {
     return { status, amountMinor };
   }
+});
+
+describe('confirmationKeptMinor', () => {
+  it('is the deposit for Model C and the total for A and B', () => {
+    expect(confirmationKeptMinor(PaymentModel.C_DEPOSIT, 100_001n, 25)).toBe(
+      25_001n,
+    );
+    expect(confirmationKeptMinor(PaymentModel.A_INSTANT, 100_001n, 25)).toBe(
+      100_001n,
+    );
+    expect(
+      confirmationKeptMinor(PaymentModel.B_OPERATOR_CONFIRMED, 100_001n, 25),
+    ).toBe(100_001n);
+  });
+
+  it('a deposit booking that kept less than the deposit after a refund does not meet it', () => {
+    const required = confirmationKeptMinor(PaymentModel.C_DEPOSIT, 1_000n, 25);
+    const kept = netPaidMinor([
+      {
+        status: PaymentStatus.PARTIALLY_REFUNDED,
+        reviewReason: null,
+        amountMinor: 250n,
+        refunds: [{ status: RefundStatus.COMPLETED, amountMinor: 200n }],
+      },
+    ]);
+    expect(kept < required).toBe(true);
+    // The duplicate deposit refunded leaves the deposit kept.
+    const keptAfterDuplicate = netPaidMinor([
+      {
+        status: PaymentStatus.SUCCEEDED,
+        reviewReason: null,
+        amountMinor: 250n,
+        refunds: [],
+      },
+      {
+        status: PaymentStatus.REFUNDED,
+        reviewReason: PaymentReviewReason.ALREADY_PAID,
+        amountMinor: 250n,
+        refunds: [{ status: RefundStatus.COMPLETED, amountMinor: 250n }],
+      },
+    ]);
+    expect(keptAfterDuplicate >= required).toBe(true);
+  });
 });

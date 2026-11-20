@@ -599,6 +599,7 @@ export class RefundsService {
       where: { bookingId: booking.id },
       select: {
         status: true,
+        reviewReason: true,
         amountMinor: true,
         refunds: { select: { status: true, amountMinor: true } },
       },

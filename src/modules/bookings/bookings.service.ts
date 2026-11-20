@@ -41,7 +41,8 @@ import { SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import { encryptLegacyFreeText } from './free-text-backfill.js';
-import { readPaidMinor } from './paid-amount.js';
+import { readCreditedMinor, readPaidMinor } from './paid-amount.js';
+import { paymentInProgressUntil } from './payment-in-progress.js';
 import {
   holdExpiry,
   isQuoteRequest,
@@ -60,7 +61,7 @@ import {
   statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
-import { amountDue } from '../payments/payment-rules.js';
+import { amountDue, confirmationKeptMinor } from '../payments/payment-rules.js';
 import type {
   BookingAmountDueDto,
   BookingCreatedDto,
@@ -85,9 +86,14 @@ const OPEN_STATUSES: BookingStatus[] = [
 /** The latest date there is: a hold rechecked "until the trip ends". */
 const END_OF_TIME = new Date(8_640_000_000_000_000);
 
-/** What `evaluateConfirmation` did. */
+/**
+ * What `evaluateConfirmation` did. `unbookable` when the booking qualified
+ * but the trip can no longer be flown as booked (rules 3 and 4): money that
+ * arrived for it is flagged for refund by the payment's caller.
+ */
 export type ConfirmationOutcome =
-  { confirmed: true } | { confirmed: false; reason: string };
+  | { confirmed: true }
+  | { confirmed: false; reason: string; unbookable: boolean };
 
 /** The fields a status change is decided on, read with the booking. */
 type TransitionRow = Pick<
@@ -503,7 +509,7 @@ export class BookingsService implements OnApplicationBootstrap {
         operatorAccepted: booking.operatorAcceptedAt !== null,
         paymentStatus: booking.paymentStatus,
         totalMinor: booking.totalMinor,
-        paidMinor: await readPaidMinor(this.prisma, booking.id),
+        creditedMinor: await readCreditedMinor(this.prisma, booking.id),
         departureAt: new Date(
           parseItinerary(booking.itinerary).legs[0].departureAt,
         ),
@@ -638,14 +644,14 @@ export class BookingsService implements OnApplicationBootstrap {
    * transaction, then runs the confirmation rule (`evaluateConfirmation`):
    * the booking becomes `CONFIRMED` only if every other condition already
    * holds. A payment alone never confirms (rule 2). Applied only if the
-   * summary is still `from`.
+   * summary is still `from`. Returns what the confirmation rule did.
    */
   async recordPaymentStatus(
     tx: Prisma.TransactionClient,
     booking: Pick<PayableBookingRow, 'id' | 'reference' | 'paymentStatus'>,
     to: BookingPaymentStatus,
     payment: { reference: string; purpose: string },
-  ): Promise<void> {
+  ): Promise<ConfirmationOutcome> {
     const { count } = await tx.booking.updateMany({
       where: { id: booking.id, paymentStatus: booking.paymentStatus },
       data: { paymentStatus: to },
@@ -684,7 +690,7 @@ export class BookingsService implements OnApplicationBootstrap {
       },
       tx,
     );
-    await this.evaluateConfirmation(tx, booking.id);
+    return this.evaluateConfirmation(tx, booking.id);
   }
 
   /**
@@ -692,9 +698,12 @@ export class BookingsService implements OnApplicationBootstrap {
    * becomes `CONFIRMED`: from `AWAITING_PAYMENT`, with the operator's
    * acceptance recorded (or instant inventory), a `CONFIRMED` price and the
    * payment condition of its model met (A and B `PAID`, C `PARTIALLY_PAID`
-   * or `PAID`). The held time is checked again first (rule 3) and then kept
-   * until the trip ends. Called in the caller's transaction after a payment
-   * summary changes and after the price is confirmed.
+   * or `PAID`), with the money kept at least the deposit (C) or the total
+   * (A and B), so a booking refunded in part is never confirmed on less
+   * (`confirmationKeptMinor`, W5-9d). The held time is checked again first
+   * (rule 3) and then kept until the trip ends. Called in the caller's
+   * transaction after a payment summary changes and after the price is
+   * confirmed.
    *
    * Never throws for a booking that does not qualify: inside a payment
    * notice's transaction a failure would lose the captured payment. When
@@ -709,7 +718,13 @@ export class BookingsService implements OnApplicationBootstrap {
   ): Promise<ConfirmationOutcome> {
     await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${bookingId}::uuid FOR UPDATE`;
     const row = await tx.booking.findUnique({ where: { id: bookingId } });
-    if (!row) return { confirmed: false, reason: 'the booking is missing' };
+    if (!row) {
+      return {
+        confirmed: false,
+        reason: 'the booking is missing',
+        unbookable: false,
+      };
+    }
     const check = confirmationCheck({
       status: row.status,
       category: row.category,
@@ -719,7 +734,25 @@ export class BookingsService implements OnApplicationBootstrap {
       paymentStatus: row.paymentStatus,
       operatorAccepted: row.operatorAcceptedAt !== null,
     });
-    if (!check.allowed) return { confirmed: false, reason: check.reason };
+    if (!check.allowed) {
+      return { confirmed: false, reason: check.reason, unbookable: false };
+    }
+    const depositPercent =
+      row.paymentModel === PaymentModel.C_DEPOSIT
+        ? (await this.categories.resolve(row.category)).depositPercent
+        : 100;
+    const required = confirmationKeptMinor(
+      row.paymentModel,
+      row.totalMinor,
+      depositPercent,
+    );
+    if ((await readPaidMinor(tx, row.id)) < required) {
+      return {
+        confirmed: false,
+        reason: 'the money kept is less than the payment condition needs',
+        unbookable: false,
+      };
+    }
     const reason = await this.unbookable(tx, row);
     if (reason) {
       await this.audit.record(
@@ -737,7 +770,7 @@ export class BookingsService implements OnApplicationBootstrap {
         },
         tx,
       );
-      return { confirmed: false, reason };
+      return { confirmed: false, reason, unbookable: true };
     }
     await this.transition(
       tx,
@@ -789,6 +822,30 @@ export class BookingsService implements OnApplicationBootstrap {
     return (await this.availability.recheckBookingHold(tx, row.id, END_OF_TIME))
       ? null
       : 'the aircraft time is no longer free';
+  }
+
+  /**
+   * Keeps a booking's soft hold while a payment waits on the gateway
+   * (W5-9d), so another request cannot take the aircraft from a customer
+   * who is paying: until the payment stops being waited for
+   * (`paymentInProgressUntil`, the hold-expiry job's bound), never past the
+   * time it holds. Only for a booking `AWAITING_PAYMENT`: a closed booking's
+   * hold is never taken up again. Rechecked and audited like any renewal
+   * (`recheckBookingHold`, `availability.block.extend`), in the payment's
+   * transaction, which holds the booking's lock. Whether the hold is kept;
+   * if its time was taken meanwhile nothing changes, and a payment that then
+   * succeeds is flagged for refund (`evaluateConfirmation`).
+   */
+  async keepHoldForPayment(
+    tx: Prisma.TransactionClient,
+    booking: { id: string; status: BookingStatus },
+    paymentCreatedAt: Date,
+    now = new Date(),
+  ): Promise<boolean> {
+    if (booking.status !== BookingStatus.AWAITING_PAYMENT) return false;
+    const until = paymentInProgressUntil(paymentCreatedAt);
+    if (until.getTime() <= now.getTime()) return false;
+    return this.availability.recheckBookingHold(tx, booking.id, until);
   }
 
   /**

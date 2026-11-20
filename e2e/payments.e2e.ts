@@ -11,7 +11,7 @@ import { hmacSha256Hex } from '../src/integrations/payment/payment-signature.js'
 import { registerCustomer } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { listedJet, searchFor } from './support/pricing.js';
-import { csrfHeaders } from './support/session.js';
+import { csrfHeaders, signIn } from './support/session.js';
 
 /**
  * Payments on the mock gateway (M9, W3-4): orders, the checkout result and
@@ -76,6 +76,8 @@ async function bookingAwaitingPayment(
     customer,
     reference,
     totalMinor: searched.result.price.amountMinor as number,
+    trip,
+    searched,
   };
 }
 
@@ -193,6 +195,27 @@ function paymentRow(reference: string) {
   return withPrisma((prisma) =>
     prisma.payment.findUniqueOrThrow({ where: { reference } }),
   );
+}
+
+/** The finance refunds-due rows for a payment, read through every page. */
+async function refundsDueFor(
+  contexts: Contexts,
+  paymentReference: string,
+): Promise<Record<string, unknown>[]> {
+  const finance = await contexts.playwright.request.newContext({
+    baseURL: contexts.baseURL,
+  });
+  await signIn(finance, 'finance');
+  const rows: Record<string, unknown>[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await finance.get(
+      `admin/refunds/due?page=${page}&pageSize=100`,
+    );
+    expect(response.status()).toBe(200);
+    const items = (await response.json()).data as Record<string, unknown>[];
+    rows.push(...items.filter((i) => i.paymentReference === paymentReference));
+    if (items.length < 100) return rows;
+  }
 }
 
 test.describe('POST /bookings/:reference/payments', () => {
@@ -399,6 +422,84 @@ test.describe('POST /payments/:reference/verify', () => {
     });
     expect(foreign.status()).toBe(404);
   });
+
+  test('a payment in progress keeps the aircraft held past the payment window, to its 48-hour bound (rules 3 and 5)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor, trip, searched } =
+      await bookingAwaitingPayment({ request, playwright, baseURL });
+    const order = await created(customer, reference, totalMinor);
+    const holdOf = () =>
+      withPrisma(async (prisma) => {
+        const booking = await prisma.booking.findUniqueOrThrow({
+          where: { reference },
+        });
+        return prisma.availabilityBlock.findFirstOrThrow({
+          where: { bookingId: booking.id, reason: 'SOFT_HOLD' },
+        });
+      });
+    // The payment window lapses while the customer is at the checkout: the
+    // time is offered again.
+    const lapsed = await holdOf();
+    await withPrisma((prisma) =>
+      prisma.availabilityBlock.update({
+        where: { id: lapsed.id },
+        data: { expiresAt: new Date(Date.now() - 60_000) },
+      }),
+    );
+    expect((await searchFor(request, trip)).result).toBeDefined();
+
+    const paymentId = `pay_e2e_${randomUUID().slice(0, 8)}`;
+    const verified = await customer.post(`payments/${order.reference}/verify`, {
+      headers: await csrfHeaders(customer),
+      data: {
+        providerOrderId: order.checkout.orderId,
+        providerPaymentId: paymentId,
+        signature: hmacSha256Hex(
+          MOCK_PAYMENT_KEY_SECRET,
+          `${order.checkout.orderId}|${paymentId}`,
+        ),
+      },
+    });
+    expect(verified.status()).toBe(200);
+    expect((await verified.json()).data.status).toBe('PENDING');
+
+    // Kept until the payment stops being waited for (48 hours from the
+    // order; the trip is further away), and audited as a renewal.
+    const { createdAt } = await paymentRow(order.reference);
+    const kept = await holdOf();
+    expect(kept.expiresAt?.toISOString()).toBe(
+      new Date(createdAt.getTime() + 48 * 3_600_000).toISOString(),
+    );
+    const renewals = await withPrisma((prisma) =>
+      prisma.auditLog.findMany({
+        where: { entityId: kept.id, action: 'availability.block.extend' },
+      }),
+    );
+    expect(renewals).toHaveLength(1);
+
+    // Another customer cannot take the aircraft, nor does a search offer it.
+    const other = await playwright.request.newContext({ baseURL });
+    await registerCustomer(other);
+    const competing = await other.post('bookings', {
+      headers: {
+        ...(await csrfHeaders(other)),
+        'Idempotency-Key': randomUUID(),
+      },
+      data: {
+        searchId: searched.searchId,
+        resultId: searched.result.resultId,
+        cancellationTermsVersion: searched.termsVersion,
+        expectedTotalMinor: searched.result.price.amountMinor,
+        currency: 'INR',
+      },
+    });
+    expect(competing.status()).toBe(409);
+    expect((await competing.json()).error.code).toBe('BOOKING_UNAVAILABLE');
+    expect((await searchFor(request, trip)).result).toBeUndefined();
+  });
 });
 
 test.describe('POST /webhooks/payments/:provider applies verified notices', () => {
@@ -516,6 +617,8 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
       status: 'AWAITING_PAYMENT',
       paymentStatus: 'PAID',
     });
+    // Waiting for the operator is not a reason to refund.
+    expect((await paymentRow(order.reference)).reviewReason).toBeNull();
   });
 
   test('a Model C deposit confirms an accepted booking', async ({
@@ -591,6 +694,26 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
       }),
     );
     expect(blocked).toHaveLength(1);
+    // The money is not stranded: flagged and due in full in the finance
+    // queue, while the booking still reads paid but not confirmed.
+    expect((await paymentRow(order.reference)).reviewReason).toBe(
+      'BOOKING_CLOSED',
+    );
+    expect(
+      await refundsDueFor({ request, playwright, baseURL }, order.reference),
+    ).toEqual([
+      expect.objectContaining({
+        kind: 'BOOKING_CLOSED',
+        dueMinor: totalMinor,
+        bookingStatus: 'AWAITING_PAYMENT',
+        bookingPaymentStatus: 'PAID',
+      }),
+    ]);
+    // Nothing more is asked of the customer.
+    expect(
+      (await (await customer.get(`bookings/${reference}`)).json()).data
+        .amountDue,
+    ).toBeNull();
   });
 
   test('a booking whose aircraft was grounded after acceptance stays unconfirmed when paid (rule 4)', async ({
@@ -634,6 +757,9 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
     expect(blocked.after).toMatchObject({
       reason: 'the aircraft is not approved or not in service',
     });
+    expect((await paymentRow(order.reference)).reviewReason).toBe(
+      'BOOKING_CLOSED',
+    );
   });
 
   test('the whole flow: request, operator accepts, customer pays, booking CONFIRMED', async ({
@@ -821,6 +947,26 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
       reviewReason: 'AMOUNT_MISMATCH',
     });
     expect((await bookingOf(customer, reference)).paymentStatus).toBe('UNPAID');
+
+    // A mismatched notice stored before its order was known stays unlinked
+    // and is applied on every redelivery: recorded once all the same.
+    const earlyOrderId = `order_early_${randomUUID().slice(0, 8)}`;
+    const early = notice('payment.captured', {
+      orderId: earlyOrderId,
+      amountMinor: totalMinor - 100,
+    });
+    expect((await deliver(request, early)).status()).toBe(200);
+    await setOrderId(order.reference, earlyOrderId);
+    for (let delivery = 0; delivery < 3; delivery += 1) {
+      expect((await deliver(request, early)).status()).toBe(200);
+    }
+    const { id } = await paymentRow(order.reference);
+    const flags = await withPrisma((prisma) =>
+      prisma.auditLog.findMany({
+        where: { entityId: id, action: 'payment.flag' },
+      }),
+    );
+    expect(flags).toHaveLength(1);
   });
 
   test('a late success for an expired booking is recorded and flagged for operations', async ({

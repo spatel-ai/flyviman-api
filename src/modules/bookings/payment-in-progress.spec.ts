@@ -3,6 +3,7 @@ import { PaymentStatus } from '../../generated/prisma/enums.js';
 import {
   PAYMENT_IN_PROGRESS_MAX_AGE_HOURS,
   holdsHoldExpiry,
+  paymentInProgressUntil,
   paymentInProgressWhere,
 } from './payment-in-progress.js';
 
@@ -72,5 +73,18 @@ describe('paymentInProgressWhere', () => {
       status: PaymentStatus.PENDING,
       createdAt: { gt: ago(PAYMENT_IN_PROGRESS_MAX_AGE_HOURS) },
     });
+  });
+});
+
+describe('paymentInProgressUntil', () => {
+  it('is the 48-hour bound, the moment the hold-expiry job stops waiting', () => {
+    const createdAt = ago(1);
+    const until = paymentInProgressUntil(createdAt);
+    expect(until.getTime() - createdAt.getTime()).toBe(
+      PAYMENT_IN_PROGRESS_MAX_AGE_HOURS * HOUR,
+    );
+    const pending = [{ status: PaymentStatus.PENDING, createdAt }];
+    expect(holdsHoldExpiry(pending, new Date(until.getTime() - 1))).toBe(true);
+    expect(holdsHoldExpiry(pending, until)).toBe(false);
   });
 });

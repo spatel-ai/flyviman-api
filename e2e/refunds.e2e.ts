@@ -270,11 +270,12 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     );
     expect(created.reason).toBe('Customer cancelled.');
 
-    // Booking summary: a partial refund on a live booking leaves it paid in
-    // part (W5-9c); only a closed booking reads REFUNDED with money kept.
-    expect(await bookingOf(customer, reference)).toMatchObject({
-      paymentStatus: 'PARTIALLY_PAID',
-    });
+    // Booking summary: a partial refund on a live paid booking is money
+    // returned, not money owed, so it stays PAID with nothing due (W5-9d);
+    // only a closed booking reads REFUNDED with money kept.
+    const after = (await (await customer.get(`bookings/${reference}`)).json())
+      .data as { paymentStatus: string; amountDue: unknown };
+    expect(after).toMatchObject({ paymentStatus: 'PAID', amountDue: null });
 
     // Finance's lists; not for customers.
     const refunds = await finance.get('admin/refunds?pageSize=100');
@@ -630,6 +631,31 @@ test.describe('Model C balance', () => {
       paymentStatus: 'PARTIALLY_PAID',
     });
 
+    expect(await amountDue()).toEqual({
+      amountMinor: totalMinor - deposit,
+      currency: 'INR',
+      priceType: 'CONFIRMED',
+      kind: 'BALANCE',
+    });
+
+    // A goodwill refund of part of the deposit is money returned, not money
+    // owed: the balance does not grow (W5-9d).
+    const finance = await staff(contexts, 'finance');
+    const goodwill = await refund(finance, first.reference, 100);
+    expect(goodwill.status()).toBe(201);
+    const goodwillRef = (await goodwill.json()).data.reference as string;
+    expect(
+      (
+        await deliver(
+          request,
+          await settleInGateway(request, goodwillRef, 'processed'),
+        )
+      ).status(),
+    ).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CONFIRMED',
+      paymentStatus: 'PARTIALLY_PAID',
+    });
     expect(await amountDue()).toEqual({
       amountMinor: totalMinor - deposit,
       currency: 'INR',

@@ -127,7 +127,7 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Report the checkout result',
     description:
-      'The signature is checked through the gateway (400 `PAYMENT_SIGNATURE_INVALID`, also for another order’s result). Not final: a valid result makes the payment `PENDING` at most; only the gateway’s verified notice makes it `SUCCEEDED` or `FAILED`, so poll the booking’s `paymentStatus`. Repeating it changes nothing.',
+      'The signature is checked through the gateway (400 `PAYMENT_SIGNATURE_INVALID`, also for another order’s result). Not final: a valid result makes the payment `PENDING` at most; only the gateway’s verified notice makes it `SUCCEEDED` or `FAILED`, so poll the booking’s `paymentStatus`. While the payment is `PENDING` the booking’s hold on the aircraft is kept (48 hours from the order at most, never past the trip). Repeating it changes nothing.',
   })
   @ApiOkResponse({ type: PaymentResponseDto })
   verify(

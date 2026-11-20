@@ -4,7 +4,11 @@ import {
   PaymentStatus,
   RefundStatus,
 } from '../../generated/prisma/enums.js';
-import { netPaidMinor, type PaidPayment } from './paid-amount.js';
+import {
+  creditedMinor,
+  netPaidMinor,
+  type PaidPayment,
+} from './paid-amount.js';
 
 function payment(overrides: Partial<PaidPayment> = {}): PaidPayment {
   return {
@@ -60,5 +64,31 @@ describe('netPaidMinor', () => {
 
   it('is 0 with nothing paid', () => {
     expect(netPaidMinor([])).toBe(0n);
+  });
+});
+
+describe('creditedMinor', () => {
+  it('counts the money that arrived towards the booking, less extra money', () => {
+    expect(
+      creditedMinor([
+        payment(),
+        payment({ status: PaymentStatus.PENDING }),
+        payment({ reviewReason: PaymentReviewReason.BOOKING_CLOSED }),
+        payment({ reviewReason: PaymentReviewReason.ALREADY_PAID }),
+        payment({ reviewReason: PaymentReviewReason.DUPLICATE_CAPTURE }),
+      ]),
+    ).toBe(2_000n);
+  });
+
+  it('never deducts a refund: money returned is not money owed', () => {
+    const refunded = payment({
+      status: PaymentStatus.PARTIALLY_REFUNDED,
+      refunds: [
+        { status: RefundStatus.COMPLETED, amountMinor: 300n },
+        { status: RefundStatus.PENDING, amountMinor: 200n },
+      ],
+    });
+    expect(creditedMinor([refunded])).toBe(1_000n);
+    expect(netPaidMinor([refunded])).toBe(500n);
   });
 });
