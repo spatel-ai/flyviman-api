@@ -705,14 +705,15 @@ test.describe('alternatives in charter search', () => {
       playwright,
       baseURL,
     );
-    // Later runs leave offers on this route in the database, and only the
-    // closest few are returned: leave in a window of its own, 12:00 to
-    // 14:00 UTC, and search at 13:00 so this offer always ranks first.
+    // Earlier runs leave offers on this route in the database (other tests
+    // on days 6 and 7), and only the closest few are returned: leave on day
+    // 10, more than the search window from them, 12:00 to 14:00 UTC, and
+    // search at 13:00 so this offer always ranks first.
     const moved = await request.patch(`operator/empty-legs/${draft.id}`, {
       headers: await csrfHeaders(request),
       data: {
-        departureFrom: inDays(6, 12).toISOString(),
-        departureTo: inDays(6, 14).toISOString(),
+        departureFrom: inDays(10, 12).toISOString(),
+        departureTo: inDays(10, 14).toISOString(),
       },
     });
     expect(moved.status()).toBe(200);
@@ -723,7 +724,7 @@ test.describe('alternatives in charter search', () => {
         data: {
           originId: trip.goa,
           destinationId: trip.mumbai,
-          departureAt: inDays(6, 13).toISOString(),
+          departureAt: inDays(10, 13).toISOString(),
           passengerCount: 3,
           ...data,
         },
