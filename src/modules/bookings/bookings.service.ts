@@ -12,6 +12,7 @@ import { day } from '../../common/validation/formats.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
   BookingEventType,
+  type BookingPaymentStatus,
   BookingStatus,
   PriceType,
 } from '../../generated/prisma/enums.js';
@@ -63,6 +64,25 @@ type TransitionRow = Pick<
   | 'priceType'
   | 'operatorAcceptedAt'
 >;
+
+/** What payments (M9) read of a booking: no itinerary, no passengers. */
+export const PAYABLE_FIELDS = {
+  id: true,
+  reference: true,
+  customerId: true,
+  category: true,
+  status: true,
+  priceType: true,
+  paymentModel: true,
+  paymentStatus: true,
+  operatorAcceptedAt: true,
+  totalMinor: true,
+  currency: true,
+} as const;
+
+export type PayableBookingRow = Prisma.BookingGetPayload<{
+  select: typeof PAYABLE_FIELDS;
+}>;
 
 function notFound(): AppException {
   return new AppException(
@@ -418,6 +438,76 @@ export class BookingsService {
       tx,
     );
     return to;
+  }
+
+  /**
+   * The booking a payment is for (M9): the caller's own by reference, or
+   * one by ID (a gateway notice). With a transaction it is locked
+   * (`FOR UPDATE`) until that transaction ends: every payment change on a
+   * booking takes this lock first, and a status change (which writes the
+   * row) waits for it, so a payment and a cancellation or expiry are never
+   * applied on a stale read. `null` when there is no such booking.
+   */
+  async forPayment(
+    where: { reference: string; customerId: string } | { id: string },
+    tx?: Prisma.TransactionClient,
+  ): Promise<PayableBookingRow | null> {
+    const db = tx ?? this.prisma;
+    const found = await db.booking.findFirst({
+      where,
+      select: PAYABLE_FIELDS,
+    });
+    if (!found || !tx) return found;
+    await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${found.id}::uuid FOR UPDATE`;
+    return tx.booking.findUnique({
+      where: { id: found.id },
+      select: PAYABLE_FIELDS,
+    });
+  }
+
+  /**
+   * Writes a booking's payment summary (M9) after a payment changed, with a
+   * `PAYMENT_UPDATE` event and an audit record, in the payment's
+   * transaction. Payment status only: a payment never moves the booking's
+   * own status (rule 2). Applied only if the summary is still `from`.
+   */
+  async recordPaymentStatus(
+    tx: Prisma.TransactionClient,
+    booking: Pick<PayableBookingRow, 'id' | 'reference' | 'paymentStatus'>,
+    to: BookingPaymentStatus,
+    payment: { reference: string; purpose: string },
+  ): Promise<void> {
+    const { count } = await tx.booking.updateMany({
+      where: { id: booking.id, paymentStatus: booking.paymentStatus },
+      data: { paymentStatus: to },
+    });
+    if (count !== 1) {
+      throw new Error('The booking payment status changed under its lock.');
+    }
+    const change = {
+      paymentReference: payment.reference,
+      purpose: payment.purpose,
+      from: booking.paymentStatus,
+      to,
+    };
+    await tx.bookingEvent.create({
+      data: {
+        bookingId: booking.id,
+        type: BookingEventType.PAYMENT_UPDATE,
+        payload: change,
+      },
+    });
+    await this.audit.record(
+      {
+        action: 'booking.payment_status',
+        entityType: 'Booking',
+        entityId: booking.id,
+        before: { reference: booking.reference, paymentStatus: booking.paymentStatus },
+        after: { reference: booking.reference, paymentStatus: to, paymentReference: payment.reference },
+        actor: null,
+      },
+      tx,
+    );
   }
 
   /**

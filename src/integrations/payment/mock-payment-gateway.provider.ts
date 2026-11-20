@@ -74,6 +74,7 @@ export interface SimulatedPayment {
  */
 export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
   readonly name = 'mock';
+  readonly checkoutKeyId = MOCK_PAYMENT_KEY_ID;
 
   private readonly orders = new Map<string, GatewayOrder>();
   private readonly payments = new Map<string, GatewayPayment>();

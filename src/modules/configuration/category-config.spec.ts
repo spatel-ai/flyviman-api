@@ -96,6 +96,7 @@ describe('resolveCategoryConfig', () => {
       isEnabled: true,
       bookingMode: BookingMode.INSTANT,
       paymentModel: PaymentModel.A_INSTANT,
+      depositPercent: 25,
     };
     expect(
       resolveCategoryConfig('AIR_AMBULANCE', 'IN', instantRow).bookingMode,

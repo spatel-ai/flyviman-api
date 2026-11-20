@@ -14,6 +14,9 @@ export abstract class PaymentGatewayProvider {
   /** The `:provider` segment of `POST /webhooks/payments/:provider`. */
   abstract readonly name: string;
 
+  /** The public key the browser's checkout is opened with. Never a secret. */
+  abstract readonly checkoutKeyId: string;
+
   abstract createOrder(input: CreateOrderInput): Promise<GatewayOrder>;
 
   /**
