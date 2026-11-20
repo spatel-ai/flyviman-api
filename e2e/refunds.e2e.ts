@@ -417,7 +417,8 @@ test.describe('GET /admin/refunds/due', () => {
     expect((await cancelled.json()).data.cancellation.refundMinor).toBe(
       quote.refundMinor,
     );
-    test.skip(quote.refundMinor === 0, 'the charge takes everything paid');
+    // The trip is days ahead: the charge leaves money to refund.
+    expect(quote.refundMinor).toBeGreaterThan(0);
 
     const finance = await staff(contexts, 'finance');
     const dueFor = async () => {
@@ -444,9 +445,38 @@ test.describe('GET /admin/refunds/due', () => {
     const ops = await staff(contexts, 'ops');
     expect((await ops.get('admin/refunds/due')).status()).toBe(403);
 
-    expect(
-      (await refund(finance, payment.reference, quote.refundMinor)).status(),
-    ).toBe(201);
+    // A refund that fails at the gateway: the booking stays cancelled, the
+    // money counts as kept again, and the refund is due again.
+    const first = await refund(finance, payment.reference, quote.refundMinor);
+    expect(first.status()).toBe(201);
+    expect(await dueFor()).toEqual([]);
+    const failed = await settleInGateway(
+      request,
+      (await first.json()).data.reference,
+      'failed',
+    );
+    expect((await deliver(request, failed)).status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CANCELLED',
+      paymentStatus: 'PAID',
+    });
+    expect(await dueFor()).toEqual([
+      expect.objectContaining({ dueMinor: quote.refundMinor }),
+    ]);
+
+    // Again, and the gateway returns it: refunded, still cancelled.
+    const second = await refund(finance, payment.reference, quote.refundMinor);
+    expect(second.status()).toBe(201);
+    const processed = await settleInGateway(
+      request,
+      (await second.json()).data.reference,
+      'processed',
+    );
+    expect((await deliver(request, processed)).status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CANCELLED',
+      paymentStatus: 'REFUNDED',
+    });
     expect(await dueFor()).toEqual([]);
   });
 
