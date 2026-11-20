@@ -462,6 +462,16 @@ test.describe('Change requests', () => {
       status: 'APPROVED',
       decisionNote: 'We can leave at 07:00.',
     });
+    // The operator's request page carries it too, so it can be answered there.
+    const operatorView = await request.get(
+      `operator/booking-requests/${reference}`,
+    );
+    expect(operatorView.status()).toBe(200);
+    expect((await operatorView.json()).data.changeRequests[0]).toMatchObject({
+      id: change.id,
+      status: 'APPROVED',
+      details: 'Could we leave an hour later?',
+    });
 
     // Once answered, another can be asked; operations may answer it.
     const next = (await (await askChange(customer, reference)).json()).data;
