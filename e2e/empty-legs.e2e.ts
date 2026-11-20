@@ -535,6 +535,56 @@ test.describe('expiry', () => {
     ).toBe(true);
     const expired = await anonymous.get(`empty-legs/${offer.id}`);
     expect((await expired.json()).error.code).toBe('EMPTY_LEG_EXPIRED');
+
+    // A later run does not tell followers a second time.
+    await expect(async () => {
+      const run = await anonymous.post('dev/jobs/empty-leg-expiry');
+      expect((await run.json()).data.skipped).toBe(false);
+    }).toPass({ timeout: 15_000 });
+    expect(
+      (await inbox(customer, offer.reference)).filter(
+        (key) => key === 'empty_leg.expired',
+      ),
+    ).toHaveLength(1);
+    expect(
+      (await outbox(anonymous, email)).filter((message) =>
+        message.body.includes(offer.reference),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test('two withdrawals at once: one succeeds and followers are told once', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { offer } = await draftOffer(request, playwright, baseURL);
+    await publish(request, offer.id);
+    const { customer, email } = await follower(playwright, baseURL);
+    await follow(customer, offer.id);
+
+    const headers = await csrfHeaders(request);
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        request.post(`operator/empty-legs/${offer.id}/withdraw`, { headers }),
+      ),
+    );
+    expect(results.map((r) => r.status()).sort()).toEqual([200, 409]);
+
+    // A withdrawn offer is not expired later, so the job adds nothing either.
+    const anonymous = await playwright.request.newContext({ baseURL });
+    await expect(async () => {
+      const run = await anonymous.post('dev/jobs/empty-leg-expiry');
+      expect((await run.json()).data.skipped).toBe(false);
+    }).toPass({ timeout: 15_000 });
+    expect(await inbox(customer, offer.reference)).toEqual([
+      'empty_leg.withdrawn',
+    ]);
+    expect(
+      (await outbox(customer, email)).filter((message) =>
+        message.body.includes(offer.reference),
+      ),
+    ).toHaveLength(1);
   });
 });
 
