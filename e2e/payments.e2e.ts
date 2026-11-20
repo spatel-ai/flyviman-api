@@ -666,6 +666,7 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
       data: {
         searchId: searched.searchId,
         resultId: searched.result.resultId,
+        cancellationTermsVersion: searched.termsVersion,
         expectedTotalMinor: searched.result.price.amountMinor,
         currency: 'INR',
       },

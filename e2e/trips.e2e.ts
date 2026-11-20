@@ -408,14 +408,9 @@ test.describe('POST /bookings/:reference/cancel', () => {
       {
         headers: await csrfHeaders(request),
         data: {
-          totalMinor: 61_000_000,
+          operatorPriceMinor: 61_000_000,
           currency: 'INR',
-          conditions: {
-            summary: 'Free cancellation.',
-            charges: [],
-            inclusions: [],
-            exclusions: [],
-          },
+          conditions: { inclusions: [], exclusions: [] },
         },
       },
     );
