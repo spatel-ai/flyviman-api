@@ -9,6 +9,8 @@ export const BOOKING_REFERENCE =
 export const QUOTE_REFERENCE = /^FLY-QT-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 export const EMPTY_LEG_REFERENCE =
   /^FLY-EL-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
+export const AIR_AMBULANCE_REFERENCE =
+  /^FLY-AA-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 
 /**
  * A human-facing reference such as `FLY-BK-7K2M9Q` (31^6 codes). Not unique
@@ -36,4 +38,10 @@ export function quoteReference(random?: (max: number) => number): string {
 
 export function emptyLegReference(random?: (max: number) => number): string {
   return reference('FLY-EL', random);
+}
+
+export function airAmbulanceReference(
+  random?: (max: number) => number,
+): string {
+  return reference('FLY-AA', random);
 }
