@@ -192,7 +192,7 @@ export class AdminAirAmbulanceOperatorsController {
   @ApiOperation({
     summary: 'Operators that may be quoted for a mission',
     description:
-      'Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name, at most 200. Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.',
+      'Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name (a short list: only operators with an approved air ambulance aircraft). Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.',
   })
   @ApiOkResponse({ type: [AirAmbulanceOperatorDto] })
   list(): Promise<AirAmbulanceOperatorDto[]> {

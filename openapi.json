@@ -7078,7 +7078,7 @@
     },
     "/api/v1/admin/air-ambulance/operators": {
       "get": {
-        "description": "Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name, at most 200. Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.",
+        "description": "Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name (a short list: only operators with an approved air ambulance aircraft). Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.",
         "operationId": "AdminAirAmbulanceOperatorsController_list",
         "parameters": [],
         "responses": {

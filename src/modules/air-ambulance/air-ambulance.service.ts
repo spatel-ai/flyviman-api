@@ -119,9 +119,6 @@ const ACCEPTED_OR_LATER: ReadonlySet<AirAmbulanceStatus> = new Set([
   AirAmbulanceStatus.COMPLETED,
 ]);
 
-/** The most operators the quote form lists. */
-const MAX_ELIGIBLE_OPERATORS = 200;
-
 /** Medical documents one request may hold. */
 export const MAX_DOCUMENTS = 10;
 
@@ -461,8 +458,7 @@ export class AirAmbulanceService implements OnModuleInit {
     );
     return [...approved]
       .map(([id, operator]) => ({ id, name: operator.name }))
-      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
-      .slice(0, MAX_ELIGIBLE_OPERATORS);
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   }
 
   /**
