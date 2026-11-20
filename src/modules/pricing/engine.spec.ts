@@ -956,6 +956,131 @@ describe('markup, service fee and discount (M5 4c)', () => {
   });
 });
 
+describe('promotion codes (M10)', () => {
+  const sum = (result: ReturnType<typeof run>) =>
+    result.breakdown.reduce((total, line) => total + line.amountMinor, 0);
+  const gst = rule('TAX', { name: 'GST', percent: 18 });
+  const commission = rule('COMMISSION', { percent: 10, mode: 'ADD_ON' });
+  const percentCode = {
+    id: 'promo1',
+    code: 'WINTER5',
+    name: 'Winter offer',
+    kind: 'PERCENT' as const,
+    percent: 5,
+  };
+
+  it('takes a percentage off the price before tax, after the discount rule, Flyviman funding it', () => {
+    const result = run(
+      [
+        RATE,
+        commission,
+        gst,
+        rule('DISCOUNT', { name: 'Launch offer', percent: 2 }),
+      ],
+      { promotion: percentCode },
+    );
+    // 1,10,00,000 before tax; launch 2% = 2,20,000; code 5% of the rest.
+    expect(result.breakdown.map((l) => [l.code, l.amountMinor])).toEqual([
+      ['OPERATING', 10_000_000],
+      ['PLATFORM_FEE', 1_000_000],
+      ['DISCOUNT', -220_000],
+      ['PROMOTION', -539_000],
+      ['TAX', 1_843_380],
+    ]);
+    expect(result.breakdown.find((l) => l.code === 'PROMOTION')).toMatchObject(
+      { label: 'Winter offer', basis: 'Code WINTER5: 5% of the price before tax' },
+    );
+    expect(result).toMatchObject({
+      discountMinor: 759_000,
+      operatorPayableMinor: 10_000_000,
+      platformRevenueMinor: 241_000,
+      totalMinor: 12_084_380,
+    });
+    expect(result.totalMinor).toBe(sum(result));
+    expect(
+      result.operatorPayableMinor +
+        result.platformRevenueMinor +
+        result.taxMinor,
+    ).toBe(result.totalMinor);
+    // Traceable: the promotion is listed with the rules applied.
+    expect(result.appliedRules).toContainEqual({
+      id: 'promo1',
+      type: 'PROMOTION',
+      scope: 'PROMOTION',
+      version: 1,
+    });
+  });
+
+  it('takes a fixed amount off', () => {
+    const result = run([RATE, commission, gst], {
+      promotion: {
+        id: 'p2',
+        code: 'FLAT',
+        name: 'Flat off',
+        kind: 'FIXED',
+        amountMinor: 300_000,
+      },
+    });
+    expect(result.discountMinor).toBe(300_000);
+    expect(result.taxMinor).toBe(1_926_000); // 18% of 1,07,00,000
+    expect(result.totalMinor).toBe(12_626_000);
+    expect(result.totalMinor).toBe(sum(result));
+  });
+
+  it('never takes more than Flyviman still earns after the discount rule', () => {
+    const result = run(
+      [
+        RATE,
+        commission,
+        gst,
+        rule('DISCOUNT', { name: 'Launch offer', percent: 5 }),
+      ],
+      {
+        promotion: {
+          id: 'p3',
+          code: 'BIG',
+          name: 'Big code',
+          kind: 'FIXED',
+          amountMinor: 5_000_000,
+        },
+      },
+    );
+    // Flyviman earns 10,00,000; the rule took 5,50,000; the code the rest.
+    expect(result.breakdown.find((l) => l.code === 'PROMOTION')?.amountMinor).toBe(
+      -450_000,
+    );
+    expect(result.platformRevenueMinor).toBe(0);
+    expect(result.operatorPayableMinor).toBe(10_000_000);
+    expect(result.assumptions).toContain(
+      'Big code applied up to its limit for this trip',
+    );
+    expect(result.totalMinor).toBe(sum(result));
+  });
+
+  it('adds no line when Flyviman earns nothing on the trip', () => {
+    const result = run([RATE, gst], { promotion: percentCode });
+    expect(result.breakdown.map((l) => l.code)).not.toContain('PROMOTION');
+    expect(result.discountMinor).toBe(0);
+    expect(result.assumptions.join(' ')).not.toMatch(/its limit/);
+  });
+
+  it('the same inputs and code give the same price', () => {
+    const rows = [RATE, commission, gst];
+    expect(run(rows, { promotion: percentCode })).toEqual(
+      run(rows, { promotion: percentCode }),
+    );
+  });
+
+  it('applies the code to the chosen round-trip option', () => {
+    const result = run([RATE, commission, gst], {
+      promotion: percentCode,
+      returnAt: new Date('2026-12-05T10:00:00Z'),
+    });
+    expect(result.breakdown.map((l) => l.code)).toContain('PROMOTION');
+    expect(result.totalMinor).toBe(sum(result));
+  });
+});
+
 describe('resolveRules', () => {
   const target = {
     aircraftId: 'ac1',
