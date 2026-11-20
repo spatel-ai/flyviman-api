@@ -505,6 +505,58 @@
         ]
       }
     },
+    "/api/v1/content/banners": {
+      "get": {
+        "description": "In display order; drafts and unpublished banners never appear. Plain text. Cacheable for a minute.",
+        "operationId": "ContentController_banners",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicContentItemResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Published banners",
+        "tags": [
+          "content"
+        ]
+      }
+    },
+    "/api/v1/content/faqs": {
+      "get": {
+        "description": "In display order; drafts never appear. `title` is the question, `body` the answer, plain text. Cacheable for a minute.",
+        "operationId": "ContentController_faqs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicContentItemResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Published questions and answers",
+        "tags": [
+          "content"
+        ]
+      }
+    },
     "/api/v1/admin/content/banners": {
       "get": {
         "description": "Drafts and published, in display order.",
@@ -7000,6 +7052,28 @@
           "body",
           "version",
           "publishedAt"
+        ]
+      },
+      "PublicContentItemResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "description": "A banner headline, or the question of a FAQ."
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain text, never HTML. A banner message, or the answer."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "body"
         ]
       },
       "ContentItemResponseDto": {
