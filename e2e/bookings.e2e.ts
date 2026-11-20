@@ -202,7 +202,7 @@ test.describe('POST /bookings', () => {
     expect(isEncrypted(snapshot.documentNumber!)).toBe(true);
     expect(isEncrypted(snapshot.specialAssistance!)).toBe(true);
     expect(isEncrypted(stored.row.specialRequests!)).toBe(true);
-    // A soft hold on the aircraft for this booking, lapsing within a day.
+    // A soft hold on the aircraft for this booking, lapsing within 48 hours.
     expect(stored.row.holds).toHaveLength(1);
     const [hold] = stored.row.holds;
     expect(hold).toMatchObject({
@@ -210,7 +210,7 @@ test.describe('POST /bookings', () => {
       reason: 'SOFT_HOLD',
     });
     expect(hold.expiresAt!.getTime()).toBeLessThanOrEqual(
-      Date.now() + 24 * 3_600_000,
+      Date.now() + 48 * 3_600_000,
     );
     // Every transition has an event and an audit record.
     expect(

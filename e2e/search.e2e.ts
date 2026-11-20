@@ -176,6 +176,13 @@ test.describe('charter search', () => {
       ).json()
     ).data;
     expect(instant.bookingMode).toBe('INSTANT');
+    // An instant booking never says the operator confirms it.
+    expect(detail.confirmationRequirements).toContain(
+      'The operator confirms the aircraft, crew and price',
+    );
+    expect(instant.confirmationRequirements.join(' ')).not.toMatch(
+      /operator confirms/i,
+    );
     // Operator costs and Flyviman's revenue are never in a customer answer.
     const text = JSON.stringify(detail);
     expect(text).not.toMatch(/operatorPayable|platformRevenue|calculationId/);

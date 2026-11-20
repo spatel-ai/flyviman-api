@@ -101,8 +101,6 @@ interface TextPayload {
   body: string;
 }
 
-type Actor = { kind: 'OPERATOR' | 'CUSTOMER'; user: AuthUser };
-
 function notFound(): AppException {
   return new AppException(
     'NOT_FOUND',
