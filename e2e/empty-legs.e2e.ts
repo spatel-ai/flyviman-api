@@ -693,3 +693,67 @@ test.describe('operator staff', () => {
     expect((await published.json()).data.status).toBe('PUBLISHED');
   });
 });
+
+test.describe('alternatives in charter search', () => {
+  test('a charter search lists matching empty legs with their own labelled price, and only those that fit', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { trip, offer } = await draftOffer(request, playwright, baseURL);
+    await publish(request, offer.id);
+    const search = async (data: Record<string, unknown>, path = 'charter') => {
+      const response = await request.post(`search/${path}`, {
+        headers: await csrfHeaders(request),
+        data: {
+          originId: trip.goa,
+          destinationId: trip.mumbai,
+          departureAt: inDays(6, 6).toISOString(),
+          passengerCount: 3,
+          ...data,
+        },
+      });
+      expect(response.status()).toBe(200);
+      return (await response.json()).data;
+    };
+    const ids = (body: { emptyLegAlternatives: { id: string }[] }) =>
+      body.emptyLegAlternatives.map((leg) => leg.id);
+
+    const found = await search({});
+    const ours = found.emptyLegAlternatives.find(
+      (leg: { id: string }) => leg.id === offer.id,
+    );
+    expect(ours).toMatchObject({
+      reference: offer.reference,
+      seatsAvailable: 6,
+      price: { amountMinor: 18_500_000, currency: 'INR' },
+    });
+    expect(['QUOTE', 'CONFIRMED', 'ESTIMATE', 'LIVE_FARE']).toContain(
+      ours.price.priceType,
+    );
+    // The stored search returns them too.
+    const stored = await request.get(`search/${found.searchId}`);
+    expect(ids((await stored.json()).data)).toContain(offer.id);
+
+    // Too many passengers, a departure outside the window, a route that
+    // is not near, and a helicopter search all leave it out.
+    expect(ids(await search({ passengerCount: 7 }))).not.toContain(offer.id);
+    expect(
+      ids(await search({ departureAt: inDays(20, 6).toISOString() })),
+    ).not.toContain(offer.id);
+    expect(
+      ids(await search({ originId: trip.mumbai, destinationId: trip.goa })),
+    ).not.toContain(offer.id);
+    expect((await search({}, 'helicopter')).emptyLegAlternatives).toEqual([]);
+
+    // Withdrawn offers are gone at once (rule 4).
+    const withdrawn = await request.post(
+      `operator/empty-legs/${offer.id}/withdraw`,
+      {
+        headers: await csrfHeaders(request),
+      },
+    );
+    expect(withdrawn.status()).toBe(200);
+    expect(ids(await search({}))).not.toContain(offer.id);
+  });
+});

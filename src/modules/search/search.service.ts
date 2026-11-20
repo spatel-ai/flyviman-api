@@ -23,6 +23,7 @@ import {
 } from '../pricing/engine.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { customerBreakdown } from './breakdown.js';
+import { EmptyLegsService } from '../empty-legs/empty-legs.service.js';
 import { calendarDepartures, monthInRange } from './calendar.js';
 import type {
   FareCalendarQueryDto,
@@ -101,6 +102,7 @@ export class SearchService {
     private readonly pricing: PricingService,
     private readonly routing: RoutingProvider,
     private readonly categories: CategoryConfigService,
+    private readonly emptyLegs: EmptyLegsService,
   ) {}
 
   async search(
@@ -271,20 +273,53 @@ export class SearchService {
       passengerCount: dto.passengerCount,
       createdAt: now.toISOString(),
       results: results.map(publicResult),
+      emptyLegAlternatives: await this.alternatives(
+        category,
+        dto.originId,
+        dto.destinationId,
+        departureAt,
+        dto.passengerCount,
+      ),
     };
+  }
+
+  /** Empty legs for a charter trip's outbound flight; none for helicopters. */
+  private alternatives(
+    category: SearchResponseDto['category'],
+    originId: string,
+    destinationId: string,
+    departureAt: Date,
+    passengers: number,
+  ): Promise<SearchResponseDto['emptyLegAlternatives']> {
+    return category === 'PRIVATE_CHARTER'
+      ? this.emptyLegs.alternativesFor({
+          originId,
+          destinationId,
+          departureAt,
+          passengers,
+        })
+      : Promise.resolve([]);
   }
 
   async get(searchId: string): Promise<SearchResponseDto> {
     const search = await this.find(searchId);
     const results = search.results as unknown as StoredResult[];
+    const legs = search.legs as unknown as SearchLegDto[];
     return {
       searchId: search.id,
       category: search.category,
       aircraftCategory: preferredCategory(search.preferences),
-      legs: search.legs as unknown as SearchLegDto[],
+      legs,
       passengerCount: search.passengerCount,
       createdAt: search.createdAt.toISOString(),
       results: results.map(publicResult),
+      emptyLegAlternatives: await this.alternatives(
+        search.category,
+        legs[0].originId,
+        legs[0].destinationId,
+        new Date(legs[0].departureAt),
+        search.passengerCount,
+      ),
     };
   }
 

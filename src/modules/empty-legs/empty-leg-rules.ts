@@ -222,3 +222,85 @@ export function termsIssues(
   }
   return issues;
 }
+
+// --- Alternatives in charter search results (M7) ---------------------------
+
+/** How far either side of the requested departure an alternative may leave. */
+export const ALTERNATIVE_WINDOW_DAYS = 2;
+/** How far an alternative's origin or destination may be from the request. */
+export const ALTERNATIVE_NEARBY_KM = 100;
+/** Most alternatives a search response carries. */
+export const ALTERNATIVE_LIMIT = 5;
+
+interface Point {
+  id: string;
+  latitude: number;
+  longitude: number;
+}
+
+/** Great-circle distance in kilometres. */
+export function greatCircleKm(a: Point, b: Point): number {
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  const h =
+    Math.sin(rad(b.latitude - a.latitude) / 2) ** 2 +
+    Math.cos(rad(a.latitude)) *
+      Math.cos(rad(b.latitude)) *
+      Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
+  return 12_742 * Math.asin(Math.sqrt(h));
+}
+
+/** The same place, or within `ALTERNATIVE_NEARBY_KM` of it. */
+export function isNearby(a: Point, b: Point): boolean {
+  return a.id === b.id || greatCircleKm(a, b) <= ALTERNATIVE_NEARBY_KM;
+}
+
+export interface AlternativeCandidate {
+  origin: Point;
+  destination: Point;
+  departureWindowStart: Date;
+  departureWindowEnd: Date;
+  passengerCapacity: number;
+}
+
+/**
+ * Candidates that fit the request: origin and destination each the same or
+ * nearby, a departure window that comes within `ALTERNATIVE_WINDOW_DAYS` of
+ * the requested time, and enough seats. Exact routes first, then the
+ * closest departure; at most `ALTERNATIVE_LIMIT`.
+ */
+export function pickAlternatives<T extends AlternativeCandidate>(
+  candidates: T[],
+  request: {
+    origin: Point;
+    destination: Point;
+    departureAt: Date;
+    passengers: number;
+  },
+): T[] {
+  const span = ALTERNATIVE_WINDOW_DAYS * DAY_MS;
+  const at = request.departureAt.getTime();
+  const gap = (c: T) =>
+    Math.max(
+      c.departureWindowStart.getTime() - at,
+      at - c.departureWindowEnd.getTime(),
+      0,
+    );
+  const exact = (c: T) =>
+    c.origin.id === request.origin.id &&
+    c.destination.id === request.destination.id;
+  return candidates
+    .filter(
+      (c) =>
+        c.passengerCapacity >= request.passengers &&
+        gap(c) <= span &&
+        isNearby(c.origin, request.origin) &&
+        isNearby(c.destination, request.destination),
+    )
+    .sort(
+      (a, b) =>
+        Number(exact(b)) - Number(exact(a)) ||
+        gap(a) - gap(b) ||
+        a.departureWindowStart.getTime() - b.departureWindowStart.getTime(),
+    )
+    .slice(0, ALTERNATIVE_LIMIT);
+}
