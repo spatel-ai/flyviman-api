@@ -5371,6 +5371,309 @@
         ]
       }
     },
+    "/api/v1/bookings/{reference}/cancellation-quote": {
+      "get": {
+        "description": "Worked out from the cancellation terms the booking was made on (rule 9) and the notice left before the first departure. A charge is money only when the price is `CONFIRMED` (`amountKnown`); before that the rule that applies is shown and `chargeMinor` is 0. `refundMinor` is what is due back (refunds are made later; nothing moves here), null while the amount paid cannot be read. 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404.",
+        "operationId": "BookingsController_cancellationQuote",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationQuoteDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "What cancelling now would cost, before the customer commits",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/cancel": {
+      "post": {
+        "description": "Send the `chargeMinor` from the cancellation quote as `expectedChargeMinor`; if the charge differs now, 409 `BOOKING_CANCELLATION_CHANGED` with the current `chargeMinor`, `currency` and `refundMinor` in `details`. Moves the booking to `CANCELLED` at once, records the terms applied and the refund due on its timeline and as a completed cancellation request, closes any open change request, and is audited. 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "operationId": "BookingsController_cancel",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each cancellation and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingCancelledDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Cancel a booking at the charge shown",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/change-requests": {
+      "post": {
+        "description": "Free text, answered by the operator or operations with a note. One open request per booking: 409 `CHANGE_REQUEST_OPEN`. Only while the booking is in progress (requested up to scheduled): 409 `CHANGE_REQUEST_NOT_ALLOWED`. A price change comes as a revised quote. Another customer’s booking is 404.",
+        "operationId": "BookingsController_requestChange",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChangeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeRequestResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Ask for a change to a booking",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/me/bookings": {
+      "get": {
+        "description": "Summary rows only: no passengers or special requests (`GET /bookings/:reference` has those). `view=upcoming` lists bookings in progress (`REQUESTED` up to `SCHEDULED`); `view=past` the rest. At most 50 per page.",
+        "operationId": "MeBookingsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "view",
+            "required": false,
+            "in": "query",
+            "description": "`upcoming`: bookings still in progress (requested up to scheduled). `past`: completed, cancelled, expired, declined or unavailable. Decided by status, not by the departure time.",
+            "schema": {
+              "default": "upcoming",
+              "type": "string",
+              "enum": [
+                "upcoming",
+                "past"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TripSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The caller’s trips, upcoming or past, newest first",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/operator/change-requests/{id}/decide": {
+      "post": {
+        "description": "Operator administrators for their operator’s bookings; staff for bookings on aircraft in their reach. Another operator’s request is 404; an operator that is not approved gets 409 `OPERATOR_NOT_APPROVED`. The note is shown to the customer. 409 `CHANGE_REQUEST_DECIDED` when it has already been answered. A price change goes through a revised quote.",
+        "operationId": "OperatorChangeRequestsController_decide",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideChangeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeRequestResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Approve or decline a change request, with a note",
+        "tags": [
+          "operator-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/change-requests/{id}/decide": {
+      "post": {
+        "description": "Operations, for any booking. The note is shown to the customer. 409 `CHANGE_REQUEST_DECIDED` when it has already been answered. A price change goes through a revised quote.",
+        "operationId": "AdminChangeRequestsController_decide",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideChangeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeRequestResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Approve or decline a change request, with a note",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
     "/api/v1/webhooks/payments/{provider}": {
       "post": {
         "description": "For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).",
@@ -12634,6 +12937,76 @@
           "specialAssistance"
         ]
       },
+      "ChangeRequestKind": {
+        "type": "string",
+        "enum": [
+          "CHANGE",
+          "CANCELLATION"
+        ]
+      },
+      "ChangeRequestStatus": {
+        "type": "string",
+        "enum": [
+          "REQUESTED",
+          "APPROVED",
+          "REJECTED",
+          "COMPLETED"
+        ]
+      },
+      "ChangeRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChangeRequestKind"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChangeRequestStatus"
+              }
+            ]
+          },
+          "details": {
+            "type": "string"
+          },
+          "decisionNote": {
+            "type": "string",
+            "nullable": true,
+            "description": "The decision’s note, once decided."
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "bookingReference",
+          "kind",
+          "status",
+          "details",
+          "decisionNote",
+          "decidedAt",
+          "createdAt"
+        ]
+      },
       "BookingResponseDto": {
         "type": "object",
         "properties": {
@@ -12699,6 +13072,23 @@
               "$ref": "#/components/schemas/BookingPassengerDto"
             }
           },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "changeRequests": {
+            "description": "Change and cancellation requests, newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeRequestResponseDto"
+            }
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -12720,8 +13110,267 @@
           "cancellationTerms",
           "specialRequests",
           "passengers",
+          "confirmedAt",
+          "cancelledAt",
+          "changeRequests",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "CancellationQuoteDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "terms": {
+            "description": "The terms the booking was made on (rule 9).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CancellationTermsDto"
+              }
+            ]
+          },
+          "hoursBeforeDeparture": {
+            "type": "number",
+            "description": "Whole hours from now to the first departure; 0 once passed."
+          },
+          "appliedCharge": {
+            "nullable": true,
+            "description": "The rule that applies now. Notice shorter than every rule gets the last (shortest-notice) rule. Null when the terms carry no charges.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CancellationChargeDto"
+              }
+            ]
+          },
+          "priceType": {
+            "description": "Of the booking’s price.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "totalMinor": {
+            "type": "number",
+            "description": "The booking’s price, paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "amountKnown": {
+            "type": "boolean",
+            "description": "True only when the price is `CONFIRMED`. Otherwise the rule is shown but no money is charged: `chargeMinor` is 0."
+          },
+          "chargeMinor": {
+            "type": "number",
+            "description": "Paise charged if cancelled now; rounded down. Send it back as `expectedChargeMinor` to cancel."
+          },
+          "paidMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Paise paid so far; null while it cannot be read yet (M9)."
+          },
+          "refundMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Paise due back: paid less the charge, never below 0. Null when `paidMinor` is null. Refunds are made later (M9); nothing is moved here."
+          },
+          "explanation": {
+            "type": "string",
+            "description": "What the figures mean, in one sentence."
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "terms",
+          "hoursBeforeDeparture",
+          "appliedCharge",
+          "priceType",
+          "totalMinor",
+          "currency",
+          "amountKnown",
+          "chargeMinor",
+          "paidMinor",
+          "refundMinor",
+          "explanation",
+          "evaluatedAt"
+        ]
+      },
+      "CancelBookingDto": {
+        "type": "object",
+        "properties": {
+          "expectedChargeMinor": {
+            "type": "number",
+            "description": "Paise: the charge the customer was shown (`GET …/cancellation-quote`). If it differs now, 409 `BOOKING_CANCELLATION_CHANGED` carries the new figures."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "expectedChargeMinor",
+          "currency"
+        ]
+      },
+      "BookingCancelledDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/CancellationQuoteDto"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "cancelledAt",
+          "cancellation"
+        ]
+      },
+      "CreateChangeRequestDto": {
+        "type": "object",
+        "properties": {
+          "details": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "What the customer would like changed, in their words."
+          }
+        },
+        "required": [
+          "details"
+        ]
+      },
+      "TripSummaryDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "#/components/schemas/BookingPriceDto"
+          },
+          "tripType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The first departure."
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "category",
+          "status",
+          "paymentStatus",
+          "price",
+          "tripType",
+          "originName",
+          "destinationName",
+          "departureAt",
+          "passengerCount",
+          "createdAt"
+        ]
+      },
+      "DecideChangeRequestDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Shown to the customer."
+          }
+        },
+        "required": [
+          "decision",
+          "note"
         ]
       },
       "WebhookAckResponseDto": {

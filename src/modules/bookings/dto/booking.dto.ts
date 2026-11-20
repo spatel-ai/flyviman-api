@@ -19,6 +19,8 @@ import {
   BookingMode,
   BookingPaymentStatus,
   BookingStatus,
+  ChangeRequestKind,
+  ChangeRequestStatus,
   Gender,
   IdentityDocumentType,
   PaymentModel,
@@ -259,6 +261,36 @@ export class BookingPassengerDto {
   specialAssistance: string | null;
 }
 
+export class ChangeRequestResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
+  bookingReference: string;
+
+  @ApiProperty({ enum: ChangeRequestKind, enumName: 'ChangeRequestKind' })
+  kind: ChangeRequestKind;
+
+  @ApiProperty({ enum: ChangeRequestStatus, enumName: 'ChangeRequestStatus' })
+  status: ChangeRequestStatus;
+
+  @ApiProperty()
+  details: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The decision’s note, once decided.',
+  })
+  decisionNote: string | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  decidedAt: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  createdAt: string;
+}
+
 export class BookingResponseDto {
   @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
   reference: string;
@@ -304,6 +336,18 @@ export class BookingResponseDto {
 
   @ApiProperty({ type: [BookingPassengerDto] })
   passengers: BookingPassengerDto[];
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  confirmedAt: string | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  cancelledAt: string | null;
+
+  @ApiProperty({
+    type: [ChangeRequestResponseDto],
+    description: 'Change and cancellation requests, newest first.',
+  })
+  changeRequests: ChangeRequestResponseDto[];
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;

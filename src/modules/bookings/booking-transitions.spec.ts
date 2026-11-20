@@ -12,6 +12,7 @@ import {
   type BookingActor,
   CANCELLABLE,
   checkTransition,
+  statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
 
@@ -219,5 +220,18 @@ describe('actorFor', () => {
     expect(actorFor(Role.OPS)).toBe('OPERATIONS');
     expect(actorFor(Role.SUPER_ADMIN)).toBe('OPERATIONS');
     expect(actorFor(Role.FINANCE_ADMIN)).toBeNull();
+  });
+});
+
+describe('statusTimestamps', () => {
+  const now = new Date('2026-11-20T10:00:00.000Z');
+
+  it('sets confirmedAt on CONFIRMED and cancelledAt on CANCELLED only', () => {
+    expect(statusTimestamps(S.CONFIRMED, now)).toEqual({ confirmedAt: now });
+    expect(statusTimestamps(S.CANCELLED, now)).toEqual({ cancelledAt: now });
+    for (const status of STATUSES) {
+      if (status === S.CONFIRMED || status === S.CANCELLED) continue;
+      expect(statusTimestamps(status, now)).toEqual({});
+    }
   });
 });

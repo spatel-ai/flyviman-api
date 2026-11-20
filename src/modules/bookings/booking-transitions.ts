@@ -255,3 +255,16 @@ export function afterRequested(context: TransitionContext): BookingStatus {
     ? S.AWAITING_PAYMENT
     : S.OPERATOR_PENDING;
 }
+
+/**
+ * The timestamps entering `to` sets: `confirmedAt` on CONFIRMED and
+ * `cancelledAt` on CANCELLED, whoever made the move.
+ */
+export function statusTimestamps(
+  to: BookingStatus,
+  now: Date,
+): { confirmedAt?: Date; cancelledAt?: Date } {
+  if (to === S.CONFIRMED) return { confirmedAt: now };
+  if (to === S.CANCELLED) return { cancelledAt: now };
+  return {};
+}
