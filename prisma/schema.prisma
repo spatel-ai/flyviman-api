@@ -1447,7 +1447,7 @@ model AirAmbulanceRequest {
   /// The nearest airport or helipad at each end.
   originLocationId      String             @db.Uuid
   destinationLocationId String             @db.Uuid
-  /// Where the patient is collected, for example a hospital and ward.
+  /// Where the patient is collected, for example a hospital.
   pickupAddress         String?
   /// The receiving hospital or facility.
   destinationFacility   String?

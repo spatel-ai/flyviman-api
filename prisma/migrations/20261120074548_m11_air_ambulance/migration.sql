@@ -149,7 +149,7 @@ ALTER TABLE "AirAmbulanceRequest"
 ALTER TABLE "AirAmbulanceRequestEvent"
   ADD CONSTRAINT "AirAmbulanceRequestEvent_confirmed_by_person"
   CHECK ("toStatus" <> 'CONFIRMED'
-    OR ("actorId" IS NOT NULL AND "actorRole" IN ('OPS', 'SUPER_ADMIN')));
+    OR ("actorId" IS NOT NULL AND "actorRole" IS NOT NULL AND "actorRole" IN ('OPS', 'SUPER_ADMIN')));
 
 -- The timeline is append-only for every role, like BookingEvent; `npm run
 -- db:grant` derives its revoke list from triggers named *_append_only.
