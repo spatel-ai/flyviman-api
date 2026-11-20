@@ -20,48 +20,12 @@ import { PriceType, QuoteStatus } from '../../../generated/prisma/enums.js';
 /** ₹10 crore in paise, as for booking amounts. */
 const MAX_TOTAL_MINOR = 10_000_000_000;
 
-export class QuoteChargeInputDto {
-  @ApiProperty({
-    minimum: 0,
-    maximum: 8760,
-    description:
-      'Applies when cancelling at least this many hours before departure.',
-  })
-  @IsInt()
-  @Min(0)
-  @Max(8760)
-  minHoursBeforeDeparture: number;
-
-  @ApiProperty({ minimum: 0, maximum: 100, description: 'Of the total.' })
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  chargePercent: number;
-}
-
+/**
+ * What the operator writes beside its price. The cancellation terms are
+ * Flyviman's (D-172): the quote carries the booking's snapshot, never the
+ * operator's own.
+ */
 export class QuoteConditionsInputDto {
-  @ApiProperty({
-    maxLength: 2000,
-    description:
-      'The cancellation conditions in words, shown to the customer before they accept (business rule 9).',
-  })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(2000)
-  @IsPlainText()
-  summary: string;
-
-  @ApiProperty({
-    type: [QuoteChargeInputDto],
-    description:
-      'Cancellation charges by notice, longest notice first, each notice once. Empty: nothing is charged on cancellation.',
-  })
-  @IsArray()
-  @ArrayMaxSize(10)
-  @ValidateNested({ each: true })
-  @Type(() => QuoteChargeInputDto)
-  charges: QuoteChargeInputDto[];
-
   @ApiProperty({ type: [String], description: 'What the price includes.' })
   @IsArray()
   @ArrayMaxSize(20)
@@ -83,13 +47,15 @@ export class QuoteConditionsInputDto {
 
 export class ReviseQuoteDto {
   @ApiProperty({
+    minimum: 1,
+    maximum: MAX_TOTAL_MINOR,
     description:
-      'Paise: the all-in price the customer pays (taxes and fees included).',
+      "Paise: the operator's price for the trip, before Flyviman's commission, fees and tax (tax- and commission-exclusive). Flyviman's pricing rules work out the customer's total, labelled `QUOTE`, from it (D-172).",
   })
   @IsInt()
   @Min(1)
   @Max(MAX_TOTAL_MINOR)
-  totalMinor: number;
+  operatorPriceMinor: number;
 
   @ApiProperty({ enum: ['INR'], example: 'INR' })
   @IsIn(['INR'])
@@ -153,7 +119,7 @@ export class QuotePriceDto {
   validUntil: string;
 }
 
-/** A quote as the customer and the operator see it. */
+/** A quote as the customer sees it: the total only. */
 export class QuoteResponseDto {
   @ApiProperty({ example: 'FLY-QT-7K2M9Q' })
   reference: string;
@@ -173,7 +139,11 @@ export class QuoteResponseDto {
   @ApiProperty({ type: QuotePriceDto })
   price: QuotePriceDto;
 
-  @ApiProperty({ type: QuoteConditionsDto })
+  @ApiProperty({
+    type: QuoteConditionsDto,
+    description:
+      "`summary` and `charges` are Flyviman's cancellation terms the booking was requested on (D-172); `inclusions` and `exclusions` are the operator's.",
+  })
   conditions: QuoteConditionsDto;
 
   @ApiProperty({ format: 'date-time' })
@@ -181,4 +151,37 @@ export class QuoteResponseDto {
 
   @ApiProperty({ format: 'date-time' })
   updatedAt: string;
+}
+
+/** The operator's own price for its quote; never in a customer's view (D-099). */
+export class OperatorQuotePriceDto {
+  @ApiProperty({
+    enum: PriceType,
+    enumName: 'PriceType',
+    description: 'As the quote: `QUOTE` until accepted, then `CONFIRMED`.',
+  })
+  priceType: PriceType;
+
+  @ApiProperty({ description: "Paise: the operator's price as entered." })
+  amountMinor: number;
+
+  @ApiProperty({
+    description:
+      'Paise: what Flyviman pays the operator (the price, less commission where commission is deducted).',
+  })
+  payableMinor: number;
+
+  @ApiProperty({ example: 'INR' })
+  currency: string;
+}
+
+/** A quote as its operator sees it: the customer's view plus its own price. */
+export class OperatorQuoteResponseDto extends QuoteResponseDto {
+  @ApiProperty({
+    type: OperatorQuotePriceDto,
+    nullable: true,
+    description:
+      "Null for a quote sent before quotes were priced from the operator's price (D-172).",
+  })
+  operatorPrice: OperatorQuotePriceDto | null;
 }

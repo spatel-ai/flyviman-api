@@ -73,7 +73,9 @@ const OUTCOME = {
  * (rule 5), except that a notice stored before its order was known is
  * applied when it comes again (`apply`). Outcomes only move a payment forward (`nextPaymentStatus`), so a
  * delayed or out-of-order notice is safe. A payment writes the booking's
- * payment summary only, never its status (rule 2). A notice that never
+ * payment summary; the booking becomes `CONFIRMED` only when the
+ * confirmation rule then holds (`BookingsService.recordPaymentStatus`):
+ * a payment alone never confirms it (rule 2). A notice that never
  * arrives is made up for by the status sweep (`runSweep`).
  */
 @Injectable()

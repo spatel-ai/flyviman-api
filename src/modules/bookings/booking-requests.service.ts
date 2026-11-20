@@ -17,6 +17,7 @@ import {
   AircraftListingStatus,
   AvailabilityBlockReason,
   BookingEventType,
+  BookingPaymentStatus,
   BookingStatus,
   NotificationChannel,
   OperatorStatus,
@@ -36,11 +37,18 @@ import {
 } from '../operators/operator-access.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import type {
+  OperatorQuoteResponseDto,
   QuoteResponseDto,
   ReviseQuoteDto,
 } from '../quotes/dto/quote.dto.js';
 import { quoteStanding, quoteValidUntil } from '../quotes/quote-transitions.js';
-import { type QuoteRow, QuotesService } from '../quotes/quotes.service.js';
+import { PricingService } from '../pricing/pricing.service.js';
+import {
+  type OperatorQuoteRow,
+  type QuoteRow,
+  QUOTE_CALCULATION_SELECT,
+  QuotesService,
+} from '../quotes/quotes.service.js';
 import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { isQuoteRequest } from './booking-snapshot.js';
@@ -70,6 +78,9 @@ const JOB_BATCH = 100;
 /** Attempts at a fresh quote reference before giving up (31^6 codes). */
 const REFERENCE_ATTEMPTS = 5;
 
+/** ₹10 crore in paise: the most a customer amount can be on the booking routes. */
+const MAX_QUOTE_TOTAL_MINOR = 10_000_000_000;
+
 /** A quote must leave the customer at least this long to answer. */
 const MIN_QUOTE_MINUTES = 60;
 
@@ -86,6 +97,7 @@ const BOOKING_INCLUDE = {
   quotes: {
     where: { status: { not: QuoteStatus.DRAFT } },
     orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
+    include: { calculation: { select: QUOTE_CALCULATION_SELECT } },
   },
   calculation: { select: { validUntil: true } },
 } satisfies Prisma.BookingInclude;
@@ -155,6 +167,7 @@ export class BookingRequestsService {
     private readonly notifications: NotificationsService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
+    private readonly pricing: PricingService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
@@ -259,6 +272,7 @@ export class BookingRequestsService {
       await this.event(tx, row.id, BookingEventType.OPERATOR_RESPONSE, user, {
         decision: 'ACCEPT',
       });
+      await this.bookings.afterPriceConfirmed(tx, row.id);
       return this.notifyCustomer(tx, row, 'booking.price_confirmed', {});
     });
     return this.operatorDetail(user, reference);
@@ -340,11 +354,11 @@ export class BookingRequestsService {
     user: AuthUser,
     reference: string,
     input: ReviseQuoteDto,
-  ): Promise<QuoteResponseDto> {
+  ): Promise<OperatorQuoteResponseDto> {
     const access = await this.access(user);
     const booking = await this.operatorBooking(access, reference);
     const requested = input.validUntil ? new Date(input.validUntil) : undefined;
-    let issued: QuoteRow | null = null;
+    let issued: OperatorQuoteRow | null = null;
     for (let attempt = 1; ; attempt += 1) {
       try {
         await this.changeRequest(booking.id, async (tx, row, now) => {
@@ -376,25 +390,73 @@ export class BookingRequestsService {
             requested,
           );
           await this.assertBookable(tx, row, now, 'operator', validUntil);
+          // The operator's price plus Flyviman's commission, fees and tax,
+          // stored as a traceable calculation (D-172 B). The customer sees
+          // the total only.
+          const itinerary = parseItinerary(row.itinerary);
+          const { calculationId, result } = await this.pricing.priceQuote(tx, {
+            aircraftId: row.aircraftId ?? itinerary.aircraft.id,
+            operatorId: access.operatorId,
+            category: itinerary.aircraft.category,
+            bookingId: row.id,
+            operatorPriceMinor: input.operatorPriceMinor,
+            validUntil,
+            availabilityCheckedAt: now,
+          });
+          // Every customer amount (a cancellation charge of 100% included)
+          // stays within ₹10 crore, the ceiling the booking routes accept.
+          if (result.totalMinor > MAX_QUOTE_TOTAL_MINOR) {
+            throw new AppException(
+              'VALIDATION_ERROR',
+              'The request is not valid.',
+              HttpStatus.BAD_REQUEST,
+              [
+                {
+                  field: 'operatorPriceMinor',
+                  issue:
+                    "with Flyviman's charges and tax, the customer's total would exceed ₹10 crore",
+                },
+              ],
+            );
+          }
+          // Flyviman's terms the request was made on (D-172), never the
+          // operator's own: the quote shows them before the customer
+          // accepts (rule 9).
+          const terms = parseCancellationTerms(row.cancellationTerms);
           const { quote, superseded } = await this.quotes.issue(
             tx,
             {
               bookingId: row.id,
               operatorId: access.operatorId,
-              totalMinor: input.totalMinor,
-              currency: input.currency,
+              totalMinor: result.totalMinor,
+              calculationId,
+              currency: result.currency,
               validUntil,
-              conditions: input.conditions,
+              conditions: {
+                summary: terms.summary,
+                charges: terms.charges,
+                inclusions: input.conditions.inclusions,
+                exclusions: input.conditions.exclusions,
+              },
               createdById: user.id,
             },
             now,
           );
-          issued = quote;
+          issued = {
+            ...quote,
+            calculation: {
+              baseMinor: BigInt(result.baseMinor),
+              operatorPayableMinor: BigInt(result.operatorPayableMinor),
+              currency: result.currency,
+            },
+          };
+          // The customer's total only: the operator's price stays in the
+          // calculation, read by finance (D-099, D-103).
           await this.event(tx, row.id, BookingEventType.QUOTE_ISSUED, user, {
             quoteReference: quote.reference,
             supersedes: superseded,
-            totalMinor: input.totalMinor,
-            currency: input.currency,
+            totalMinor: result.totalMinor,
+            currency: result.currency,
             priceType: PriceType.QUOTE,
             validUntil: validUntil.toISOString(),
           });
@@ -412,7 +474,7 @@ export class BookingRequestsService {
       }
     }
     if (!issued) throw quoteNotFound();
-    return this.quotes.toResponse(issued, booking.reference);
+    return this.quotes.toOperatorResponse(issued, booking.reference);
   }
 
   /** An internal note on one of the operator's bookings (never the customer's). */
@@ -491,14 +553,8 @@ export class BookingRequestsService {
         { context: { quote: 'LIVE' } },
       );
       await this.assertBookable(tx, row, now, 'customer');
-      const conditions = this.quotes.conditionsOf(quote);
-      const terms = parseCancellationTerms({
-        version: 1,
-        source: 'OPERATOR_QUOTE',
-        summary: conditions.summary,
-        charges: conditions.charges,
-        acceptedAt: now.toISOString(),
-      });
+      // The cancellation terms stay the snapshot the request was made on
+      // (rule 9, D-172), which the quote showed.
       await tx.booking.update({
         where: { id: row.id },
         data: {
@@ -507,7 +563,6 @@ export class BookingRequestsService {
           priceType: PriceType.CONFIRMED,
           acceptedQuoteId: quote.id,
           operatorAcceptedAt: now,
-          cancellationTerms: terms as unknown as Prisma.InputJsonValue,
         },
       });
       await this.audit.record(
@@ -534,6 +589,7 @@ export class BookingRequestsService {
         },
         tx,
       );
+      await this.bookings.afterPriceConfirmed(tx, row.id);
       return this.notifyOperator(tx, row, 'booking.quote_accepted');
     });
     return this.customerQuote(user, quoteReference);
@@ -620,6 +676,9 @@ export class BookingRequestsService {
    * 2. a request waiting for the operator whose hold lapsed with no quote
    *    sent becomes `OPERATOR_UNAVAILABLE` (no answer in time);
    * 3. a question the customer left unanswered until the hold lapsed
+   *    becomes `EXPIRED`;
+   * 4. a booking `AWAITING_PAYMENT` with nothing paid whose hold (the
+   *    payment window, renewed when the price was confirmed) lapsed
    *    becomes `EXPIRED`.
    * Holds are released and the customer told. Each change is guarded by
    * the status read, so a second run (or a run racing an answer) changes
@@ -664,7 +723,15 @@ export class BookingRequestsService {
         const due = await this.prisma.booking.findMany({
           where: {
             id: { notIn: seenBookings },
-            status: { in: WAITING },
+            // Waiting on the operator or the customer's answer, or a payment
+            // window that lapsed with nothing paid.
+            OR: [
+              { status: { in: WAITING } },
+              {
+                status: BookingStatus.AWAITING_PAYMENT,
+                paymentStatus: BookingPaymentStatus.UNPAID,
+              },
+            ],
             // Only requests that held the aircraft and whose hold lapsed;
             // a booking without a hold (another source) is left alone.
             AND: [
@@ -753,9 +820,30 @@ export class BookingRequestsService {
       const live = holds.some(
         (hold) => hold.expiresAt === null || hold.expiresAt > now,
       );
-      if (holds.length === 0 || live || !WAITING.includes(row.status)) {
-        return [];
+      if (holds.length === 0 || live) return [];
+      if (row.status === BookingStatus.AWAITING_PAYMENT) {
+        // The payment window lapsed. Payment notices lock the booking row,
+        // not this request's lock: take it and read the payment summary
+        // again, so a booking paid meanwhile is never expired.
+        await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${row.id}::uuid FOR UPDATE`;
+        const current = await tx.booking.findUniqueOrThrow({
+          where: { id: row.id },
+          select: { status: true, paymentStatus: true },
+        });
+        if (
+          current.status !== BookingStatus.AWAITING_PAYMENT ||
+          current.paymentStatus !== BookingPaymentStatus.UNPAID
+        ) {
+          return [];
+        }
+        await this.bookings.transition(tx, row, BookingStatus.EXPIRED, {
+          kind: 'SYSTEM',
+        });
+        await this.availability.releaseBookingHolds(tx, row.id);
+        closed = true;
+        return this.notifyCustomer(tx, row, 'booking.expired', {});
       }
+      if (!WAITING.includes(row.status)) return [];
       const newest = await this.quotes.newest(tx, row.id);
       const standing = quoteStanding(newest, now);
       // A live quote keeps the request open until it lapses (step 1).
@@ -899,9 +987,22 @@ export class BookingRequestsService {
     return new Date(now.getTime() + this.holdHours() * 3_600_000);
   }
 
+  /**
+   * The caller's reach, for staff with `MANAGE_BOOKINGS` (403 otherwise).
+   * An operator that is not approved (suspended, under review) neither
+   * reads nor answers requests: 409 `OPERATOR_NOT_APPROVED`, as accept and
+   * quote already answered.
+   */
   private async access(user: AuthUser): Promise<OperatorAccess> {
-    const { access } = await this.operators.accessFor(user);
+    const { operator, access } = await this.operators.accessFor(user);
     assertCan(access, 'MANAGE_BOOKINGS');
+    if (operator.status !== OperatorStatus.APPROVED) {
+      throw new AppException(
+        'OPERATOR_NOT_APPROVED',
+        'Your company is not approved to take bookings at the moment.',
+        HttpStatus.CONFLICT,
+      );
+    }
     return access;
   }
 
@@ -1120,7 +1221,9 @@ export class BookingRequestsService {
       passengerCount: itinerary.passengerCount,
       price: this.priceOf(row),
       holdExpiresAt: row.holds[0]?.expiresAt?.toISOString() ?? null,
-      quote: newest ? this.quotes.toResponse(newest, row.reference, now) : null,
+      quote: newest
+        ? this.quotes.toOperatorResponse(newest, row.reference, now)
+        : null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
@@ -1149,7 +1252,7 @@ export class BookingRequestsService {
           ? row.specialRequests
           : this.cipher.decrypt(row.specialRequests),
       quotes: row.quotes.map((quote) =>
-        this.quotes.toResponse(quote, row.reference, now),
+        this.quotes.toOperatorResponse(quote, row.reference, now),
       ),
       messages,
       notes,

@@ -2,6 +2,7 @@ import { PriceType } from '../../generated/prisma/enums.js';
 import type { PassengerRecord } from '../customers/customers.service.js';
 import type { Revalidation } from '../search/search.service.js';
 import {
+  type CancellationCharge,
   type CancellationTerms,
   type Itinerary,
   parseCancellationTerms,
@@ -114,19 +115,23 @@ export function itineraryFrom(revalidation: Revalidation): Itinerary {
 }
 
 /**
- * The terms a request from a search result is made on: the note the result
- * showed (`CANCELLATION_NOTE`), word for word, and no charges, since nothing
- * is paid before the operator's quote, which brings its own conditions.
+ * The terms a request from a search result is made on: Flyviman's tier
+ * table in force (D-172), its summary word for word as the result showed it
+ * and its tiers as the charges, so a later change to the table never
+ * reaches this booking (rule 9). `source` stays `PLATFORM`.
  */
 export function requestTerms(
-  note: string,
+  terms: { summary: string; tiers: CancellationCharge[] },
   acceptedAt: Date,
 ): CancellationTerms {
   return parseCancellationTerms({
     version: 1,
     source: 'PLATFORM',
-    summary: note,
-    charges: [],
+    summary: terms.summary,
+    charges: terms.tiers.map((tier) => ({
+      minHoursBeforeDeparture: tier.minHoursBeforeDeparture,
+      chargePercent: tier.chargePercent,
+    })),
     acceptedAt: acceptedAt.toISOString(),
   });
 }

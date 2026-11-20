@@ -16,10 +16,14 @@ import { bookingReference } from '../../common/reference.js';
 import { day } from '../../common/validation/formats.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
+  AircraftAvailabilityStatus,
+  AircraftListingStatus,
   BookingEventType,
   type BookingPaymentStatus,
   BookingStatus,
+  OperatorStatus,
   PriceType,
+  QuoteStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -27,7 +31,9 @@ import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { CustomersService } from '../customers/customers.service.js';
-import { CANCELLATION_NOTE, SearchService } from '../search/search.service.js';
+import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
+import { QuotesService } from '../quotes/quotes.service.js';
+import { SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import { encryptLegacyFreeText } from './free-text-backfill.js';
@@ -44,6 +50,8 @@ import {
   afterRequested,
   type BookingActor,
   checkTransition,
+  confirmationCheck,
+  paymentConditionMet,
   statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
@@ -56,11 +64,23 @@ import type {
 /** Attempts at a fresh reference before giving up (31^6 codes). */
 const REFERENCE_ATTEMPTS = 5;
 
-/** Requests still waiting on the operator, each holding an aircraft. */
+/**
+ * Requests still waiting on the operator, each holding an aircraft. A
+ * question waiting for the customer still holds it, so it counts too;
+ * answering it moves between two open statuses and never adds one.
+ */
 const OPEN_STATUSES: BookingStatus[] = [
   BookingStatus.REQUESTED,
   BookingStatus.OPERATOR_PENDING,
+  BookingStatus.CLARIFICATION_REQUESTED,
 ];
+
+/** The latest date there is: a hold rechecked "until the trip ends". */
+const END_OF_TIME = new Date(8_640_000_000_000_000);
+
+/** What `evaluateConfirmation` did. */
+export type ConfirmationOutcome =
+  { confirmed: true } | { confirmed: false; reason: string };
 
 /** The fields a status change is decided on, read with the booking. */
 type TransitionRow = Pick<
@@ -124,6 +144,8 @@ export class BookingsService implements OnApplicationBootstrap {
     private readonly customers: CustomersService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
+    private readonly quotes: QuotesService,
+    private readonly cancellationTerms: CancellationTermsService,
   ) {}
 
   /**
@@ -259,6 +281,23 @@ export class BookingsService implements OnApplicationBootstrap {
             );
           }
           const now = new Date();
+          // Flyviman's tiers as the customer was shown them (rule 9, D-172).
+          // Read in the transaction, so the snapshot is the version checked.
+          const terms = await this.cancellationTerms.current(tx, now);
+          if (terms.version !== input.cancellationTermsVersion) {
+            throw new AppException(
+              'BOOKING_TERMS_CHANGED',
+              'The cancellation terms have changed since you looked. Read the new terms before sending your request.',
+              HttpStatus.CONFLICT,
+              [
+                {
+                  field: 'cancellationTermsVersion',
+                  issue: String(terms.version),
+                },
+                { field: 'summary', issue: terms.summary },
+              ],
+            );
+          }
           // A quote request has no price yet: no calculation, and an amount
           // of 0 that is never shown (`isQuoteRequest`).
           const calculationId = current.priced
@@ -280,7 +319,7 @@ export class BookingsService implements OnApplicationBootstrap {
               currency: current.priced ? current.currency : input.currency,
               priceType: PriceType.ESTIMATE,
               cancellationTerms: requestTerms(
-                CANCELLATION_NOTE,
+                terms,
                 now,
               ) as unknown as Prisma.InputJsonValue,
               specialRequests,
@@ -328,6 +367,9 @@ export class BookingsService implements OnApplicationBootstrap {
                 operatorId: booking.operatorId,
                 aircraftId: booking.aircraftId,
                 calculationId,
+                // Which tier table was snapshotted, traceable to its version.
+                cancellationTermsRuleId: terms.ruleId,
+                cancellationTermsVersion: terms.version,
                 totalMinor: current.priced ? current.totalMinor : null,
                 currency: booking.currency,
                 priceType: booking.priceType,
@@ -530,8 +572,10 @@ export class BookingsService implements OnApplicationBootstrap {
   /**
    * Writes a booking's payment summary (M9) after a payment changed, with a
    * `PAYMENT_UPDATE` event and an audit record, in the payment's
-   * transaction. Payment status only: a payment never moves the booking's
-   * own status (rule 2). Applied only if the summary is still `from`.
+   * transaction, then runs the confirmation rule (`evaluateConfirmation`):
+   * the booking becomes `CONFIRMED` only if every other condition already
+   * holds. A payment alone never confirms (rule 2). Applied only if the
+   * summary is still `from`.
    */
   async recordPaymentStatus(
     tx: Prisma.TransactionClient,
@@ -577,6 +621,188 @@ export class BookingsService implements OnApplicationBootstrap {
       },
       tx,
     );
+    await this.evaluateConfirmation(tx, booking.id);
+  }
+
+  /**
+   * The confirmation rule (state-machines.md), the one place a booking
+   * becomes `CONFIRMED`: from `AWAITING_PAYMENT`, with the operator's
+   * acceptance recorded (or instant inventory), a `CONFIRMED` price and the
+   * payment condition of its model met (A and B `PAID`, C `PARTIALLY_PAID`
+   * or `PAID`). The held time is checked again first (rule 3) and then kept
+   * until the trip ends. Called in the caller's transaction after a payment
+   * summary changes and after the price is confirmed.
+   *
+   * Never throws for a booking that does not qualify: inside a payment
+   * notice's transaction a failure would lose the captured payment. When
+   * the trip can no longer be flown as booked (rules 3 and 4: departed,
+   * operator or aircraft no longer approved or in service, the held time
+   * taken) the booking stays `AWAITING_PAYMENT` (paid)
+   * and an audit record says why, for operations to resolve.
+   */
+  async evaluateConfirmation(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+  ): Promise<ConfirmationOutcome> {
+    await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${bookingId}::uuid FOR UPDATE`;
+    const row = await tx.booking.findUnique({ where: { id: bookingId } });
+    if (!row) return { confirmed: false, reason: 'the booking is missing' };
+    const check = confirmationCheck({
+      status: row.status,
+      category: row.category,
+      bookingMode: row.bookingMode,
+      priceType: row.priceType,
+      paymentModel: row.paymentModel,
+      paymentStatus: row.paymentStatus,
+      operatorAccepted: row.operatorAcceptedAt !== null,
+    });
+    if (!check.allowed) return { confirmed: false, reason: check.reason };
+    const reason = await this.unbookable(tx, row);
+    if (reason) {
+      await this.audit.record(
+        {
+          action: 'booking.confirmation_blocked',
+          entityType: 'Booking',
+          entityId: row.id,
+          after: {
+            reference: row.reference,
+            status: row.status,
+            paymentStatus: row.paymentStatus,
+            reason,
+          },
+          actor: null,
+        },
+        tx,
+      );
+      return { confirmed: false, reason };
+    }
+    await this.transition(
+      tx,
+      row,
+      BookingStatus.CONFIRMED,
+      { kind: 'SYSTEM' },
+      {
+        context: {
+          paymentConditionMet: paymentConditionMet(
+            row.paymentModel,
+            row.paymentStatus,
+          ),
+        },
+      },
+    );
+    return { confirmed: true };
+  }
+
+  /**
+   * Rules 3 and 4 at confirmation, as at acceptance: the trip is still
+   * ahead, the operator and aircraft still approved and the aircraft in
+   * service, and the held time still free (kept from now until the trip
+   * ends). Why the booking cannot be confirmed, or null.
+   */
+  private async unbookable(
+    tx: Prisma.TransactionClient,
+    row: Prisma.BookingGetPayload<object>,
+  ): Promise<string | null> {
+    const departure = parseItinerary(row.itinerary).legs[0].departureAt;
+    if (Date.parse(departure) <= Date.now()) return 'the trip has departed';
+    if (row.aircraftId === null) return null;
+    const aircraft = await tx.aircraft.findUnique({
+      where: { id: row.aircraftId },
+      select: {
+        listingStatus: true,
+        availabilityStatus: true,
+        operator: { select: { status: true } },
+      },
+    });
+    if (aircraft?.operator.status !== OperatorStatus.APPROVED) {
+      return 'the operator is not approved';
+    }
+    if (
+      aircraft.listingStatus !== AircraftListingStatus.APPROVED ||
+      aircraft.availabilityStatus !== AircraftAvailabilityStatus.AVAILABLE
+    ) {
+      return 'the aircraft is not approved or not in service';
+    }
+    return (await this.availability.recheckBookingHold(tx, row.id, END_OF_TIME))
+      ? null
+      : 'the aircraft time is no longer free';
+  }
+
+  /**
+   * After the price is confirmed (operator acceptance or the customer's
+   * acceptance of a quote): every payment model asks for payment at once,
+   * so the booking moves `PRICE_CONFIRMED` → `AWAITING_PAYMENT` (System),
+   * then the confirmation rule runs. Reads the booking again, since the
+   * caller's copy is from before its own move.
+   */
+  async afterPriceConfirmed(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+  ): Promise<void> {
+    const row = await tx.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+    });
+    if (row.status !== BookingStatus.PRICE_CONFIRMED) return;
+    await this.transition(tx, row, BookingStatus.AWAITING_PAYMENT, {
+      kind: 'SYSTEM',
+    });
+    await this.evaluateConfirmation(tx, bookingId);
+  }
+
+  /**
+   * What every path that ends a request does besides the status: the
+   * aircraft's hold is released and a quote still open closes `EXPIRED`
+   * (as the operator's rejection and the hold-expiry job do).
+   */
+  async endRequest(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+    now: Date,
+  ): Promise<void> {
+    await this.availability.releaseBookingHolds(tx, bookingId);
+    const open = await tx.quote.findMany({
+      where: { bookingId, status: QuoteStatus.SENT },
+    });
+    for (const quote of open) await this.quotes.move(tx, quote, 'expire', now);
+  }
+
+  /**
+   * The customer turns down a confirmed price before paying:
+   * `PRICE_CONFIRMED` → `QUOTE_DECLINED`, the hold released. Every payment
+   * model moves a confirmed price on to `AWAITING_PAYMENT` at once, so this
+   * applies to a booking operations left at `PRICE_CONFIRMED`; from
+   * `AWAITING_PAYMENT` the customer cancels instead.
+   */
+  async decline(user: AuthUser, reference: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const found = await tx.booking.findFirst({
+        where: { reference, customerId: user.id },
+        select: { id: true },
+      });
+      if (!found) throw notFound();
+      await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${found.id}::uuid FOR UPDATE`;
+      const row = await tx.booking.findUniqueOrThrow({
+        where: { id: found.id },
+      });
+      if (row.status !== BookingStatus.PRICE_CONFIRMED) {
+        throw new AppException(
+          'BOOKING_INVALID_TRANSITION',
+          'This booking cannot move to that status now.',
+          HttpStatus.CONFLICT,
+          [
+            {
+              field: 'status',
+              issue: `a ${row.status} booking cannot be declined`,
+            },
+          ],
+        );
+      }
+      await this.transition(tx, row, BookingStatus.QUOTE_DECLINED, {
+        kind: 'CUSTOMER',
+        user,
+      });
+      await this.endRequest(tx, row.id, new Date());
+    });
   }
 
   /**

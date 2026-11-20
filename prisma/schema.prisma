@@ -942,6 +942,9 @@ enum PricingRuleType {
   /// Matching limits for all aircraft or one category: leg distance,
   /// runway, landing sites, notice. Not a price; read by matching.
   MATCHING_LIMITS
+  /// Flyviman's cancellation tiers, one platform table for every operator
+  /// (D-172). Not a price; snapshotted on each booking request (rule 9).
+  CANCELLATION_TIERS
 }
 
 /// Every price carries one (business rule 1).

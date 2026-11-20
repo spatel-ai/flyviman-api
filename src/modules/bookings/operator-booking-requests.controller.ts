@@ -24,7 +24,10 @@ import type { IdempotencyClaim } from '../../common/idempotency/idempotency.stor
 import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
-import { QuoteResponseDto, ReviseQuoteDto } from '../quotes/dto/quote.dto.js';
+import {
+  OperatorQuoteResponseDto,
+  ReviseQuoteDto,
+} from '../quotes/dto/quote.dto.js';
 import { BookingReferencePipe } from './booking-reference.pipe.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import {
@@ -90,7 +93,7 @@ export class OperatorBookingRequestsController {
   @ApiOperation({
     summary: 'Accept the request at its proposed price',
     description:
-      'Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED`: the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.',
+      'Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED` and at once on to `AWAITING_PAYMENT` (every payment model asks for payment then): the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.',
   })
   @ApiHeader(IDEMPOTENCY_HEADER)
   @ApiOkResponse({ type: OperatorBookingRequestDetailDto })
@@ -138,14 +141,14 @@ export class OperatorBookingRequestsController {
   @ApiOperation({
     summary: 'Send a quote, or a revision that replaces the open one',
     description:
-      'Only while the request is `OPERATOR_PENDING` (409 `BOOKING_INVALID_TRANSITION`). The quote is `SENT` with `priceType` `QUOTE`; an open quote is `SUPERSEDED` (a sent quote is never edited). Valid for 48 hours (`BOOKING_HOLD_HOURS`) unless `validUntil` is given (at least an hour ahead, never after departure; 400 otherwise); the hold is kept as long. Checks approval and the held time like accept (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`, `BOOKING_UNAVAILABLE`). Audited; the customer is notified.',
+      'Only while the request is `OPERATOR_PENDING` (409 `BOOKING_INVALID_TRANSITION`). The quote is `SENT` with `priceType` `QUOTE`; an open quote is `SUPERSEDED` (a sent quote is never edited). Valid for 48 hours (`BOOKING_HOLD_HOURS`) unless `validUntil` is given (at least an hour ahead, never after departure; 400 otherwise); the hold is kept as long. The body carries the operator’s price (`operatorPriceMinor`, before Flyviman’s charges and tax); Flyviman’s pricing rules add commission, fees and tax and store the calculation, and the customer sees the total only. The quote carries the cancellation terms the request was made on (D-172). Checks approval and the held time like accept (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`, `BOOKING_UNAVAILABLE`). Audited; the customer is notified.',
   })
-  @ApiCreatedResponse({ type: QuoteResponseDto })
+  @ApiCreatedResponse({ type: OperatorQuoteResponseDto })
   reviseQuote(
     @CurrentUser() user: AuthUser,
     @Param('reference', BookingReferencePipe) reference: string,
     @Body() body: ReviseQuoteDto,
-  ): Promise<QuoteResponseDto> {
+  ): Promise<OperatorQuoteResponseDto> {
     return this.requests.reviseQuote(user, reference, body);
   }
 

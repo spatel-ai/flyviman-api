@@ -13,13 +13,14 @@ import {
   ChangeRequestKind,
   ChangeRequestStatus,
   OperatorStatus,
+  PaymentStatus,
   PriceType,
   Role,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { AvailabilityService } from '../availability/availability.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
+import { assertCan } from '../operators/operator-access.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { CANCELLABLE } from './booking-transitions.js';
@@ -50,6 +51,9 @@ const CLOSED_BY_CANCELLATION = 'Closed because the booking was cancelled.';
 
 /** What a customer-made cancellation request records as its details. */
 const CANCELLED_BY_CUSTOMER = 'Cancelled by the customer.';
+
+/** What a cancellation by operations (status override) records. */
+const CANCELLED_BY_OPERATIONS = 'Cancelled by Flyviman operations.';
 
 function notFound(what = 'Booking'): AppException {
   return new AppException(
@@ -85,7 +89,6 @@ export class TripsService {
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
     private readonly operators: OperatorsService,
-    private readonly availability: AvailabilityService,
     private readonly cipher: FieldCipher,
   ) {}
 
@@ -194,98 +197,16 @@ export class TripsService {
           ],
         );
       }
-      const applied = {
-        termsSource: quote.terms.source,
-        appliedCharge: quote.appliedCharge && {
-          minHoursBeforeDeparture: quote.appliedCharge.minHoursBeforeDeparture,
-          chargePercent: quote.appliedCharge.chargePercent,
-        },
-        hoursBeforeDeparture: quote.hoursBeforeDeparture,
-        amountKnown: quote.amountKnown,
-        chargeMinor: quote.chargeMinor,
-        refundMinor: quote.refundMinor,
-        currency: quote.currency,
-      };
-      await this.bookings.transition(
+      const cancelledAt = await this.applyCancellation(
         tx,
         booking,
-        BookingStatus.CANCELLED,
-        { kind: 'CUSTOMER', user },
-        { event: { cancellation: applied } },
-      );
-      // The request has ended: the aircraft's time is offered again at once.
-      await this.availability.releaseBookingHolds(tx, booking.id);
-      // The time the transition stamped, so the answer matches the record.
-      const { cancelledAt } = await tx.booking.update({
-        where: { id: booking.id },
-        data:
-          input.reason === undefined
-            ? {}
-            : { cancellationReason: this.cipher.encrypt(input.reason) },
-        select: { cancelledAt: true },
-      });
-      if (!cancelledAt)
-        throw new Error('A cancelled booking has no cancelledAt.');
-      const open = await tx.changeRequest.findMany({
-        where: { bookingId: booking.id, status: ChangeRequestStatus.REQUESTED },
-        select: { id: true },
-      });
-      let closed = 0;
-      for (const { id } of open) {
-        // Only if still open: a decision made meanwhile stands.
-        const { count } = await tx.changeRequest.updateMany({
-          where: { id, status: ChangeRequestStatus.REQUESTED },
-          data: {
-            status: ChangeRequestStatus.REJECTED,
-            decidedById: user.id,
-            decidedAt: now,
-          },
-        });
-        if (count !== 1) continue;
-        closed += 1;
-        await tx.bookingEvent.create({
-          data: {
-            bookingId: booking.id,
-            type: BookingEventType.NOTE,
-            actorId: user.id,
-            actorRole: user.role,
-            payload: decisionPayload(
-              this.cipher,
-              id,
-              ChangeRequestStatus.REJECTED,
-              CLOSED_BY_CANCELLATION,
-            ),
-          },
-        });
-      }
-      const request = await tx.changeRequest.create({
-        data: {
-          bookingId: booking.id,
-          kind: ChangeRequestKind.CANCELLATION,
-          details: this.cipher.encrypt(CANCELLED_BY_CUSTOMER),
-          chargeMinor: BigInt(quote.chargeMinor),
-          refundMinor: BigInt(quote.refundMinor),
-          currency: quote.currency,
-          status: ChangeRequestStatus.COMPLETED,
-          decidedById: user.id,
-          decidedAt: now,
-        },
-      });
-      await this.audit.record(
+        quote,
+        now,
         {
-          action: 'booking.cancel',
-          entityType: 'Booking',
-          entityId: booking.id,
-          before: { reference: booking.reference, status: booking.status },
-          after: {
-            reference: booking.reference,
-            status: BookingStatus.CANCELLED,
-            changeRequestId: request.id,
-            closedChangeRequests: closed,
-            ...applied,
-          },
+          kind: 'CUSTOMER',
+          user,
+          reason: input.reason,
         },
-        tx,
       );
       return {
         reference: booking.reference,
@@ -299,6 +220,148 @@ export class TripsService {
         ),
       };
     });
+  }
+
+  /**
+   * What cancelling `booking` costs now (the same evaluation the customer
+   * is shown, rule 9), for a cancellation by operations, with what was
+   * paid read in the caller's transaction, under the booking's lock (W4-1).
+   */
+  async quoteForCancellation(
+    tx: Prisma.TransactionClient,
+    booking: BookingRow,
+    now: Date,
+  ): Promise<CancellationQuoteDto> {
+    return quoteFor(booking, now, await readPaidMinor(tx, booking.id));
+  }
+
+  /**
+   * Cancels a booking already locked by the caller's transaction, at
+   * `quote`: the move to CANCELLED (the terms applied and the refund due on
+   * its event; an operations override with its reason), the hold released
+   * and any open quote closed `EXPIRED`, a completed CANCELLATION request
+   * holding the charge and the refund due (refunds pick it up, M9), open
+   * change requests closed, and the audit record. The customer's own
+   * cancellation and the override to CANCELLED both come here. Returns the
+   * time the transition stamped.
+   */
+  async applyCancellation(
+    tx: Prisma.TransactionClient,
+    booking: BookingRow,
+    quote: CancellationQuoteDto,
+    now: Date,
+    by:
+      | { kind: 'CUSTOMER'; user: AuthUser; reason?: string }
+      | { kind: 'OPERATIONS'; user: AuthUser; overrideReason: string },
+  ): Promise<Date> {
+    await assertNoPaymentPending(tx, booking.id);
+    const { user } = by;
+    const applied = {
+      termsSource: quote.terms.source,
+      appliedCharge: quote.appliedCharge && {
+        minHoursBeforeDeparture: quote.appliedCharge.minHoursBeforeDeparture,
+        chargePercent: quote.appliedCharge.chargePercent,
+      },
+      hoursBeforeDeparture: quote.hoursBeforeDeparture,
+      amountKnown: quote.amountKnown,
+      chargeMinor: quote.chargeMinor,
+      refundMinor: quote.refundMinor,
+      currency: quote.currency,
+    };
+    await this.bookings.transition(
+      tx,
+      booking,
+      BookingStatus.CANCELLED,
+      { kind: by.kind, user },
+      {
+        event: { cancellation: applied },
+        ...(by.kind === 'OPERATIONS'
+          ? { override: { reason: by.overrideReason } }
+          : {}),
+      },
+    );
+    // The request has ended: the aircraft's time is offered again at once,
+    // and a quote still open closes.
+    await this.bookings.endRequest(tx, booking.id, now);
+    const reason = by.kind === 'CUSTOMER' ? by.reason : undefined;
+    // The time the transition stamped, so the answer matches the record.
+    const { cancelledAt } = await tx.booking.update({
+      where: { id: booking.id },
+      data:
+        reason === undefined
+          ? {}
+          : { cancellationReason: this.cipher.encrypt(reason) },
+      select: { cancelledAt: true },
+    });
+    if (!cancelledAt)
+      throw new Error('A cancelled booking has no cancelledAt.');
+    const open = await tx.changeRequest.findMany({
+      where: { bookingId: booking.id, status: ChangeRequestStatus.REQUESTED },
+      select: { id: true },
+    });
+    let closed = 0;
+    for (const { id } of open) {
+      // Only if still open: a decision made meanwhile stands.
+      const { count } = await tx.changeRequest.updateMany({
+        where: { id, status: ChangeRequestStatus.REQUESTED },
+        data: {
+          status: ChangeRequestStatus.REJECTED,
+          decidedById: user.id,
+          decidedAt: now,
+        },
+      });
+      if (count !== 1) continue;
+      closed += 1;
+      await tx.bookingEvent.create({
+        data: {
+          bookingId: booking.id,
+          type: BookingEventType.NOTE,
+          actorId: user.id,
+          actorRole: user.role,
+          payload: decisionPayload(
+            this.cipher,
+            id,
+            ChangeRequestStatus.REJECTED,
+            CLOSED_BY_CANCELLATION,
+          ),
+        },
+      });
+    }
+    const request = await tx.changeRequest.create({
+      data: {
+        bookingId: booking.id,
+        kind: ChangeRequestKind.CANCELLATION,
+        details: this.cipher.encrypt(
+          by.kind === 'CUSTOMER'
+            ? CANCELLED_BY_CUSTOMER
+            : CANCELLED_BY_OPERATIONS,
+        ),
+        chargeMinor: BigInt(quote.chargeMinor),
+        refundMinor: BigInt(quote.refundMinor),
+        currency: quote.currency,
+        status: ChangeRequestStatus.COMPLETED,
+        decidedById: user.id,
+        decidedAt: now,
+      },
+    });
+    await this.audit.record(
+      {
+        action: 'booking.cancel',
+        entityType: 'Booking',
+        entityId: booking.id,
+        before: { reference: booking.reference, status: booking.status },
+        after: {
+          reference: booking.reference,
+          status: BookingStatus.CANCELLED,
+          changeRequestId: request.id,
+          closedChangeRequests: closed,
+          cancelledBy: by.kind,
+          ...applied,
+        },
+      },
+      tx,
+    );
+    return cancelledAt;
   }
 
   /** A customer's free-text change request; one open per booking. */
@@ -468,6 +531,7 @@ export class TripsService {
       return () => true;
     }
     const { operator, access } = await this.operators.accessFor(user);
+    assertCan(access, 'MANAGE_BOOKINGS');
     if (operator.status !== OperatorStatus.APPROVED) {
       throw new AppException(
         'OPERATOR_NOT_APPROVED',
@@ -499,6 +563,30 @@ async function lockOwn(
   if (!found) throw notFound();
   await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE id = ${found.id}::uuid FOR UPDATE`;
   return tx.booking.findUniqueOrThrow({ where: { id: found.id } });
+}
+
+/**
+ * 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway's
+ * final answer (`PENDING`): money may be moving, so the refund the
+ * cancellation records could be wrong. An order the customer never paid
+ * (`INITIATED`) does not block; if it is captured later, the payment is
+ * recorded and flagged `BOOKING_CLOSED` for a refund. The payments table is
+ * read directly here (payments depends on bookings, not the other way).
+ */
+async function assertNoPaymentPending(
+  tx: Prisma.TransactionClient,
+  bookingId: string,
+): Promise<void> {
+  const pending = await tx.payment.count({
+    where: { bookingId, status: PaymentStatus.PENDING },
+  });
+  if (pending > 0) {
+    throw new AppException(
+      'BOOKING_PAYMENT_IN_PROGRESS',
+      'A payment for this booking is still being processed. Try again in a few minutes.',
+      HttpStatus.CONFLICT,
+    );
+  }
 }
 
 /**

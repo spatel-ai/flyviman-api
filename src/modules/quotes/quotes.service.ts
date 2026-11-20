@@ -7,13 +7,26 @@ import { PriceType, QuoteStatus } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type {
+  OperatorQuoteResponseDto,
   QuoteConditionsDto,
-  QuoteConditionsInputDto,
   QuoteResponseDto,
 } from './dto/quote.dto.js';
 import { isLive, type QuoteAction, quoteMove } from './quote-transitions.js';
 
 export type QuoteRow = Prisma.QuoteGetPayload<object>;
+
+/** What an operator's view reads from the quote's stored calculation. */
+export const QUOTE_CALCULATION_SELECT = {
+  baseMinor: true,
+  operatorPayableMinor: true,
+  currency: true,
+} as const satisfies Prisma.PriceCalculationSelect;
+
+export type OperatorQuoteRow = QuoteRow & {
+  calculation: Prisma.PriceCalculationGetPayload<{
+    select: typeof QUOTE_CALCULATION_SELECT;
+  }> | null;
+};
 
 /** `Quote.conditions` (jsonb) as written. */
 interface StoredConditions extends QuoteConditionsDto {
@@ -87,15 +100,18 @@ export class QuotesService {
     input: {
       bookingId: string;
       operatorId: string;
+      /** The customer's total, priced by Flyviman's rules (D-172). */
       totalMinor: number;
+      /** The stored calculation behind `totalMinor`. */
+      calculationId: string;
       currency: string;
       validUntil: Date;
-      conditions: QuoteConditionsInputDto;
+      /** Flyviman's terms from the booking, with the operator's notes. */
+      conditions: QuoteConditionsDto;
       createdById: string;
     },
     now: Date,
   ): Promise<{ quote: QuoteRow; superseded: string | null }> {
-    assertChargeOrder(input.conditions);
     const open = await tx.quote.findMany({
       where: { bookingId: input.bookingId, status: QuoteStatus.SENT },
     });
@@ -116,6 +132,7 @@ export class QuotesService {
       data: {
         reference: quoteReference(),
         bookingId: input.bookingId,
+        calculationId: input.calculationId,
         operatorId: input.operatorId,
         totalMinor: BigInt(input.totalMinor),
         currency: input.currency,
@@ -134,6 +151,7 @@ export class QuotesService {
         after: {
           reference: quote.reference,
           bookingId: input.bookingId,
+          calculationId: input.calculationId,
           status: quote.status,
           totalMinor: input.totalMinor,
           currency: quote.currency,
@@ -209,6 +227,29 @@ export class QuotesService {
     };
   }
 
+  /**
+   * The operator's view: the customer's view plus the operator's own price
+   * and payable, from the stored calculation (never shown to a customer).
+   */
+  toOperatorResponse(
+    quote: OperatorQuoteRow,
+    bookingReference: string,
+    now = new Date(),
+  ): OperatorQuoteResponseDto {
+    const { calculation } = quote;
+    return {
+      ...this.toResponse(quote, bookingReference, now),
+      operatorPrice: calculation
+        ? {
+            priceType: quote.priceType,
+            amountMinor: minorToNumber(calculation.baseMinor),
+            payableMinor: minorToNumber(calculation.operatorPayableMinor),
+            currency: calculation.currency,
+          }
+        : null,
+    };
+  }
+
   toResponse(
     quote: QuoteRow,
     bookingReference: string,
@@ -229,29 +270,6 @@ export class QuotesService {
       createdAt: quote.createdAt.toISOString(),
       updatedAt: quote.updatedAt.toISOString(),
     };
-  }
-}
-
-/** Charges go longest notice first, each notice once. */
-function assertChargeOrder(conditions: QuoteConditionsInputDto): void {
-  const { charges } = conditions;
-  for (let i = 1; i < charges.length; i += 1) {
-    if (
-      charges[i].minHoursBeforeDeparture >=
-      charges[i - 1].minHoursBeforeDeparture
-    ) {
-      throw new AppException(
-        'VALIDATION_ERROR',
-        'The request is not valid.',
-        HttpStatus.BAD_REQUEST,
-        [
-          {
-            field: 'conditions.charges',
-            issue: 'must list the longest notice first, each notice once',
-          },
-        ],
-      );
-    }
   }
 }
 

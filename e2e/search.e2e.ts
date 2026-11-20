@@ -157,7 +157,14 @@ test.describe('charter search', () => {
     expect(ours.incomplete).toBe(true);
     expect(detail.incomplete).toBe(ours.incomplete);
     expect(detail.bookingMode).toBe('REQUEST');
-    expect(detail.cancellationNote).toBeTruthy();
+    // Flyviman's tiers, shown before the customer commits (rule 9, D-172).
+    expect(detail.cancellationTerms).toMatchObject({
+      version: expect.any(Number),
+      tiers: expect.arrayContaining([
+        expect.objectContaining({ minHoursBeforeDeparture: 0 }),
+      ]),
+    });
+    expect(detail.cancellationNote).toBe(detail.cancellationTerms.summary);
 
     // The booking mode is the category's configuration with this operator's
     // override (C2), not a fixed REQUEST.

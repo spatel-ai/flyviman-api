@@ -78,11 +78,27 @@ export async function searchFor(
   });
   expect(response.status()).toBe(200);
   const data = (await response.json()).data;
+  const result = data.results.find(
+    (entry: { aircraft: { id: string } }) =>
+      entry.aircraft.id === trip.aircraftId,
+  );
   return {
     searchId: data.searchId as string,
-    result: data.results.find(
-      (result: { aircraft: { id: string } }) =>
-        result.aircraft.id === trip.aircraftId,
-    ),
+    result,
+    /** The cancellation terms the result detail shows, sent with a request. */
+    termsVersion: result
+      ? await shownTermsVersion(request, data.searchId, result.resultId)
+      : undefined,
   };
+}
+
+/** The `cancellationTerms.version` a result detail shows (rule 9, D-172). */
+export async function shownTermsVersion(
+  request: APIRequestContext,
+  searchId: string,
+  resultId: string,
+): Promise<number> {
+  const detail = await request.get(`search/${searchId}/results/${resultId}`);
+  expect(detail.status()).toBe(200);
+  return (await detail.json()).data.cancellationTerms.version as number;
 }

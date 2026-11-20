@@ -5,13 +5,17 @@ import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OperatorsModule } from '../operators/operators.module.js';
+import { PricingModule } from '../pricing/pricing.module.js';
 import { QuotesModule } from '../quotes/quotes.module.js';
 import { SearchModule } from '../search/search.module.js';
 import { UsersModule } from '../users/users.module.js';
+import { AdminBookingsController } from './admin-bookings.controller.js';
+import { AdminBookingsService } from './admin-bookings.service.js';
 import { AdminChangeRequestsController } from './admin-change-requests.controller.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import { BookingsController } from './bookings.controller.js';
 import { BookingsService } from './bookings.service.js';
+import { ChangeRequestListsService } from './change-request-lists.service.js';
 import {
   BookingConversationController,
   CustomerQuotesController,
@@ -25,7 +29,8 @@ import { TripsService } from './trips.service.js';
 /**
  * Bookings (M8): creation from a search result and the customer's reads;
  * the customer's trips, cancellation and change requests; the operator's
- * request inbox, quotes and answers, and the hold-expiry job.
+ * request inbox, quotes and answers, and the hold-expiry job; the
+ * confirmation rule; bookings and change requests for Flyviman staff.
  */
 @Module({
   imports: [
@@ -35,6 +40,7 @@ import { TripsService } from './trips.service.js';
     CustomersModule,
     QuotesModule,
     OperatorsModule,
+    PricingModule,
     UsersModule,
     NotificationsModule,
   ],
@@ -43,6 +49,7 @@ import { TripsService } from './trips.service.js';
     MeBookingsController,
     OperatorChangeRequestsController,
     AdminChangeRequestsController,
+    AdminBookingsController,
     BookingConversationController,
     CustomerQuotesController,
     OperatorBookingRequestsController,
@@ -52,6 +59,8 @@ import { TripsService } from './trips.service.js';
     BookingsService,
     TripsService,
     BookingRequestsService,
+    AdminBookingsService,
+    ChangeRequestListsService,
     FieldCipher,
   ],
   exports: [BookingsService],
