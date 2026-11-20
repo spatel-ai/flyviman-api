@@ -18,6 +18,18 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+/** What each capability allows, shown wherever capabilities are listed. */
+export const CAPABILITY_DESCRIPTIONS: Record<Capability, string> = {
+  MANAGE_AIRCRAFT:
+    'Edit details, photos, floor plans and documents of the aircraft in reach, and submit them for review. Only administrators add aircraft.',
+  MANAGE_AVAILABILITY:
+    'Manage the calendar of the aircraft in reach: slots, holds, blocks and conflicts.',
+  MANAGE_EMPTY_LEGS:
+    'List, create, change, publish and withdraw empty-leg offers on the aircraft in reach.',
+  MANAGE_BOOKINGS:
+    'See and answer booking requests on the aircraft in reach: accept, reject, ask the customer, quote and add notes.',
+};
+
 /** The shape of `OperatorMember.permissions` for a staff member. */
 export interface StaffPermissions {
   capabilities: Capability[];
