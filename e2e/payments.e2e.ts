@@ -1119,6 +1119,23 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
       }),
     );
     expect(audit.after).toMatchObject({ flagged: 'DUPLICATE_CAPTURE' });
+
+    // A third capture is money moved again: recorded too, once however
+    // often its notice comes (under a new event id each time).
+    const third = notice('payment.captured', {
+      orderId: order.checkout.orderId,
+      amountMinor: totalMinor,
+    });
+    const again = (eventId: string) => ({ body: third.body, eventId });
+    for (const eventId of [third.eventId, `evt_e2e_${randomUUID()}`]) {
+      expect((await deliver(request, again(eventId))).status()).toBe(200);
+    }
+    const flags = await withPrisma((prisma) =>
+      prisma.auditLog.findMany({
+        where: { entityId: paid.id, action: 'payment.flag' },
+      }),
+    );
+    expect(flags).toHaveLength(2);
   });
 });
 
