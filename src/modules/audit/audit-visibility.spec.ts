@@ -85,6 +85,29 @@ describe('redactRestricted', () => {
     });
   });
 
+  it('hides the air ambulance medical fields, but not a generic notes key', () => {
+    const payload = {
+      medical: { mobility: 'ASSISTED' },
+      patient_condition: 'x',
+      'Medical-Staff-Required': 'x',
+      EQUIPMENT_REQUIRED: 'x',
+      specialisedCare: 'x',
+      notes: 'kept',
+    };
+    expect(redactRestricted(payload, Role.OPS)).toEqual({
+      value: {
+        medical: null,
+        patient_condition: null,
+        'Medical-Staff-Required': null,
+        EQUIPMENT_REQUIRED: null,
+        specialisedCare: null,
+        notes: 'kept',
+      },
+      redacted: true,
+    });
+    expect(redactRestricted(payload, Role.SUPER_ADMIN).value).toEqual(payload);
+  });
+
   it('hides identity document numbers from every role, at any depth', () => {
     const admin = redactRestricted(
       { lead: { documentNumber: 'P7654321', documentExpiry: '2030-01-01' } },
