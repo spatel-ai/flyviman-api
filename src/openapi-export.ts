@@ -1,8 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { NestFactory } from '@nestjs/core';
-import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
-import { API_PREFIX, buildOpenApiConfig } from './app.setup.js';
+import { API_PREFIX, createOpenApiDocument } from './app.setup.js';
 
 /**
  * Writes the API description to `openapi.json`, which flyviman-web turns
@@ -12,7 +11,7 @@ import { API_PREFIX, buildOpenApiConfig } from './app.setup.js';
  */
 const app = await NestFactory.create(AppModule, { logger: false });
 app.setGlobalPrefix(API_PREFIX);
-const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
+const document = createOpenApiDocument(app);
 await writeFile('openapi.json', `${JSON.stringify(document, null, 2)}\n`);
 await app.close();
 console.log('Wrote openapi.json');

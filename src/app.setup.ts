@@ -12,6 +12,11 @@ import type { IncomingMessage } from 'node:http';
 import * as helmetModule from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import {
+  EnvelopeDto,
+  ErrorEnvelopeDto,
+  ResponseMetaDto,
+} from './common/dto/envelope.dto.js';
 import { ErrorDetail } from './common/errors/app.exception.js';
 import { clientAddressMiddleware } from './common/middleware/client-address.middleware.js';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware.js';
@@ -59,15 +64,31 @@ function isPaymentWebhook(request: IncomingMessage): boolean {
   return (request.url ?? '').toLowerCase().startsWith(PAYMENT_WEBHOOK_PATH);
 }
 
+const OPENAPI_DESCRIPTION = [
+  'Aviation booking platform API. Conventions: docs/api/api-design.md.',
+  '',
+  '**Envelope.** Every success is `{ data, meta }` (schema `EnvelopeDto`): each route below documents only its `data`. ' +
+    '`meta` (`ResponseMetaDto`) holds `requestId`, and on list routes `page`, `pageSize` and `total`; ' +
+    'a list route documented as an array answers with that array in `data`.',
+  '',
+  '**Errors.** Every error is `{ error: { code, message, details, requestId } }` (schema `ErrorEnvelopeDto`), ' +
+    'with the HTTP status; clients switch on `code`.',
+].join('\n');
+
 export function buildOpenApiConfig() {
   return new DocumentBuilder()
     .setTitle('Flyviman API')
-    .setDescription(
-      'Aviation booking platform API. Conventions: docs/api/api-design.md.',
-    )
+    .setDescription(OPENAPI_DESCRIPTION)
     .setVersion('1.0')
     .addCookieAuth('access_token')
     .build();
+}
+
+/** The OpenAPI document, for `/api/docs` and `npm run openapi:export` alike. */
+export function createOpenApiDocument(app: INestApplication) {
+  return SwaggerModule.createDocument(app, buildOpenApiConfig(), {
+    extraModels: [EnvelopeDto, ResponseMetaDto, ErrorEnvelopeDto],
+  });
 }
 
 /**
@@ -120,9 +141,6 @@ export function configureApp(app: INestApplication): void {
   // not publish its route catalogue (security review, 2026-11-13). The
   // document itself is still exported by `npm run openapi:export`.
   if (config.get('NODE_ENV') !== 'production') {
-    const document = buildOpenApiConfig();
-    SwaggerModule.setup(DOCS_PATH, app, () =>
-      SwaggerModule.createDocument(app, document),
-    );
+    SwaggerModule.setup(DOCS_PATH, app, () => createOpenApiDocument(app));
   }
 }

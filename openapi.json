@@ -5616,7 +5616,7 @@
   },
   "info": {
     "title": "Flyviman API",
-    "description": "Aviation booking platform API. Conventions: docs/api/api-design.md.",
+    "description": "Aviation booking platform API. Conventions: docs/api/api-design.md.\n\n**Envelope.** Every success is `{ data, meta }` (schema `EnvelopeDto`): each route below documents only its `data`. `meta` (`ResponseMetaDto`) holds `requestId`, and on list routes `page`, `pageSize` and `total`; a list route documented as an array answers with that array in `data`.\n\n**Errors.** Every error is `{ error: { code, message, details, requestId } }` (schema `ErrorEnvelopeDto`), with the HTTP status; clients switch on `code`.",
     "version": "1.0",
     "contact": {}
   },
@@ -12905,6 +12905,113 @@
           "message",
           "handledAt",
           "createdAt"
+        ]
+      },
+      "ResponseMetaDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "page": {
+            "type": "number",
+            "description": "List routes only.",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "List routes only.",
+            "example": 20
+          },
+          "total": {
+            "type": "number",
+            "description": "List routes only.",
+            "example": 134
+          }
+        },
+        "required": [
+          "requestId"
+        ]
+      },
+      "EnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "The route's documented response: an object, or an array on list routes. `null` when the route returns nothing.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "array",
+                "items": {}
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "ErrorDetailDto": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "example": "totalMinor"
+          },
+          "issue": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue"
+        ]
+      },
+      "ErrorBodyDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable upper snake case code; clients switch on it, never on `message`.",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetailDto"
+            }
+          },
+          "requestId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details",
+          "requestId"
+        ]
+      },
+      "ErrorEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBodyDto"
+          }
+        },
+        "required": [
+          "error"
         ]
       }
     }
