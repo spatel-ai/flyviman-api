@@ -70,6 +70,7 @@ export class CategoryConfigService {
         isEnabled: true,
         bookingMode: true,
         paymentModel: true,
+        depositPercent: true,
         updatedAt: true,
       },
     });

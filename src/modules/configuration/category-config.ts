@@ -14,6 +14,8 @@ export interface ResolvedCategoryConfig {
   isEnabled: boolean;
   bookingMode: BookingMode;
   paymentModel: PaymentModel;
+  /** The Model C deposit, whole percent of the confirmed total. */
+  depositPercent: number;
 }
 
 /** The platform row's settings, or `null` when no row exists. */
@@ -21,7 +23,11 @@ export interface PlatformSetting {
   isEnabled: boolean;
   bookingMode: BookingMode;
   paymentModel: PaymentModel;
+  depositPercent: number;
 }
+
+/** The Model C deposit until configured otherwise (owner, 2026-11-20). */
+export const DEFAULT_DEPOSIT_PERCENT = 25;
 
 /**
  * An operator's overrides, per category, as stored in
@@ -40,26 +46,31 @@ export const DEFAULT_CATEGORY_CONFIG: Record<ServiceCategory, PlatformSetting> =
       isEnabled: true,
       bookingMode: BookingMode.INSTANT,
       paymentModel: PaymentModel.A_INSTANT,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
     },
     PRIVATE_CHARTER: {
       isEnabled: true,
       bookingMode: BookingMode.REQUEST,
       paymentModel: PaymentModel.B_OPERATOR_CONFIRMED,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
     },
     HELICOPTER: {
       isEnabled: true,
       bookingMode: BookingMode.REQUEST,
       paymentModel: PaymentModel.B_OPERATOR_CONFIRMED,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
     },
     EMPTY_LEG: {
       isEnabled: true,
       bookingMode: BookingMode.REQUEST,
       paymentModel: PaymentModel.B_OPERATOR_CONFIRMED,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
     },
     AIR_AMBULANCE: {
       isEnabled: true,
       bookingMode: BookingMode.REQUEST,
       paymentModel: PaymentModel.B_OPERATOR_CONFIRMED,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
     },
   };
 
@@ -109,6 +120,7 @@ export function resolveCategoryConfig(
       isEnabled: false,
       bookingMode: BookingMode.REQUEST,
       paymentModel: PaymentModel.B_OPERATOR_CONFIRMED,
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
     };
   }
   let bookingMode = override.bookingMode[category] ?? platform.bookingMode;
@@ -121,5 +133,6 @@ export function resolveCategoryConfig(
     isEnabled: platform.isEnabled,
     bookingMode,
     paymentModel: override.paymentModel[category] ?? platform.paymentModel,
+    depositPercent: platform.depositPercent,
   };
 }

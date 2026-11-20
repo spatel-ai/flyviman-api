@@ -66,6 +66,7 @@ describe('resolveCategoryConfig', () => {
       isEnabled: true,
       bookingMode: 'REQUEST',
       paymentModel: 'B_OPERATOR_CONFIRMED',
+      depositPercent: 25,
     });
   });
 
@@ -121,6 +122,7 @@ describe('resolveCategoryConfig', () => {
       isEnabled: false,
       bookingMode: 'REQUEST',
       paymentModel: 'B_OPERATOR_CONFIRMED',
+      depositPercent: 25,
     });
   });
 
