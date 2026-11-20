@@ -14373,11 +14373,12 @@
           "pickupAddress": {
             "type": "string",
             "maxLength": 300,
-            "description": "Where the patient is collected, for example a hospital."
+            "description": "Where the patient is collected, for example a hospital. Stored encrypted."
           },
           "destinationFacility": {
             "type": "string",
-            "maxLength": 200
+            "maxLength": 200,
+            "description": "The receiving hospital or facility. Stored encrypted."
           },
           "preferredAt": {
             "type": "string",
@@ -14460,6 +14461,7 @@
         "type": "object",
         "properties": {
           "priceType": {
+            "description": "Always `QUOTE`: an operator’s price sent by operations.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/PriceType"
@@ -14709,11 +14711,13 @@
           },
           "pickupAddress": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Stored encrypted; null unless the caller may read the medical details."
           },
           "destinationFacility": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Stored encrypted; null unless the caller may read the medical details."
           },
           "preferredAt": {
             "type": "string",
@@ -15040,11 +15044,13 @@
           },
           "pickupAddress": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Stored encrypted; null unless the caller may read the medical details."
           },
           "destinationFacility": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Stored encrypted; null unless the caller may read the medical details."
           },
           "preferredAt": {
             "type": "string",

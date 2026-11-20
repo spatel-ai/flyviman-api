@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable, type OnModuleInit } from '@nestjs/common';
-import { FieldCipher } from '../../common/crypto/field-cipher.js';
+import { FieldCipher, isEncrypted } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import {
   type IdempotencyClaim,
@@ -13,6 +13,7 @@ import type {
 import {
   AirAmbulanceStatus,
   FilePurpose,
+  OperatorStatus,
   type PatientMobility,
   Role,
 } from '../../generated/prisma/enums.js';
@@ -68,7 +69,9 @@ export interface AirAmbulanceRequestView {
   emergencyContactPhone: string | null;
   originLocationId: string;
   destinationLocationId: string;
+  /** Null unless the caller may read the medical details (encrypted). */
   pickupAddress: string | null;
+  /** Null unless the caller may read the medical details (encrypted). */
   destinationFacility: string | null;
   preferredAt: Date;
   patientCount: number;
@@ -278,8 +281,11 @@ export class AirAmbulanceService implements OnModuleInit {
               emergencyContactPhone: input.emergencyContactPhone ?? null,
               originLocationId: input.originLocationId,
               destinationLocationId: input.destinationLocationId,
-              pickupAddress: input.pickupAddress ?? null,
-              destinationFacility: input.destinationFacility ?? null,
+              // Encrypted: a hospital is close to medical data (W4-4 review).
+              pickupAddress: this.encryptOptional(input.pickupAddress),
+              destinationFacility: this.encryptOptional(
+                input.destinationFacility,
+              ),
               preferredAt: input.preferredAt,
               patientCount: input.patientCount,
               accompanyingPersons: input.accompanyingPersons,
@@ -377,6 +383,8 @@ export class AirAmbulanceService implements OnModuleInit {
     });
     return {
       ...toView(row),
+      pickupAddress: this.decryptPlace(row.pickupAddress),
+      destinationFacility: this.decryptPlace(row.destinationFacility),
       medical: {
         ...this.decryptMedical(medical),
         documentFileIds: medical.request.documents.map((d) => d.fileId),
@@ -570,11 +578,23 @@ export class AirAmbulanceService implements OnModuleInit {
   private async operatorOf(actor: AirAmbulanceActor): Promise<string | null> {
     if (actor.role !== Role.OPERATOR_ADMIN) return null;
     try {
-      return (await this.operators.forMember(actor.id)).id;
+      // Only an approved operator's administrators read a request: a
+      // suspended operator loses access at once (W4-4 review).
+      const operator = await this.operators.forMember(actor.id);
+      return operator.status === OperatorStatus.APPROVED ? operator.id : null;
     } catch {
       // No membership: not any operator's administrator.
       return null;
     }
+  }
+
+  /**
+   * A collection or receiving place. Rows written before it was encrypted
+   * (none outside development) are returned as stored.
+   */
+  private decryptPlace(stored: string | null): string | null {
+    if (stored === null) return null;
+    return isEncrypted(stored) ? this.cipher.decrypt(stored) : stored;
   }
 
   private encryptOptional(plain: string | undefined): string | null {
@@ -611,8 +631,10 @@ export function toView(row: AirAmbulanceRequest): AirAmbulanceRequestView {
     emergencyContactPhone: row.emergencyContactPhone,
     originLocationId: row.originLocationId,
     destinationLocationId: row.destinationLocationId,
-    pickupAddress: row.pickupAddress,
-    destinationFacility: row.destinationFacility,
+    // Encrypted and as restricted as the medical details: only `findOne`
+    // returns them, to those who may read the medical details.
+    pickupAddress: null,
+    destinationFacility: null,
     preferredAt: row.preferredAt,
     patientCount: row.patientCount,
     accompanyingPersons: row.accompanyingPersons,

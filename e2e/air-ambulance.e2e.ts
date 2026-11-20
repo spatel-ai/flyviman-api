@@ -172,6 +172,13 @@ test.describe('POST /air-ambulance/requests', () => {
       }),
     );
     expect(stored.patientCondition).not.toContain('cardiac');
+    const place = await withPrisma((prisma) =>
+      prisma.airAmbulanceRequest.findUniqueOrThrow({
+        where: { reference: data.reference },
+        select: { pickupAddress: true },
+      }),
+    );
+    expect(place.pickupAddress).not.toContain('Hospital');
   });
 
   test('needs an Idempotency-Key', async ({ request }) => {
@@ -245,6 +252,7 @@ test.describe('GET /air-ambulance/requests', () => {
       reference,
       status: 'SUBMITTED',
       contactName: 'Asha Rao',
+      pickupAddress: 'City Hospital, Ward 4',
       quote: null,
       confirmedAt: null,
       medical: {
@@ -428,6 +436,8 @@ test.describe('operations queue', () => {
     expect((await view.json()).data).toMatchObject({
       reference,
       medical: null,
+      pickupAddress: null,
+      destinationFacility: null,
       assignedToId: null,
       feasibility: null,
     });
@@ -529,6 +539,25 @@ test.describe('operations queue', () => {
       ).status(),
     ).toBe(200);
     const finance = await as(playwright, baseURL, 'finance');
+    const fileId = await uploadPdf(
+      customer,
+      await csrfHeaders(customer),
+      'report.pdf',
+      'AIR_AMBULANCE_DOCUMENT',
+    );
+    expect(
+      (
+        await customer.post(`air-ambulance/requests/${reference}/documents`, {
+          headers: await csrfHeaders(customer),
+          data: { fileId },
+        })
+      ).status(),
+    ).toBe(201);
+    for (const context of [staff, request, finance]) {
+      expect((await context.get(`documents/${fileId}/download`)).status()).toBe(
+        404,
+      );
+    }
 
     for (const [name, context] of [
       ['finance', finance],
@@ -580,6 +609,20 @@ test.describe('operations queue', () => {
       playwright,
       baseURL,
     );
+    const fileId = await uploadPdf(
+      customer,
+      await csrfHeaders(customer),
+      'report.pdf',
+      'AIR_AMBULANCE_DOCUMENT',
+    );
+    expect(
+      (
+        await customer.post(`air-ambulance/requests/${reference}/documents`, {
+          headers: await csrfHeaders(customer),
+          data: { fileId },
+        })
+      ).status(),
+    ).toBe(201);
     const ops = await newStaff(playwright, baseURL, 'OPS');
     const headers = await csrfHeaders(ops);
     const path = `admin/air-ambulance/requests/${reference}`;
@@ -640,6 +683,11 @@ test.describe('operations queue', () => {
       operatorName: expect.any(String),
     });
 
+    // The selected operator's administrator reads nothing medical yet.
+    expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
+      404,
+    );
+
     // Operations cannot confirm before acceptance.
     expect((await move('CONFIRMED')).status()).toBe(409);
 
@@ -656,6 +704,10 @@ test.describe('operations queue', () => {
     );
     expect(accepted.status()).toBe(200);
     expect((await accepted.json()).data.status).toBe('ACCEPTED');
+    // From acceptance, the selected operator's administrator may (audited).
+    expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
+      200,
+    );
 
     // Confirmation without the whole checklist is refused, and changes nothing.
     const refused = await move('CONFIRMED');
@@ -742,6 +794,19 @@ test.describe('operations queue', () => {
     );
     expect(JSON.stringify(audit)).not.toMatch(/cardiac|ICU|Asha|\+91|Hospital/);
 
+    // A suspended operator's administrator loses access at once.
+    expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
+      200,
+    );
+    const suspended = await ops.post(`admin/operators/${operatorId}/suspend`, {
+      headers,
+      data: { reason: 'Insurance lapsed.' },
+    });
+    expect(suspended.status()).toBe(200);
+    expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
+      404,
+    );
+
     for (const context of [draft, customer, ops]) await context.dispose();
   });
 
@@ -767,6 +832,32 @@ test.describe('operations queue', () => {
         })
       ).status(),
     ).toBe(409);
+
+    // A quotation (set up directly: quoting needs an approved operator,
+    // covered by the workflow test) can be declined.
+    const declinable = await customerWithRequest(playwright, baseURL);
+    await withPrisma(async (prisma) => {
+      const operator = await prisma.operator.findFirstOrThrow({
+        select: { id: true },
+      });
+      await prisma.airAmbulanceRequest.update({
+        where: { reference: declinable.reference },
+        data: {
+          status: 'QUOTED',
+          selectedOperatorId: operator.id,
+          quoteAmountMinor: 30_000_000,
+          quoteCurrency: 'INR',
+          quotedAt: new Date(),
+        },
+      });
+    });
+    const declined = await declinable.customer.post(
+      `air-ambulance/requests/${declinable.reference}/quote/decline`,
+      { headers: await csrfHeaders(declinable.customer) },
+    );
+    expect(declined.status()).toBe(200);
+    expect((await declined.json()).data.status).toBe('DECLINED');
+    await declinable.customer.dispose();
 
     const cancelled = await customer.post(`${base}/cancel`, { headers });
     expect(cancelled.status()).toBe(200);

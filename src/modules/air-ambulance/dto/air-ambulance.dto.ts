@@ -160,7 +160,8 @@ export class CreateAirAmbulanceRequestDto {
 
   @ApiPropertyOptional({
     maxLength: 300,
-    description: 'Where the patient is collected, for example a hospital.',
+    description:
+      'Where the patient is collected, for example a hospital. Stored encrypted.',
   })
   @OptionalNotNull()
   @Transform(trim)
@@ -170,7 +171,10 @@ export class CreateAirAmbulanceRequestDto {
   @IsPlainText()
   pickupAddress?: string;
 
-  @ApiPropertyOptional({ maxLength: 200 })
+  @ApiPropertyOptional({
+    maxLength: 200,
+    description: 'The receiving hospital or facility. Stored encrypted.',
+  })
   @OptionalNotNull()
   @Transform(trim)
   @IsString()
@@ -221,7 +225,11 @@ export class AirAmbulanceCreatedDto {
 }
 
 export class AirAmbulanceQuotePriceDto {
-  @ApiProperty({ enum: [PriceType.QUOTE], enumName: 'PriceType' })
+  @ApiProperty({
+    enum: PriceType,
+    enumName: 'PriceType',
+    description: 'Always `QUOTE`: an operator’s price sent by operations.',
+  })
   priceType: PriceType;
 
   @ApiProperty({ description: 'Paise.' })
@@ -368,10 +376,20 @@ export class AirAmbulanceRequestDto {
   @ApiProperty({ nullable: true, type: String })
   destinationName: string | null;
 
-  @ApiProperty({ nullable: true, type: String })
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Stored encrypted; null unless the caller may read the medical details.',
+  })
   pickupAddress: string | null;
 
-  @ApiProperty({ nullable: true, type: String })
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Stored encrypted; null unless the caller may read the medical details.',
+  })
   destinationFacility: string | null;
 
   @ApiProperty({ format: 'date-time' })

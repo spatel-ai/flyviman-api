@@ -58,6 +58,7 @@ function setup(
     status?: AirAmbulanceStatus;
     memberOf?: Record<string, string>;
     activeLocations?: string[];
+    suspended?: string[];
   } = {},
 ) {
   const stored: {
@@ -118,6 +119,7 @@ function setup(
   } as unknown as PrismaService;
   const audit = { record: vi.fn(async (): Promise<void> => undefined) };
   const memberOf = options.memberOf ?? {};
+  const suspended = options.suspended ?? [];
   const active = options.activeLocations ?? ['loc-1', 'loc-2'];
   const locations = {
     isActive: vi.fn(async (id: string) => active.includes(id)),
@@ -126,7 +128,7 @@ function setup(
     forMember: vi.fn(async (userId: string) => {
       const id = memberOf[userId];
       if (!id) throw new Error('not a member');
-      return { id };
+      return { id, status: suspended.includes(id) ? 'SUSPENDED' : 'APPROVED' };
     }),
   };
   const service = new AirAmbulanceService(
@@ -416,6 +418,49 @@ describe('AirAmbulanceService.findOne', () => {
     const detail = await after.service.findOne('aa-1', oa);
     expect(detail.medical?.patientCondition).toBe(CONDITION);
     expect(after.audit.record).toHaveBeenCalledOnce();
+  });
+
+  it('closes the request to a suspended operator’s administrators', async () => {
+    const oa = { id: 'u-oa', role: Role.OPERATOR_ADMIN };
+    const { service } = await created({
+      status: 'ACCEPTED',
+      memberOf: { 'u-oa': OPERATOR_ID },
+      suspended: [OPERATOR_ID],
+    });
+    await expect(service.findOne('aa-1', oa)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('stores the collection and receiving places encrypted and returns them only with the medical details', async () => {
+    const { service, stored } = setup();
+    await service.create(
+      customer,
+      {
+        ...input(),
+        pickupAddress: 'City Cardiac Centre',
+        destinationFacility: 'Apollo Hospital',
+      },
+      CLAIM,
+    );
+    expect(isEncrypted(stored.request!.pickupAddress as string)).toBe(true);
+    expect(isEncrypted(stored.request!.destinationFacility as string)).toBe(
+      true,
+    );
+    const own = await service.findOne('aa-1', customer);
+    expect(own).toMatchObject({
+      pickupAddress: 'City Cardiac Centre',
+      destinationFacility: 'Apollo Hospital',
+    });
+    const unassigned = await service.findOne('aa-1', {
+      id: 'u-ops-2',
+      role: Role.OPS,
+    });
+    expect(unassigned).toMatchObject({
+      pickupAddress: null,
+      destinationFacility: null,
+      medical: null,
+    });
   });
 
   it('returns nothing medical when the read cannot be audited', async () => {
