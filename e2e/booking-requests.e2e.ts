@@ -11,7 +11,7 @@ import {
 import { withPrisma } from './support/db.js';
 import { aircraftBody } from './support/fleet.js';
 import { listedJet, searchFor } from './support/pricing.js';
-import { csrfHeaders } from './support/session.js';
+import { csrfHeaders, signIn } from './support/session.js';
 
 /**
  * The booking request flow after creation (M8, W3-1): the operator's inbox
@@ -587,11 +587,27 @@ test.describe('quotes', () => {
       priceType: 'QUOTE',
       searchId: null,
       baseMinor: 50_000_000n,
-      inputs: {
-        source: 'OPERATOR_QUOTE',
-        operatorPriceMinor: 50_000_000,
-      },
+      inputs: { source: 'OPERATOR_QUOTE', bookingId: expect.any(String) },
     });
+    expect(calculation!.inputs).not.toHaveProperty('operatorPriceMinor');
+    // In the calculation viewer, finance sees the operator's price and
+    // operations do not, as for an estimate (D-103).
+    for (const [account, base] of [
+      ['finance', 50_000_000],
+      ['ops', null],
+    ] as const) {
+      const viewer = await playwright.request.newContext({ baseURL });
+      await signIn(viewer, account);
+      const shown = (
+        await (
+          await viewer.get(`admin/price-calculations/${calculation!.id}`)
+        ).json()
+      ).data;
+      expect(shown).toMatchObject({ priceType: 'QUOTE', baseMinor: base });
+      if (base === null)
+        expect(JSON.stringify(shown)).not.toContain('50000000');
+      await viewer.dispose();
+    }
     expect(calculation!.totalMinor).toBe(totalMinor);
     expect(calculation!.totalMinor).toBe(
       calculation!.baseMinor +
@@ -780,6 +796,9 @@ test.describe('quotes', () => {
       { totalMinor: 61_000_000, currency: 'INR', conditions: QUOTE.conditions },
       { ...QUOTE, operatorPriceMinor: 0 },
       { ...QUOTE, operatorPriceMinor: 1.5 },
+      // ₹10 crore before commission and tax is more than the customer
+      // routes accept once they are added.
+      { ...QUOTE, operatorPriceMinor: 10_000_000_000 },
       { ...QUOTE, currency: 'USD' },
     ]) {
       const response = await post(request, path, data);

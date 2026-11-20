@@ -76,6 +76,9 @@ const JOB_BATCH = 100;
 /** Attempts at a fresh quote reference before giving up (31^6 codes). */
 const REFERENCE_ATTEMPTS = 5;
 
+/** ₹10 crore in paise: the most a customer amount can be on the booking routes. */
+const MAX_QUOTE_TOTAL_MINOR = 10_000_000_000;
+
 /** A quote must leave the customer at least this long to answer. */
 const MIN_QUOTE_MINUTES = 60;
 
@@ -397,6 +400,22 @@ export class BookingRequestsService {
             validUntil,
             availabilityCheckedAt: now,
           });
+          // Every customer amount (a cancellation charge of 100% included)
+          // stays within ₹10 crore, the ceiling the booking routes accept.
+          if (result.totalMinor > MAX_QUOTE_TOTAL_MINOR) {
+            throw new AppException(
+              'VALIDATION_ERROR',
+              'The request is not valid.',
+              HttpStatus.BAD_REQUEST,
+              [
+                {
+                  field: 'operatorPriceMinor',
+                  issue:
+                    "with Flyviman's charges and tax, the customer's total would exceed ₹10 crore",
+                },
+              ],
+            );
+          }
           // Flyviman's terms the request was made on (D-172), never the
           // operator's own: the quote shows them before the customer
           // accepts (rule 9).

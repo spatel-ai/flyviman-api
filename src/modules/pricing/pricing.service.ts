@@ -127,11 +127,12 @@ export class PricingService {
         searchId: null,
         aircraftId: input.aircraftId,
         operatorId: input.operatorId,
+        // The operator's price is `baseMinor`, which only finance reads; it
+        // is not repeated here, because operations see the inputs (D-103).
         inputs: {
           source: 'OPERATOR_QUOTE',
           bookingId: input.bookingId,
           category: input.category,
-          operatorPriceMinor: input.operatorPriceMinor,
         },
         appliedRules: result.appliedRules as unknown as Prisma.InputJsonValue,
         breakdown: result.breakdown as unknown as Prisma.InputJsonValue,
