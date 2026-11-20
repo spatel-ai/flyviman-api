@@ -54,6 +54,7 @@ async function bookedTrip(contexts: Contexts) {
     data: {
       searchId: searched.searchId,
       resultId: searched.result.resultId,
+      cancellationTermsVersion: searched.termsVersion,
       expectedTotalMinor: searched.result.price.amountMinor,
       currency: 'INR',
     },
@@ -186,13 +187,13 @@ test.describe('GET /bookings/:reference/cancellation-quote', () => {
     const contexts = { request, playwright, baseURL };
     const { customer, reference } = await bookedTrip(contexts);
 
-    // The terms a search request is made on carry no charge.
+    // A search request carries Flyviman's tiers (D-172); before the price
+    // is confirmed the rule is shown and no money is taken.
     const plain = await quote(customer, reference);
     expect(plain).toMatchObject({
       reference,
       status: 'OPERATOR_PENDING',
-      terms: { source: 'PLATFORM', charges: [] },
-      appliedCharge: null,
+      terms: { source: 'PLATFORM' },
       priceType: 'ESTIMATE',
       amountKnown: false,
       chargeMinor: 0,
@@ -201,9 +202,27 @@ test.describe('GET /bookings/:reference/cancellation-quote', () => {
       currency: 'INR',
     });
     expect(plain.hoursBeforeDeparture).toBeGreaterThanOrEqual(72);
+    expect(plain.terms.charges.length).toBeGreaterThan(0);
+    const tier = plain.appliedCharge as {
+      minHoursBeforeDeparture: number;
+      chargePercent: number;
+    };
+    expect(tier.minHoursBeforeDeparture).toBeLessThanOrEqual(
+      plain.hoursBeforeDeparture,
+    );
 
-    // The operator's terms apply before the price is confirmed: the rule
-    // is shown, but no amount is invented.
+    // Once the price is confirmed, the snapshot's tier is charged.
+    await setBooking(reference, { priceType: 'CONFIRMED' });
+    const flyviman = await quote(customer, reference);
+    expect(flyviman).toMatchObject({
+      amountKnown: true,
+      appliedCharge: tier,
+      chargeMinor: Math.floor((flyviman.totalMinor * tier.chargePercent) / 100),
+    });
+    await setBooking(reference, { priceType: 'ESTIMATE' });
+
+    // Terms stored by an operator's quote before D-172 still apply.
+
     await setBooking(reference, { cancellationTerms: TIERED_TERMS });
     const estimate = await quote(customer, reference);
     expect(estimate).toMatchObject({

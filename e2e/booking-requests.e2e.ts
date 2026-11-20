@@ -22,15 +22,11 @@ import { csrfHeaders } from './support/session.js';
 type Contexts = Parameters<typeof listedJet>[0];
 type Trip = Awaited<ReturnType<typeof listedJet>>;
 
+/** The operator's price; Flyviman's rules add the rest (D-172). */
 const QUOTE = {
-  totalMinor: 61_000_000,
+  operatorPriceMinor: 50_000_000,
   currency: 'INR',
   conditions: {
-    summary: 'Free cancellation until 72 hours before departure; 50% after.',
-    charges: [
-      { minHoursBeforeDeparture: 72, chargePercent: 0 },
-      { minHoursBeforeDeparture: 0, chargePercent: 50 },
-    ],
     inclusions: ['Crew', 'Fuel'],
     exclusions: ['Airport lounge'],
   },
@@ -85,6 +81,7 @@ async function requested(
     data: {
       searchId: searched.searchId,
       resultId: searched.result.resultId,
+      cancellationTermsVersion: searched.termsVersion,
       currency: 'INR',
       ...(priced
         ? { expectedTotalMinor: searched.result.price.amountMinor }
@@ -144,6 +141,16 @@ async function runJob(request: APIRequestContext) {
     })
     .toBe(false);
   return result;
+}
+
+/** The stored calculation behind a quote (D-172: traceable, `QUOTE`). */
+function quoteCalculation(quoteReference: string) {
+  return withPrisma((prisma) =>
+    prisma.quote.findUniqueOrThrow({
+      where: { reference: quoteReference },
+      include: { calculation: true },
+    }),
+  );
 }
 
 function stored(reference: string) {
@@ -568,16 +575,60 @@ test.describe('quotes', () => {
   }) => {
     const contexts = { request, playwright, baseURL };
     const { reference, customer } = await requested(contexts);
+    const requestedTerms = (
+      await (await customer.get(`bookings/${reference}`)).json()
+    ).data.cancellationTerms;
 
     const first = await quote(request, reference);
+    const { calculation, totalMinor } = await quoteCalculation(first.reference);
+    // The operator's price plus Flyviman's commission, fees and tax, stored
+    // and labelled QUOTE; the customer's total is the calculation's total.
+    expect(calculation).toMatchObject({
+      priceType: 'QUOTE',
+      searchId: null,
+      baseMinor: 50_000_000n,
+      inputs: {
+        source: 'OPERATOR_QUOTE',
+        operatorPriceMinor: 50_000_000,
+      },
+    });
+    expect(calculation!.totalMinor).toBe(totalMinor);
+    expect(calculation!.totalMinor).toBe(
+      calculation!.baseMinor +
+        calculation!.feesMinor -
+        calculation!.discountMinor +
+        calculation!.taxMinor,
+    );
+    expect(calculation!.platformRevenueMinor).toBeGreaterThan(0n);
+    expect(
+      (calculation!.appliedRules as { type: string }[]).map((r) => r.type),
+    ).toEqual(expect.arrayContaining(['COMMISSION', 'TAX']));
     expect(first).toMatchObject({
       reference: expect.stringMatching(/^FLY-QT-[2-9A-HJ-NP-Z]{6}$/),
       bookingReference: reference,
       status: 'SENT',
       open: true,
-      price: { priceType: 'QUOTE', amountMinor: QUOTE.totalMinor },
-      conditions: QUOTE.conditions,
+      price: { priceType: 'QUOTE', amountMinor: Number(totalMinor) },
+      // Flyviman's terms the request was made on, never the operator's own.
+      conditions: {
+        summary: requestedTerms.summary,
+        charges: requestedTerms.charges,
+        ...QUOTE.conditions,
+      },
+      // The operator sees its own price beside the customer's total.
+      operatorPrice: {
+        priceType: 'QUOTE',
+        amountMinor: 50_000_000,
+        payableMinor: Number(calculation!.operatorPayableMinor),
+        currency: 'INR',
+      },
     });
+    expect(first.price.amountMinor).toBeGreaterThan(QUOTE.operatorPriceMinor);
+    const inbox = (
+      await (await request.get(`operator/booking-requests/${reference}`)).json()
+    ).data;
+    expect(inbox.quote.operatorPrice.amountMinor).toBe(50_000_000);
+    expect(inbox.quotes[0].operatorPrice.amountMinor).toBe(50_000_000);
     // Valid for 48 hours by default.
     const validMs = Date.parse(first.price.validUntil) - Date.now();
     expect(validMs).toBeGreaterThan(47 * 3_600_000);
@@ -592,10 +643,19 @@ test.describe('quotes', () => {
     );
     expect(blocked.status()).toBe(409);
 
-    const second = await quote(request, reference, { totalMinor: 59_000_000 });
+    const second = await quote(request, reference, {
+      operatorPriceMinor: 48_000_000,
+    });
+    const secondTotal = second.price.amountMinor as number;
     const quotes = (
       await (await customer.get(`bookings/${reference}/quotes`)).json()
     ).data;
+    // Customers see the total only (D-099).
+    for (const entry of quotes)
+      expect(entry).not.toHaveProperty('operatorPrice');
+    expect(
+      (await (await customer.get(`quotes/${second.reference}`)).json()).data,
+    ).not.toHaveProperty('operatorPrice');
     expect(
       quotes.map((entry: { reference: string; status: string }) => [
         entry.reference,
@@ -654,8 +714,9 @@ test.describe('quotes', () => {
     expect((await accepted.json()).data).toMatchObject({
       status: 'ACCEPTED',
       open: false,
-      price: { priceType: 'CONFIRMED', amountMinor: 59_000_000 },
+      price: { priceType: 'CONFIRMED', amountMinor: secondTotal },
     });
+    expect((await accepted.json()).data).not.toHaveProperty('operatorPrice');
     const repeat = await post(
       customer,
       `quotes/${second.reference}/accept`,
@@ -676,12 +737,9 @@ test.describe('quotes', () => {
       .data;
     expect(own).toMatchObject({
       status: 'PRICE_CONFIRMED',
-      price: { priceType: 'CONFIRMED', amountMinor: 59_000_000 },
-      cancellationTerms: {
-        source: 'OPERATOR_QUOTE',
-        summary: QUOTE.conditions.summary,
-        charges: QUOTE.conditions.charges,
-      },
+      price: { priceType: 'CONFIRMED', amountMinor: secondTotal },
+      // The snapshot taken at request time stands, unchanged (rule 9).
+      cancellationTerms: requestedTerms,
     });
     const row = await stored(reference);
     expect(row.acceptedQuoteId).toBe(row.quotes[1].id);
@@ -709,14 +767,19 @@ test.describe('quotes', () => {
         ...QUOTE,
         validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       },
+      // The operator no longer sets cancellation terms (D-172).
       {
         ...QUOTE,
         conditions: {
           ...QUOTE.conditions,
-          charges: [...QUOTE.conditions.charges].reverse(),
+          summary: 'Free cancellation',
+          charges: [{ minHoursBeforeDeparture: 0, chargePercent: 0 }],
         },
       },
-      { ...QUOTE, totalMinor: 0 },
+      // The customer's all-in total is no longer accepted.
+      { totalMinor: 61_000_000, currency: 'INR', conditions: QUOTE.conditions },
+      { ...QUOTE, operatorPriceMinor: 0 },
+      { ...QUOTE, operatorPriceMinor: 1.5 },
       { ...QUOTE, currency: 'USD' },
     ]) {
       const response = await post(request, path, data);
@@ -801,6 +864,7 @@ test.describe('quotes', () => {
           data: {
             searchId: searched.searchId,
             resultId: searched.result.resultId,
+            cancellationTermsVersion: searched.termsVersion,
             currency: 'INR',
             expectedTotalMinor: 1000,
           },
@@ -848,7 +912,15 @@ test.describe('quotes', () => {
     expect(accepted.status()).toBe(200);
     expect(
       (await (await customer.get(`bookings/${reference}`)).json()).data.price,
-    ).toMatchObject({ priceType: 'CONFIRMED', amountMinor: QUOTE.totalMinor });
+    ).toMatchObject({
+      priceType: 'CONFIRMED',
+      amountMinor: sent.price.amountMinor,
+    });
+    // Priced through the engine like any quote.
+    expect((await quoteCalculation(sent.reference)).calculation).toMatchObject({
+      priceType: 'QUOTE',
+      baseMinor: 50_000_000n,
+    });
   });
 });
 

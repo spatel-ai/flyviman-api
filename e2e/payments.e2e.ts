@@ -59,6 +59,7 @@ async function bookingAwaitingPayment(
     data: {
       searchId: searched.searchId,
       resultId: searched.result.resultId,
+      cancellationTermsVersion: searched.termsVersion,
       expectedTotalMinor: searched.result.price.amountMinor,
       currency: 'INR',
     },
