@@ -154,19 +154,16 @@ export class CancellationQuoteDto {
   chargeMinor: number;
 
   @ApiProperty({
-    type: Number,
-    nullable: true,
-    description: 'Paise paid so far; null while it cannot be read yet (M9).',
+    description:
+      'Paise paid towards the booking: succeeded payments less refunds completed or under way, leaving out money flagged for a refund of its own (a late or second payment).',
   })
-  paidMinor: number | null;
+  paidMinor: number;
 
   @ApiProperty({
-    type: Number,
-    nullable: true,
     description:
-      'Paise due back: paid less the charge, never below 0. Null when `paidMinor` is null. Refunds are made later (M9); nothing is moved here.',
+      'Paise due back: paid less the charge, never below 0. Nothing is moved here: finance makes the refund from its queue (`GET /admin/refunds/due`).',
   })
-  refundMinor: number | null;
+  refundMinor: number;
 
   @ApiProperty({ description: 'What the figures mean, in one sentence.' })
   explanation: string;

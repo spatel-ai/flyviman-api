@@ -165,6 +165,7 @@ describe('MockPaymentGatewayProvider', () => {
           providerPaymentId: paid.checkout!.providerPaymentId,
           amountMinor: 1_250_000,
           currency: 'INR',
+          method: 'upi',
         },
       });
     });
@@ -359,7 +360,7 @@ describe('MockPaymentGatewayProvider', () => {
         providerPaymentId,
         amountMinor: 250_000,
         currency: 'INR',
-        status: 'processed',
+        status: 'pending',
       });
       expect(await gateway.fetchPayment(providerPaymentId)).toMatchObject({
         status: 'captured',
@@ -425,6 +426,81 @@ describe('MockPaymentGatewayProvider', () => {
           receipt: 'R',
         }),
       ).rejects.toMatchObject({ reason: 'NOT_FOUND' });
+    });
+  });
+
+  describe('refund settlement', () => {
+    it('settles a pending refund once, with a signed notice carrying our receipt', async () => {
+      const { gateway, paid } = await paidOrder();
+      const providerPaymentId = paid.checkout!.providerPaymentId;
+      const refund = await gateway.createRefund({
+        providerPaymentId,
+        amountMinor: 1_250_000,
+        receipt: 'FLY-RF-ABCDEF',
+      });
+      const notice = gateway.simulateRefund(
+        refund.providerRefundId,
+        'processed',
+      );
+      expect(parse(gateway, notice)).toEqual({
+        ok: true,
+        event: {
+          providerEventId: expect.stringMatching(/^evt_mock_/),
+          type: 'refund.processed',
+          providerRefundId: refund.providerRefundId,
+          providerPaymentId,
+          receipt: 'FLY-RF-ABCDEF',
+          amountMinor: 1_250_000,
+          currency: 'INR',
+        },
+      });
+      expect(() =>
+        gateway.simulateRefund(refund.providerRefundId, 'failed'),
+      ).toThrow(PaymentGatewayError);
+      expect(() => gateway.simulateRefund('rfnd_unknown', 'processed')).toThrow(
+        PaymentGatewayError,
+      );
+    });
+
+    it('gives a failed refund back to the payment', async () => {
+      const { gateway, paid } = await paidOrder();
+      const providerPaymentId = paid.checkout!.providerPaymentId;
+      const refund = await gateway.createRefund({
+        providerPaymentId,
+        amountMinor: 1_250_000,
+        receipt: 'R',
+      });
+      expect((await gateway.fetchPayment(providerPaymentId)).status).toBe(
+        'refunded',
+      );
+      const notice = gateway.simulateRefund(refund.providerRefundId, 'failed');
+      const parsed = parse(gateway, notice);
+      expect(parsed.ok && parsed.event.type).toBe('refund.failed');
+      expect(await gateway.fetchPayment(providerPaymentId)).toMatchObject({
+        status: 'captured',
+        amountRefundedMinor: 0,
+      });
+    });
+  });
+
+  describe('fetchOrderPayments and method', () => {
+    it('lists the attempts on an order with their method type only', async () => {
+      const gateway = new MockPaymentGatewayProvider();
+      const created = await gateway.createOrder(order);
+      gateway.simulatePayment(created.providerOrderId, 'failure', 'card');
+      const paid = gateway.simulatePayment(created.providerOrderId, 'success');
+      const attempts = await gateway.fetchOrderPayments(
+        created.providerOrderId,
+      );
+      expect(attempts.map((a) => [a.status, a.method])).toEqual([
+        ['failed', 'card'],
+        ['captured', 'upi'],
+      ]);
+      const parsed = parse(gateway, paid.webhook);
+      expect(parsed.ok && parsed.event.method).toBe('upi');
+      await expect(gateway.fetchOrderPayments('order_unknown')).rejects.toThrow(
+        PaymentGatewayError,
+      );
     });
   });
 });

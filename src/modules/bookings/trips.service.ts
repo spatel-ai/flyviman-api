@@ -26,6 +26,7 @@ import { CANCELLABLE } from './booking-transitions.js';
 import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import { evaluateCancellation } from './cancellation.js';
+import { readPaidMinor } from './paid-amount.js';
 import {
   changeRequestView,
   decisionNotes,
@@ -148,7 +149,8 @@ export class TripsService {
     if (!CANCELLABLE.includes(booking.status)) {
       throw notCancellable(booking.status);
     }
-    return quoteFor(booking, new Date());
+    const paidMinor = await readPaidMinor(this.prisma, booking.id);
+    return quoteFor(booking, new Date(), paidMinor);
   }
 
   /**
@@ -171,7 +173,9 @@ export class TripsService {
         throw notCancellable(booking.status);
       }
       const now = new Date();
-      const quote = quoteFor(booking, now);
+      // Read under the booking's lock: payments write after locking it too.
+      const paidMinor = await readPaidMinor(tx, booking.id);
+      const quote = quoteFor(booking, now, paidMinor);
       if (
         quote.chargeMinor !== input.expectedChargeMinor ||
         quote.currency !== input.currency
@@ -185,8 +189,7 @@ export class TripsService {
             { field: 'currency', issue: quote.currency },
             {
               field: 'refundMinor',
-              issue:
-                quote.refundMinor === null ? 'null' : String(quote.refundMinor),
+              issue: String(quote.refundMinor),
             },
           ],
         );
@@ -261,8 +264,7 @@ export class TripsService {
           kind: ChangeRequestKind.CANCELLATION,
           details: this.cipher.encrypt(CANCELLED_BY_CUSTOMER),
           chargeMinor: BigInt(quote.chargeMinor),
-          refundMinor:
-            quote.refundMinor === null ? null : BigInt(quote.refundMinor),
+          refundMinor: BigInt(quote.refundMinor),
           currency: quote.currency,
           status: ChangeRequestStatus.COMPLETED,
           decidedById: user.id,
@@ -289,7 +291,12 @@ export class TripsService {
         reference: booking.reference,
         status: BookingStatus.CANCELLED,
         cancelledAt: cancelledAt.toISOString(),
-        cancellation: quoteFor(booking, now, BookingStatus.CANCELLED),
+        cancellation: quoteFor(
+          booking,
+          now,
+          paidMinor,
+          BookingStatus.CANCELLED,
+        ),
       };
     });
   }
@@ -494,9 +501,14 @@ async function lockOwn(
   return tx.booking.findUniqueOrThrow({ where: { id: found.id } });
 }
 
+/**
+ * `paidMinor` is required (W4-1): every caller reads it with
+ * `readPaidMinor`, under the booking's lock when it cancels.
+ */
 function quoteFor(
   booking: BookingRow,
   now: Date,
+  paidMinor: bigint,
   status: BookingStatus = booking.status,
 ): CancellationQuoteDto {
   const terms = parseCancellationTerms(booking.cancellationTerms);
@@ -507,10 +519,9 @@ function quoteFor(
     now,
     totalMinor: booking.totalMinor,
     priceType: booking.priceType,
-    paymentStatus: booking.paymentStatus,
+    paidMinor,
   });
-  const refundMinor =
-    outcome.refundMinor === null ? null : minorToNumber(outcome.refundMinor);
+  const refundMinor = minorToNumber(outcome.refundMinor);
   return {
     reference: booking.reference,
     status,
@@ -524,8 +535,7 @@ function quoteFor(
     currency: booking.currency,
     amountKnown: outcome.amountKnown,
     chargeMinor: minorToNumber(outcome.chargeMinor),
-    paidMinor:
-      outcome.paidMinor === null ? null : minorToNumber(outcome.paidMinor),
+    paidMinor: minorToNumber(outcome.paidMinor),
     refundMinor,
     explanation: explain(outcome, booking.priceType),
     evaluatedAt: now.toISOString(),
@@ -536,16 +546,12 @@ function explain(
   outcome: ReturnType<typeof evaluateCancellation>,
   priceType: PriceType,
 ): string {
-  const refund =
-    outcome.refundMinor === null
-      ? ' What is refunded is worked out from your payments.'
-      : '';
   if (!outcome.appliedCharge) {
-    return `These terms carry no cancellation charge.${refund}`;
+    return 'These terms carry no cancellation charge.';
   }
   const percent = outcome.appliedCharge.chargePercent;
   if (!outcome.amountKnown) {
-    return `The operator’s terms charge ${percent}% at this notice, but the price is not confirmed yet (${priceType}), so nothing is charged.${refund}`;
+    return `The operator’s terms charge ${percent}% at this notice, but the price is not confirmed yet (${priceType}), so nothing is charged.`;
   }
-  return `The operator’s terms charge ${percent}% of the confirmed price at this notice.${refund}`;
+  return `The operator’s terms charge ${percent}% of the confirmed price at this notice.`;
 }

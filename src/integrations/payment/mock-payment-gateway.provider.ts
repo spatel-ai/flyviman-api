@@ -55,6 +55,11 @@ export interface SignedWebhook {
 }
 
 export type SimulatedOutcome = 'success' | 'failure';
+export type SimulatedRefundOutcome = 'processed' | 'failed';
+
+/** Method types the mock's checkout offers; never card details (rule 10). */
+export const MOCK_PAYMENT_METHODS = ['card', 'upi', 'netbanking'] as const;
+export type MockPaymentMethod = (typeof MOCK_PAYMENT_METHODS)[number];
 
 export interface SimulatedPayment {
   /** What the checkout hands the browser; none when the payment failed. */
@@ -78,6 +83,10 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
 
   private readonly orders = new Map<string, GatewayOrder>();
   private readonly payments = new Map<string, GatewayPayment>();
+  private readonly refunds = new Map<
+    string,
+    GatewayRefund & { receipt: string }
+  >();
   private sequence = 0;
 
   constructor(
@@ -171,17 +180,73 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
         'The refund amount must be positive and no more than the amount not yet refunded.',
       );
     }
+    // Reserved at once, as Razorpay does; released if the refund fails.
     payment.amountRefundedMinor += input.amountMinor;
     if (payment.amountRefundedMinor === payment.amountMinor) {
       payment.status = 'refunded';
     }
-    return {
+    // Pending until `simulateRefund` settles it, so the refund's notice is
+    // what completes it, as with a real gateway.
+    const refund: GatewayRefund = {
       providerRefundId: this.nextId('rfnd'),
       providerPaymentId: payment.providerPaymentId,
       amountMinor: input.amountMinor,
       currency: payment.currency,
-      status: 'processed',
+      status: 'pending',
     };
+    this.refunds.set(refund.providerRefundId, {
+      ...refund,
+      receipt: input.receipt,
+    });
+    return refund;
+  }
+
+  /**
+   * Settles a pending refund as the gateway would and returns its signed
+   * notice without sending it (`refund.processed` or `refund.failed`). A
+   * failed refund gives its amount back to the payment.
+   */
+  simulateRefund(
+    providerRefundId: string,
+    outcome: SimulatedRefundOutcome,
+  ): SignedWebhook {
+    const refund = this.refunds.get(providerRefundId);
+    if (!refund) {
+      throw new PaymentGatewayError('NOT_FOUND', 'No such refund.');
+    }
+    if (refund.status !== 'pending') {
+      throw new PaymentGatewayError(
+        'INVALID_REQUEST',
+        'The refund is already settled.',
+      );
+    }
+    refund.status = outcome;
+    if (outcome === 'failed') {
+      const payment = this.payments.get(refund.providerPaymentId);
+      if (payment) {
+        payment.amountRefundedMinor -= refund.amountMinor;
+        payment.status = 'captured';
+      }
+    }
+    const body = JSON.stringify({
+      entity: 'event',
+      event: `refund.${outcome}`,
+      contains: ['refund'],
+      payload: {
+        refund: {
+          entity: {
+            id: refund.providerRefundId,
+            entity: 'refund',
+            payment_id: refund.providerPaymentId,
+            amount: refund.amountMinor,
+            currency: refund.currency,
+            receipt: refund.receipt,
+            status: outcome,
+          },
+        },
+      },
+    });
+    return this.signed(body);
   }
 
   async fetchPayment(providerPaymentId: string): Promise<GatewayPayment> {
@@ -192,6 +257,15 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
     return { ...payment };
   }
 
+  async fetchOrderPayments(providerOrderId: string): Promise<GatewayPayment[]> {
+    if (!this.orders.has(providerOrderId)) {
+      throw new PaymentGatewayError('NOT_FOUND', 'No such order.');
+    }
+    return [...this.payments.values()]
+      .filter((payment) => payment.providerOrderId === providerOrderId)
+      .map((payment) => ({ ...payment }));
+  }
+
   /**
    * Pays an order as the checkout would. The gateway's own records (what
    * `fetchPayment` returns) change at once; the webhook is returned, not
@@ -200,6 +274,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
   simulatePayment(
     providerOrderId: string,
     outcome: SimulatedOutcome,
+    method: MockPaymentMethod = 'upi',
   ): SimulatedPayment {
     const order = this.orders.get(providerOrderId);
     if (!order) {
@@ -218,6 +293,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
       currency: order.currency,
       status: outcome === 'success' ? 'captured' : 'failed',
       amountRefundedMinor: 0,
+      method,
     };
     this.payments.set(payment.providerPaymentId, payment);
     order.status = outcome === 'success' ? 'paid' : 'attempted';
@@ -255,10 +331,15 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
             amount: payment.amountMinor,
             currency: payment.currency,
             status: payment.status,
+            method: payment.method,
           },
         },
       },
     });
+    return this.signed(body);
+  }
+
+  private signed(body: string): SignedWebhook {
     return {
       body,
       headers: {
@@ -283,7 +364,12 @@ const KNOWN_EVENTS = new Set<WebhookEventType>([
   'payment.captured',
   'payment.failed',
   'refund.processed',
+  'refund.failed',
 ]);
+
+/** A method type or refund receipt as we keep it: short, plain. */
+const METHOD = /^[a-z_]{1,20}$/;
+const RECEIPT = /^[A-Za-z0-9_-]{1,40}$/;
 
 /**
  * Reads only the references and amounts out of a verified body, in
@@ -311,11 +397,14 @@ function toEvent(
   const payload = isRecord(body.payload) ? body.payload : {};
   const payment = entityOf(payload.payment);
   const refund = entityOf(payload.refund);
-  if (type === 'refund.processed') {
+  if (type === 'refund.processed' || type === 'refund.failed') {
     if (!refund || typeof refund.id !== 'string') return null;
     event.providerRefundId = refund.id;
     if (typeof refund.payment_id === 'string') {
       event.providerPaymentId = refund.payment_id;
+    }
+    if (typeof refund.receipt === 'string' && RECEIPT.test(refund.receipt)) {
+      event.receipt = refund.receipt;
     }
     return withAmount(event, refund);
   }
@@ -328,6 +417,10 @@ function toEvent(
   }
   event.providerPaymentId = payment.id;
   event.providerOrderId = payment.order_id;
+  // The method type only; card, bank and wallet details are never read.
+  if (typeof payment.method === 'string' && METHOD.test(payment.method)) {
+    event.method = payment.method;
+  }
   return withAmount(event, payment);
 }
 

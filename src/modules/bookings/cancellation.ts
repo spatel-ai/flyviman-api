@@ -1,7 +1,4 @@
-import {
-  BookingPaymentStatus,
-  PriceType,
-} from '../../generated/prisma/enums.js';
+import { PriceType } from '../../generated/prisma/enums.js';
 import type { CancellationCharge, CancellationTerms } from './booking-json.js';
 
 /**
@@ -24,7 +21,8 @@ export interface CancellationInput {
   now: Date;
   totalMinor: bigint;
   priceType: PriceType;
-  paymentStatus: BookingPaymentStatus;
+  /** Paid towards the booking (`paid-amount.ts`). */
+  paidMinor: bigint;
 }
 
 export interface CancellationOutcome {
@@ -35,10 +33,10 @@ export interface CancellationOutcome {
   /** The charge is money only when the price is confirmed. */
   amountKnown: boolean;
   chargeMinor: bigint;
-  /** What the customer has paid; null when it cannot be read yet. */
-  paidMinor: bigint | null;
-  /** Paid less the charge, never below 0; null when `paidMinor` is. */
-  refundMinor: bigint | null;
+  /** What the customer has paid towards the booking. */
+  paidMinor: bigint;
+  /** Paid less the charge, never below 0. */
+  refundMinor: bigint;
 }
 
 const HOUR_MS = 3_600_000;
@@ -61,15 +59,6 @@ export function chargeFor(
   );
 }
 
-/**
- * Paid so far, from the booking's payment summary. Payments are read by the
- * payments module (M9): until it offers the amount, only "nothing paid" is
- * known, and anything else is null rather than a guess.
- */
-export function paidFor(paymentStatus: BookingPaymentStatus): bigint | null {
-  return paymentStatus === BookingPaymentStatus.UNPAID ? 0n : null;
-}
-
 export function evaluateCancellation(
   input: CancellationInput,
 ): CancellationOutcome {
@@ -85,13 +74,8 @@ export function evaluateCancellation(
     amountKnown && appliedCharge
       ? (input.totalMinor * BigInt(appliedCharge.chargePercent)) / 100n
       : 0n;
-  const paidMinor = paidFor(input.paymentStatus);
-  const refundMinor =
-    paidMinor === null
-      ? null
-      : paidMinor > chargeMinor
-        ? paidMinor - chargeMinor
-        : 0n;
+  const { paidMinor } = input;
+  const refundMinor = paidMinor > chargeMinor ? paidMinor - chargeMinor : 0n;
   return {
     hoursBeforeDeparture,
     appliedCharge,

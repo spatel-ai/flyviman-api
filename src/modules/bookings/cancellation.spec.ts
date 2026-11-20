@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BookingPaymentStatus,
-  PriceType,
-} from '../../generated/prisma/enums.js';
+import { PriceType } from '../../generated/prisma/enums.js';
 import type { CancellationTerms } from './booking-json.js';
 import { chargeFor, evaluateCancellation } from './cancellation.js';
 
@@ -36,7 +33,7 @@ function evaluate(
     now: NOW,
     totalMinor: 1_000_001n,
     priceType: PriceType.CONFIRMED,
-    paymentStatus: BookingPaymentStatus.UNPAID,
+    paidMinor: 0n,
     ...overrides,
   });
 }
@@ -100,14 +97,17 @@ describe('evaluateCancellation', () => {
     expect(outcome.refundMinor).toBe(0n);
   });
 
-  it('leaves the refund unknown when the amount paid cannot be read yet', () => {
-    for (const paymentStatus of [
-      BookingPaymentStatus.PAID,
-      BookingPaymentStatus.PARTIALLY_PAID,
-    ]) {
-      const outcome = evaluate(100, { paymentStatus });
-      expect(outcome.paidMinor).toBeNull();
-      expect(outcome.refundMinor).toBeNull();
-    }
+  it('refunds what was paid less the charge (W4-1)', () => {
+    const outcome = evaluate(30, { paidMinor: 1_000_001n });
+    expect(outcome.chargeMinor).toBe(500_000n);
+    expect(outcome.paidMinor).toBe(1_000_001n);
+    expect(outcome.refundMinor).toBe(500_001n);
+    // A Model C deposit only: the refund is the part above the charge.
+    expect(evaluate(30, { paidMinor: 250_001n }).refundMinor).toBe(0n);
+    expect(evaluate(100, { paidMinor: 250_001n }).refundMinor).toBe(250_001n);
+  });
+
+  it('never refunds below 0, whatever the charge', () => {
+    expect(evaluate(1, { paidMinor: 10n }).refundMinor).toBe(0n);
   });
 });

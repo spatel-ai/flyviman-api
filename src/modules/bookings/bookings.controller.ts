@@ -85,7 +85,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'What cancelling now would cost, before the customer commits',
     description:
-      'Worked out from the cancellation terms the booking was made on (rule 9) and the notice left before the first departure. A charge is money only when the price is `CONFIRMED` (`amountKnown`); before that the rule that applies is shown and `chargeMinor` is 0. `refundMinor` is what is due back (refunds are made later; nothing moves here), null while the amount paid cannot be read. 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404.',
+      'Worked out from the cancellation terms the booking was made on (rule 9) and the notice left before the first departure. A charge is money only when the price is `CONFIRMED` (`amountKnown`); before that the rule that applies is shown and `chargeMinor` is 0. `paidMinor` is what was paid towards the booking (less refunds) and `refundMinor` what is due back, paid less the charge (finance refunds it from its queue; nothing moves here). 409 `BOOKING_NOT_CANCELLABLE` once completed, cancelled or otherwise closed; another customer’s booking is 404.',
   })
   @ApiOkResponse({ type: CancellationQuoteDto })
   cancellationQuote(

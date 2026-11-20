@@ -38,6 +38,15 @@ export abstract class PaymentGatewayProvider {
   abstract createRefund(input: CreateRefundInput): Promise<GatewayRefund>;
 
   abstract fetchPayment(providerPaymentId: string): Promise<GatewayPayment>;
+
+  /**
+   * Every payment attempted on an order (Razorpay: `GET /orders/:id/payments`),
+   * for a payment whose gateway payment id never reached us: the status
+   * sweep asks by order instead.
+   */
+  abstract fetchOrderPayments(
+    providerOrderId: string,
+  ): Promise<GatewayPayment[]>;
 }
 
 export interface CreateOrderInput {
@@ -76,12 +85,21 @@ export interface GatewayPayment {
   currency: string;
   status: GatewayPaymentStatus;
   amountRefundedMinor: number;
+  /**
+   * The method type only (`card`, `upi`, `netbanking`, `wallet`, ...), never
+   * a card number, network or holder (rule 10). Absent when not reported.
+   */
+  method?: string;
 }
 
 export interface CreateRefundInput {
   providerPaymentId: string;
   amountMinor: number;
-  /** Our own reference for the refund. */
+  /**
+   * Our own reference for the refund. The gateway repeats it on the refund's
+   * notices, so a notice that beats our record of the gateway's refund id is
+   * still matched.
+   */
   receipt: string;
 }
 
@@ -97,7 +115,11 @@ export interface GatewayRefund {
 
 /** Events the payments module acts on; anything else is `other`. */
 export type WebhookEventType =
-  'payment.captured' | 'payment.failed' | 'refund.processed' | 'other';
+  | 'payment.captured'
+  | 'payment.failed'
+  | 'refund.processed'
+  | 'refund.failed'
+  | 'other';
 
 /**
  * A verified webhook, reduced to gateway references and amounts. Contact
@@ -110,8 +132,12 @@ export interface WebhookEvent {
   providerOrderId?: string;
   providerPaymentId?: string;
   providerRefundId?: string;
+  /** A refund's `receipt`: the refund reference we created it with. */
+  receipt?: string;
   amountMinor?: number;
   currency?: string;
+  /** A payment's method type only (see `GatewayPayment.method`). */
+  method?: string;
 }
 
 export type WebhookParseResult =
