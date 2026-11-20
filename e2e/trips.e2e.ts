@@ -345,7 +345,10 @@ test.describe('POST /bookings/:reference/cancel', () => {
       });
       return { booking, audits };
     });
-    expect(stored.booking.cancellationReason).toBe('Plans changed');
+    // Kept, encrypted: the customer's own words.
+    const reason = stored.booking.cancellationReason as string;
+    expect(isEncrypted(reason)).toBe(true);
+    expect(reason).not.toContain('Plans changed');
     // The aircraft's time is offered again at once.
     expect(stored.booking.holds).toHaveLength(1);
     expect(stored.booking.holds[0].expiresAt!.getTime()).toBeLessThanOrEqual(
