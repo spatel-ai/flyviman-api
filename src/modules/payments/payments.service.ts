@@ -20,10 +20,12 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
+import { parseItinerary } from '../bookings/booking-json.js';
 import {
   BookingsService,
   type PayableBookingRow,
 } from '../bookings/bookings.service.js';
+import { readPaidMinor } from '../bookings/paid-amount.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import type {
   CreatePaymentDto,
@@ -114,7 +116,7 @@ export class PaymentsService {
       customerId: user.id,
     });
     if (!booking) throw notFound('Booking');
-    const due = await this.due(booking, input);
+    const due = await this.due(this.prisma, booking, input);
 
     const open = await this.openPayment(this.prisma, booking.id, due);
     if (open) return this.toResponse(open, booking.reference);
@@ -139,7 +141,7 @@ export class PaymentsService {
           await markIdempotencyCommitted(tx, claim);
           const locked = await this.bookings.forPayment({ id: booking.id }, tx);
           if (!locked) throw notFound('Booking');
-          const now = await this.due(locked, input);
+          const now = await this.due(tx, locked, input);
           const again = await this.openPayment(tx, locked.id, now);
           if (again) return this.toResponse(again, locked.reference);
           const reused = await tx.payment.findUnique({
@@ -262,11 +264,15 @@ export class PaymentsService {
   }
 
   /**
-   * What is due now, or the refusal: 409 `PAYMENT_ALREADY_PAID`, 409
+   * What is due now (the first payment, or a Model C balance), or the refusal: 409 `PAYMENT_ALREADY_PAID`, 409
    * `PAYMENT_NOT_DUE`, or 409 `PAYMENT_AMOUNT_MISMATCH` when the customer
    * was shown another amount (the amount due is in `details`).
    */
-  private async due(booking: PayableBookingRow, input: CreatePaymentDto) {
+  private async due(
+    db: Pick<Prisma.TransactionClient, 'payment'>,
+    booking: PayableBookingRow,
+    input: CreatePaymentDto,
+  ) {
     const depositPercent =
       booking.paymentModel === PaymentModel.C_DEPOSIT
         ? (await this.categories.resolve(booking.category)).depositPercent
@@ -279,8 +285,13 @@ export class PaymentsService {
         operatorAccepted: booking.operatorAcceptedAt !== null,
         paymentStatus: booking.paymentStatus,
         totalMinor: booking.totalMinor,
+        paidMinor: await readPaidMinor(db, booking.id),
+        departureAt: new Date(
+          parseItinerary(booking.itinerary).legs[0].departureAt,
+        ),
       },
       depositPercent,
+      new Date(),
     );
     if (!due.due) {
       throw new AppException(

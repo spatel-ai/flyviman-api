@@ -6,6 +6,7 @@ import {
   PaymentReviewReason,
   PaymentStatus,
   PriceType,
+  RefundStatus,
 } from '../../generated/prisma/enums.js';
 import type { GatewayPaymentStatus } from '../../integrations/payment/payment-gateway.provider.js';
 
@@ -23,7 +24,18 @@ export interface PayableBooking {
   operatorAccepted: boolean;
   paymentStatus: BookingPaymentStatus;
   totalMinor: bigint;
+  /** Paid towards the booking (`bookings/paid-amount.ts`). */
+  paidMinor: bigint;
+  /** The first departure; the balance is due only before it. */
+  departureAt: Date;
 }
+
+/** Where a Model C booking may pay its balance after the deposit. */
+const BALANCE_OPEN: readonly BookingStatus[] = [
+  BookingStatus.AWAITING_PAYMENT,
+  BookingStatus.CONFIRMED,
+  BookingStatus.SCHEDULED,
+];
 
 export type AmountDue =
   | { due: true; purpose: PaymentPurpose; amountMinor: bigint }
@@ -49,16 +61,22 @@ export function depositMinor(totalMinor: bigint, percent: number): bigint {
 }
 
 /**
- * What the customer pays now. Only a booking `AWAITING_PAYMENT` with a
- * `CONFIRMED` price and nothing paid yet owes anything: an estimate is never
- * charged (rule 1). Model A and B take the full total (B only once the
- * operator has accepted); Model C takes the deposit. The balance after a
- * deposit is not due through this path yet.
+ * What the customer pays now. A booking `AWAITING_PAYMENT` with a
+ * `CONFIRMED` price and nothing paid owes its first payment: an estimate is
+ * never charged (rule 1). Model A and B take the full total (B only once the
+ * operator has accepted); Model C takes the deposit. After a Model C
+ * deposit, the balance (total less what was paid) is due while the booking
+ * is `AWAITING_PAYMENT`, `CONFIRMED` or `SCHEDULED` and before the first
+ * departure (W4-1).
  */
 export function amountDue(
   booking: PayableBooking,
   depositPercent: number,
+  now: Date,
 ): AmountDue {
+  if (booking.paymentStatus === BookingPaymentStatus.PARTIALLY_PAID) {
+    return balanceDue(booking, now);
+  }
   if (booking.paymentStatus !== BookingPaymentStatus.UNPAID) {
     return {
       due: false,
@@ -108,6 +126,36 @@ export function amountDue(
   }
 }
 
+/** The Model C balance: the total less what was paid, before departure. */
+function balanceDue(booking: PayableBooking, now: Date): AmountDue {
+  const notDue = (reason: string): AmountDue => ({
+    due: false,
+    code: 'PAYMENT_NOT_DUE',
+    reason,
+  });
+  if (booking.paymentModel !== PaymentModel.C_DEPOSIT) {
+    return notDue('only a deposit booking pays a balance');
+  }
+  if (!BALANCE_OPEN.includes(booking.status)) {
+    return notDue(`the booking is ${booking.status}`);
+  }
+  if (booking.priceType !== PriceType.CONFIRMED) {
+    return notDue('the price is not confirmed');
+  }
+  if (now.getTime() >= booking.departureAt.getTime()) {
+    return notDue('the flight has departed');
+  }
+  const balance = booking.totalMinor - booking.paidMinor;
+  if (balance <= 0n) {
+    return {
+      due: false,
+      code: 'PAYMENT_ALREADY_PAID',
+      reason: 'the total has been paid',
+    };
+  }
+  return { due: true, purpose: PaymentPurpose.BALANCE, amountMinor: balance };
+}
+
 /**
  * The order a payment's statuses come in. A verified outcome only ever
  * moves a payment forward, so a delayed or out-of-order notice can never
@@ -143,7 +191,8 @@ const BOOKING_PAYMENT_RANK: Record<BookingPaymentStatus, number> = {
 
 /**
  * The booking's payment summary after a payment of `purpose` succeeded, or
- * `null` when it is already there or past it (refunds come in W4-1).
+ * `null` when it is already there or past it. Refunds recompute it with
+ * `bookingPaymentSummary`.
  */
 export function bookingPaymentStatusAfterSuccess(
   current: BookingPaymentStatus,
@@ -168,16 +217,22 @@ const CLOSED: readonly BookingStatus[] = [
 
 /**
  * Whether a success needs operations: money arrived for a booking that is
- * closed (a late success), or that another payment had already paid. The
- * payment is still recorded as `SUCCEEDED`; the refund follows (W4-1).
+ * closed (a late success), or that another payment had already paid. A
+ * balance is expected on a `PARTIALLY_PAID` booking; any other payment only
+ * on an `UNPAID` one. The payment is still recorded as `SUCCEEDED`; finance
+ * refunds it from the refund queue (W4-1).
  */
-export function reviewOnSuccess(booking: {
-  status: BookingStatus;
-  paymentStatus: BookingPaymentStatus;
-}): PaymentReviewReason | null {
+export function reviewOnSuccess(
+  booking: { status: BookingStatus; paymentStatus: BookingPaymentStatus },
+  purpose: PaymentPurpose,
+): PaymentReviewReason | null {
   if (CLOSED.includes(booking.status))
     return PaymentReviewReason.BOOKING_CLOSED;
-  if (booking.paymentStatus !== BookingPaymentStatus.UNPAID) {
+  const expected =
+    purpose === PaymentPurpose.BALANCE
+      ? BookingPaymentStatus.PARTIALLY_PAID
+      : BookingPaymentStatus.UNPAID;
+  if (booking.paymentStatus !== expected) {
     return PaymentReviewReason.ALREADY_PAID;
   }
   return null;
@@ -212,4 +267,104 @@ export function outcomeOfGatewayStatus(
   if (status === 'captured') return PaymentStatus.SUCCEEDED;
   if (status === 'failed') return PaymentStatus.FAILED;
   return null;
+}
+
+// --- Refunds (W4-1) ---------------------------------------------------------
+
+/** A refund as the refund rules read it. */
+export interface RefundAmount {
+  status: RefundStatus;
+  amountMinor: bigint;
+}
+
+/** Payment statuses a refund may be started from: money arrived. */
+export const REFUNDABLE: readonly PaymentStatus[] = [
+  PaymentStatus.SUCCEEDED,
+  PaymentStatus.REFUND_PENDING,
+  PaymentStatus.PARTIALLY_REFUNDED,
+];
+
+const IN_FLIGHT: readonly RefundStatus[] = [
+  RefundStatus.REQUESTED,
+  RefundStatus.PENDING,
+];
+
+function sum(
+  refunds: readonly RefundAmount[],
+  statuses: readonly RefundStatus[],
+) {
+  return refunds
+    .filter((refund) => statuses.includes(refund.status))
+    .reduce((total, refund) => total + refund.amountMinor, 0n);
+}
+
+/**
+ * What can still be refunded from a payment: its amount less every refund
+ * completed or under way. A failed refund gives its amount back.
+ */
+export function refundableRemainderMinor(
+  amountMinor: bigint,
+  refunds: readonly RefundAmount[],
+): bigint {
+  const held = sum(refunds, [...IN_FLIGHT, RefundStatus.COMPLETED]);
+  return amountMinor > held ? amountMinor - held : 0n;
+}
+
+/**
+ * A succeeded payment's status from its refunds: `REFUND_PENDING` while any
+ * is under way, `REFUNDED` once the whole amount came back,
+ * `PARTIALLY_REFUNDED` after some did, `SUCCEEDED` when none completed (all
+ * failed, or none yet). Derived, not stepped, so a second partial refund
+ * from `PARTIALLY_REFUNDED` and a failed refund out of `REFUND_PENDING` are
+ * both covered.
+ */
+export function paymentStatusFromRefunds(
+  amountMinor: bigint,
+  refunds: readonly RefundAmount[],
+): PaymentStatus {
+  if (refunds.some((refund) => IN_FLIGHT.includes(refund.status))) {
+    return PaymentStatus.REFUND_PENDING;
+  }
+  const completed = sum(refunds, [RefundStatus.COMPLETED]);
+  if (completed >= amountMinor) return PaymentStatus.REFUNDED;
+  if (completed > 0n) return PaymentStatus.PARTIALLY_REFUNDED;
+  return PaymentStatus.SUCCEEDED;
+}
+
+/** A payment as the booking's summary reads it. */
+export interface SummaryPayment {
+  status: PaymentStatus;
+  amountMinor: bigint;
+  refunds: readonly RefundAmount[];
+}
+
+/**
+ * The booking's payment summary from all its payments, after a refund moved
+ * (state-machines.md: a summary of its payments). Every payment whose money
+ * arrived counts, flagged ones too, since their refunds are counted as well:
+ * - a refund under way anywhere: `REFUND_PENDING`;
+ * - the money kept covers the total: `PAID` (a second payment refunded);
+ * - otherwise, once any refund completed: `REFUNDED` (all of it, or the part
+ *   above a cancellation charge);
+ * - otherwise `PARTIALLY_PAID` with some money kept, `UNPAID` with none.
+ */
+export function bookingPaymentSummary(
+  totalMinor: bigint,
+  payments: readonly SummaryPayment[],
+): BookingPaymentStatus {
+  const counted = payments.filter(
+    (payment) => PAYMENT_RANK[payment.status] >= PAYMENT_RANK.SUCCEEDED,
+  );
+  const refunds = counted.flatMap((payment) => payment.refunds);
+  if (refunds.some((refund) => IN_FLIGHT.includes(refund.status))) {
+    return BookingPaymentStatus.REFUND_PENDING;
+  }
+  const received = counted.reduce((total, p) => total + p.amountMinor, 0n);
+  const refunded = sum(refunds, [RefundStatus.COMPLETED]);
+  const kept = received - refunded;
+  if (kept >= totalMinor && kept > 0n) return BookingPaymentStatus.PAID;
+  if (refunded > 0n) return BookingPaymentStatus.REFUNDED;
+  return kept > 0n
+    ? BookingPaymentStatus.PARTIALLY_PAID
+    : BookingPaymentStatus.UNPAID;
 }

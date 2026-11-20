@@ -87,6 +87,8 @@ export const PAYABLE_FIELDS = {
   operatorAcceptedAt: true,
   totalMinor: true,
   currency: true,
+  // The first departure: the Model C balance is due only before it (W4-1).
+  itinerary: true,
 } as const;
 
 export type PayableBookingRow = Prisma.BookingGetPayload<{

@@ -3,19 +3,26 @@ import {
   BookingPaymentStatus,
   BookingStatus,
   PaymentModel,
+  PaymentPurpose,
   PaymentStatus,
   PriceType,
+  RefundStatus,
 } from '../../generated/prisma/enums.js';
 import {
   amountDue,
   bookingPaymentStatusAfterSuccess,
+  bookingPaymentSummary,
   depositMinor,
   isDuplicateCapture,
   nextPaymentStatus,
   outcomeOfGatewayStatus,
   type PayableBooking,
+  paymentStatusFromRefunds,
+  refundableRemainderMinor,
   reviewOnSuccess,
 } from './payment-rules.js';
+
+const NOW = new Date('2026-11-20T00:00:00.000Z');
 
 const due: PayableBooking = {
   status: BookingStatus.AWAITING_PAYMENT,
@@ -24,6 +31,8 @@ const due: PayableBooking = {
   operatorAccepted: true,
   paymentStatus: BookingPaymentStatus.UNPAID,
   totalMinor: 18_000_000n,
+  paidMinor: 0n,
+  departureAt: new Date('2026-12-01T06:00:00.000Z'),
 };
 
 describe('depositMinor', () => {
@@ -49,7 +58,7 @@ describe('amountDue', () => {
       PaymentModel.A_INSTANT,
       PaymentModel.B_OPERATOR_CONFIRMED,
     ]) {
-      expect(amountDue({ ...due, paymentModel }, 25)).toEqual({
+      expect(amountDue({ ...due, paymentModel }, 25, NOW)).toEqual({
         due: true,
         purpose: 'FULL',
         amountMinor: 18_000_000n,
@@ -59,22 +68,25 @@ describe('amountDue', () => {
 
   it('Model C takes the configured deposit', () => {
     expect(
-      amountDue({ ...due, paymentModel: PaymentModel.C_DEPOSIT }, 25),
+      amountDue({ ...due, paymentModel: PaymentModel.C_DEPOSIT }, 25, NOW),
     ).toEqual({ due: true, purpose: 'DEPOSIT', amountMinor: 4_500_000n });
     expect(
-      amountDue({ ...due, paymentModel: PaymentModel.C_DEPOSIT }, 40),
+      amountDue({ ...due, paymentModel: PaymentModel.C_DEPOSIT }, 40, NOW),
     ).toEqual({ due: true, purpose: 'DEPOSIT', amountMinor: 7_200_000n });
   });
 
   it('Model B waits for the operator; A and C do not ask', () => {
     const unaccepted = { ...due, operatorAccepted: false };
-    expect(amountDue(unaccepted, 25)).toMatchObject({
+    expect(amountDue(unaccepted, 25, NOW)).toMatchObject({
       due: false,
       code: 'PAYMENT_NOT_DUE',
     });
     expect(
-      amountDue({ ...unaccepted, paymentModel: PaymentModel.A_INSTANT }, 25)
-        .due,
+      amountDue(
+        { ...unaccepted, paymentModel: PaymentModel.A_INSTANT },
+        25,
+        NOW,
+      ).due,
     ).toBe(true);
   });
 
@@ -84,28 +96,95 @@ describe('amountDue', () => {
       PriceType.QUOTE,
       PriceType.LIVE_FARE,
     ]) {
-      expect(amountDue({ ...due, priceType }, 25)).toMatchObject({
+      expect(amountDue({ ...due, priceType }, 25, NOW)).toMatchObject({
         due: false,
         code: 'PAYMENT_NOT_DUE',
       });
     }
     for (const status of Object.values(BookingStatus)) {
       if (status === BookingStatus.AWAITING_PAYMENT) continue;
-      expect(amountDue({ ...due, status }, 25)).toMatchObject({
+      expect(amountDue({ ...due, status }, 25, NOW)).toMatchObject({
         due: false,
         code: 'PAYMENT_NOT_DUE',
       });
     }
   });
 
-  it('refuses a booking with any money in already', () => {
+  it('refuses a booking with any money in already (the balance aside)', () => {
     for (const paymentStatus of Object.values(BookingPaymentStatus)) {
-      if (paymentStatus === BookingPaymentStatus.UNPAID) continue;
-      expect(amountDue({ ...due, paymentStatus }, 25)).toMatchObject({
+      if (
+        paymentStatus === BookingPaymentStatus.UNPAID ||
+        paymentStatus === BookingPaymentStatus.PARTIALLY_PAID
+      ) {
+        continue;
+      }
+      expect(amountDue({ ...due, paymentStatus }, 25, NOW)).toMatchObject({
         due: false,
         code: 'PAYMENT_ALREADY_PAID',
       });
     }
+  });
+});
+
+describe('amountDue: the Model C balance', () => {
+  const deposited: PayableBooking = {
+    ...due,
+    status: BookingStatus.CONFIRMED,
+    paymentModel: PaymentModel.C_DEPOSIT,
+    paymentStatus: BookingPaymentStatus.PARTIALLY_PAID,
+    paidMinor: 4_500_000n,
+  };
+
+  it('is the total less what was paid, while confirmed, scheduled or awaiting payment', () => {
+    for (const status of [
+      BookingStatus.AWAITING_PAYMENT,
+      BookingStatus.CONFIRMED,
+      BookingStatus.SCHEDULED,
+    ]) {
+      expect(amountDue({ ...deposited, status }, 25, NOW)).toEqual({
+        due: true,
+        purpose: 'BALANCE',
+        amountMinor: 13_500_000n,
+      });
+    }
+  });
+
+  it('is not due after departure, on a closed booking or on another model', () => {
+    expect(
+      amountDue({ ...deposited, departureAt: NOW }, 25, NOW),
+    ).toMatchObject({ due: false, code: 'PAYMENT_NOT_DUE' });
+    for (const status of [
+      BookingStatus.CANCELLED,
+      BookingStatus.COMPLETED,
+      BookingStatus.EXPIRED,
+    ]) {
+      expect(amountDue({ ...deposited, status }, 25, NOW)).toMatchObject({
+        due: false,
+        code: 'PAYMENT_NOT_DUE',
+      });
+    }
+    expect(
+      amountDue(
+        { ...deposited, paymentModel: PaymentModel.B_OPERATOR_CONFIRMED },
+        25,
+        NOW,
+      ),
+    ).toMatchObject({ due: false, code: 'PAYMENT_NOT_DUE' });
+  });
+
+  it('is already paid when nothing is left', () => {
+    expect(
+      amountDue({ ...deposited, paidMinor: 18_000_000n }, 25, NOW),
+    ).toMatchObject({ due: false, code: 'PAYMENT_ALREADY_PAID' });
+  });
+
+  it('makes the booking PAID once it succeeds', () => {
+    expect(
+      bookingPaymentStatusAfterSuccess(
+        BookingPaymentStatus.PARTIALLY_PAID,
+        PaymentPurpose.BALANCE,
+      ),
+    ).toBe('PAID');
   });
 });
 
@@ -193,26 +272,55 @@ describe('reviewOnSuccess', () => {
       BookingStatus.OPERATOR_UNAVAILABLE,
     ]) {
       expect(
-        reviewOnSuccess({ status, paymentStatus: BookingPaymentStatus.UNPAID }),
+        reviewOnSuccess(
+          { status, paymentStatus: BookingPaymentStatus.UNPAID },
+          PaymentPurpose.FULL,
+        ),
       ).toBe('BOOKING_CLOSED');
     }
   });
 
   it('flags a second payment for a paid booking', () => {
     expect(
-      reviewOnSuccess({
-        status: BookingStatus.AWAITING_PAYMENT,
-        paymentStatus: BookingPaymentStatus.PAID,
-      }),
+      reviewOnSuccess(
+        {
+          status: BookingStatus.AWAITING_PAYMENT,
+          paymentStatus: BookingPaymentStatus.PAID,
+        },
+        PaymentPurpose.FULL,
+      ),
+    ).toBe('ALREADY_PAID');
+    // A balance after the booking was fully paid is extra money too.
+    expect(
+      reviewOnSuccess(
+        {
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: BookingPaymentStatus.PAID,
+        },
+        PaymentPurpose.BALANCE,
+      ),
     ).toBe('ALREADY_PAID');
   });
 
   it('needs nothing for the payment the booking was waiting for', () => {
     expect(
-      reviewOnSuccess({
-        status: BookingStatus.AWAITING_PAYMENT,
-        paymentStatus: BookingPaymentStatus.UNPAID,
-      }),
+      reviewOnSuccess(
+        {
+          status: BookingStatus.AWAITING_PAYMENT,
+          paymentStatus: BookingPaymentStatus.UNPAID,
+        },
+        PaymentPurpose.DEPOSIT,
+      ),
+    ).toBeNull();
+    // The balance after a deposit is expected, not a second payment.
+    expect(
+      reviewOnSuccess(
+        {
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: BookingPaymentStatus.PARTIALLY_PAID,
+        },
+        PaymentPurpose.BALANCE,
+      ),
     ).toBeNull();
   });
 });
@@ -254,4 +362,116 @@ describe('outcomeOfGatewayStatus', () => {
     expect(outcomeOfGatewayStatus('authorized')).toBeNull();
     expect(outcomeOfGatewayStatus('refunded')).toBeNull();
   });
+});
+
+describe('refunds', () => {
+  const R = RefundStatus;
+  const refund = (status: RefundStatus, amountMinor: bigint) => ({
+    status,
+    amountMinor,
+  });
+
+  it('refundableRemainderMinor: the amount less refunds completed or under way', () => {
+    expect(refundableRemainderMinor(1_000n, [])).toBe(1_000n);
+    expect(
+      refundableRemainderMinor(1_000n, [
+        refund(R.COMPLETED, 300n),
+        refund(R.PENDING, 200n),
+        refund(R.REQUESTED, 100n),
+        refund(R.FAILED, 400n),
+      ]),
+    ).toBe(400n);
+    expect(
+      refundableRemainderMinor(1_000n, [refund(R.COMPLETED, 1_000n)]),
+    ).toBe(0n);
+  });
+
+  it('paymentStatusFromRefunds: pending, then partially refunded, then refunded', () => {
+    expect(paymentStatusFromRefunds(1_000n, [])).toBe('SUCCEEDED');
+    expect(paymentStatusFromRefunds(1_000n, [refund(R.REQUESTED, 300n)])).toBe(
+      'REFUND_PENDING',
+    );
+    expect(paymentStatusFromRefunds(1_000n, [refund(R.COMPLETED, 300n)])).toBe(
+      'PARTIALLY_REFUNDED',
+    );
+    // A second partial refund from PARTIALLY_REFUNDED.
+    expect(
+      paymentStatusFromRefunds(1_000n, [
+        refund(R.COMPLETED, 300n),
+        refund(R.PENDING, 700n),
+      ]),
+    ).toBe('REFUND_PENDING');
+    expect(
+      paymentStatusFromRefunds(1_000n, [
+        refund(R.COMPLETED, 300n),
+        refund(R.COMPLETED, 700n),
+      ]),
+    ).toBe('REFUNDED');
+  });
+
+  it('paymentStatusFromRefunds: a failed refund leaves the payment as it was', () => {
+    expect(paymentStatusFromRefunds(1_000n, [refund(R.FAILED, 1_000n)])).toBe(
+      'SUCCEEDED',
+    );
+    expect(
+      paymentStatusFromRefunds(1_000n, [
+        refund(R.COMPLETED, 300n),
+        refund(R.FAILED, 700n),
+      ]),
+    ).toBe('PARTIALLY_REFUNDED');
+  });
+});
+
+describe('bookingPaymentSummary', () => {
+  const R = RefundStatus;
+  const paid = (
+    amountMinor: bigint,
+    refunds: { status: RefundStatus; amountMinor: bigint }[] = [],
+    status: PaymentStatus = PaymentStatus.SUCCEEDED,
+  ) => ({ status, amountMinor, refunds });
+
+  it('is REFUND_PENDING while any refund is under way', () => {
+    expect(
+      bookingPaymentSummary(1_000n, [paid(1_000n, [refund(R.PENDING, 1n)])]),
+    ).toBe('REFUND_PENDING');
+  });
+
+  it('is REFUNDED after a full refund, or a partial one under a charge', () => {
+    expect(
+      bookingPaymentSummary(1_000n, [
+        paid(1_000n, [refund(R.COMPLETED, 1_000n)]),
+      ]),
+    ).toBe('REFUNDED');
+    expect(
+      bookingPaymentSummary(1_000n, [
+        paid(1_000n, [refund(R.COMPLETED, 800n)]),
+      ]),
+    ).toBe('REFUNDED');
+  });
+
+  it('stays PAID when a second payment for a paid booking is refunded', () => {
+    expect(
+      bookingPaymentSummary(1_000n, [
+        paid(1_000n),
+        paid(1_000n, [refund(R.COMPLETED, 1_000n)]),
+      ]),
+    ).toBe('PAID');
+  });
+
+  it('goes back after a failed refund, and ignores money that never arrived', () => {
+    expect(
+      bookingPaymentSummary(1_000n, [paid(1_000n, [refund(R.FAILED, 1_000n)])]),
+    ).toBe('PAID');
+    expect(
+      bookingPaymentSummary(1_000n, [
+        paid(250n),
+        paid(750n, [], PaymentStatus.PENDING),
+      ]),
+    ).toBe('PARTIALLY_PAID');
+    expect(bookingPaymentSummary(1_000n, [])).toBe('UNPAID');
+  });
+
+  function refund(status: RefundStatus, amountMinor: bigint) {
+    return { status, amountMinor };
+  }
 });

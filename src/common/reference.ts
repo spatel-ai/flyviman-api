@@ -9,6 +9,7 @@ export const BOOKING_REFERENCE =
 export const QUOTE_REFERENCE = /^FLY-QT-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 export const PAYMENT_REFERENCE =
   /^FLY-PY-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
+export const REFUND_REFERENCE = /^FLY-RF-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 export const EMPTY_LEG_REFERENCE =
   /^FLY-EL-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 export const AIR_AMBULANCE_REFERENCE =
@@ -50,4 +51,8 @@ export function airAmbulanceReference(
 
 export function paymentReference(random?: (max: number) => number): string {
   return reference('FLY-PY', random);
+}
+
+export function refundReference(random?: (max: number) => number): string {
+  return reference('FLY-RF', random);
 }

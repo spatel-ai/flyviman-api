@@ -38,6 +38,7 @@ import {
   reviewOnSuccess,
 } from './payment-rules.js';
 import { providerOf } from './payments.service.js';
+import { RefundsService } from './refunds.service.js';
 
 /** Refusals are logged at most once per this window. */
 export const REFUSAL_LOG_WINDOW_MS = 60_000;
@@ -87,6 +88,7 @@ export class PaymentWebhooksService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
+    private readonly refunds: RefundsService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
@@ -144,6 +146,10 @@ export class PaymentWebhooksService {
     event: WebhookEvent,
   ): Promise<void> {
     const provider = providerOf(this.gateway);
+    if (event.type === 'refund.processed' || event.type === 'refund.failed') {
+      await this.applyRefund(tx, event);
+      return;
+    }
     const outcome =
       event.type === 'payment.captured' || event.type === 'payment.failed'
         ? OUTCOME[event.type]
@@ -203,6 +209,54 @@ export class PaymentWebhooksService {
   }
 
   /**
+   * A refund notice (W4-1): stored once like any event, linked to the
+   * refund's payment when the refund is known, and applied by
+   * `RefundsService.applyNotice`, which moves a refund only out of
+   * `REQUESTED` or `PENDING`. The guard is the refund's natural key and
+   * state, not the event id alone: the same refund reported again under a
+   * new event id changes nothing. A notice for a refund we do not know (made
+   * outside Flyviman) is stored unapplied and applied if it comes again
+   * once its refund is known.
+   */
+  private async applyRefund(
+    tx: Prisma.TransactionClient,
+    event: WebhookEvent,
+  ): Promise<void> {
+    const provider = providerOf(this.gateway);
+    const stored = await tx.paymentEvent.findUnique({
+      where: {
+        provider_providerEventId: {
+          provider,
+          providerEventId: event.providerEventId,
+        },
+      },
+      select: { paymentId: true, type: true },
+    });
+    // Applied when it was first stored: never twice.
+    if (stored && (stored.paymentId !== null || stored.type !== event.type)) {
+      return;
+    }
+    const paymentId = await this.refunds.applyNotice(
+      tx,
+      event,
+      stored ? 'webhook-redelivery' : 'webhook',
+    );
+    if (stored) return;
+    await tx.paymentEvent.createMany({
+      data: {
+        paymentId,
+        provider,
+        providerEventId: event.providerEventId,
+        type: event.type,
+        payload: event as unknown as Prisma.InputJsonValue,
+        signatureValid: true,
+        processedAt: paymentId ? new Date() : null,
+      },
+      skipDuplicates: true,
+    });
+  }
+
+  /**
    * Applies a verified outcome to a payment whose booking `tx` has locked.
    * A second capture on a paid order is flagged, never applied; a success
    * for another amount is flagged, never a success; otherwise the status
@@ -216,7 +270,7 @@ export class PaymentWebhooksService {
     outcome: 'SUCCEEDED' | 'FAILED',
     report: Pick<
       WebhookEvent,
-      'providerPaymentId' | 'amountMinor' | 'currency'
+      'providerPaymentId' | 'amountMinor' | 'currency' | 'method'
     >,
     origin: { source: OutcomeSource; providerEventId?: string },
   ): Promise<boolean> {
@@ -285,7 +339,7 @@ export class PaymentWebhooksService {
     // A success is always recorded: money moved. If the booking is closed
     // or already paid, operations are told through `reviewReason` (the
     // refund follows in W4-1).
-    const reviewReason = reviewOnSuccess(booking);
+    const reviewReason = reviewOnSuccess(booking, payment.purpose);
     await tx.payment.update({
       where: { id: payment.id },
       data: {
@@ -293,6 +347,8 @@ export class PaymentWebhooksService {
         providerPaymentId: report.providerPaymentId,
         paidAt: new Date(),
         reviewReason: payment.reviewReason ?? reviewReason,
+        // The method type only, for the receipt (rule 10).
+        method: report.method ?? payment.method,
       },
     });
     await this.audit.record(
@@ -394,7 +450,8 @@ export class PaymentWebhooksService {
    * about forever), and applies a final status the gateway reports for that
    * order, as a notice would be. The gateway payments asked about are the
    * one the checkout reported and those named by notices stored unapplied
-   * for the order; a payment with neither is left as it is. The gateway is
+   * for the order; for a payment with neither, the payments the gateway
+   * lists for the order (`fetchOrderPayments`, W4-1). The gateway is
    * called outside any transaction. One instance at a time (Redis lock).
    */
   async runSweep(now = new Date()): Promise<{
@@ -490,6 +547,19 @@ export class PaymentWebhooksService {
       const id = (payload as { providerPaymentId?: unknown } | null)
         ?.providerPaymentId;
       if (typeof id === 'string') candidates.add(id);
+    }
+    // No gateway payment id reached us (the checkout result and the notice
+    // were both lost): ask the gateway for the payments on the order.
+    if (candidates.size === 0) {
+      try {
+        for (const attempt of await this.gateway.fetchOrderPayments(orderId)) {
+          candidates.add(attempt.providerPaymentId);
+        }
+      } catch (error) {
+        // Unknown to the gateway, or it is down: asked again next run.
+        if (error instanceof PaymentGatewayError) return false;
+        throw error;
+      }
     }
 
     let changed = false;

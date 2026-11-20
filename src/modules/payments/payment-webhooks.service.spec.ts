@@ -7,6 +7,7 @@ import {
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { BookingsService } from '../bookings/bookings.service.js';
+import type { RefundsService } from './refunds.service.js';
 import {
   PaymentWebhooksService,
   REFUSAL_LOG_WINDOW_MS,
@@ -23,6 +24,7 @@ function setup() {
     { $transaction: transaction } as unknown as PrismaService,
     {} as AuditService,
     {} as BookingsService,
+    {} as RefundsService,
     {} as Redis,
   );
   const warn = vi.fn();
@@ -68,6 +70,7 @@ describe('PaymentWebhooksService refusals', () => {
       { $transaction: transaction } as unknown as PrismaService,
       {} as AuditService,
       {} as BookingsService,
+      {} as RefundsService,
       {} as Redis,
     );
     await expect(
@@ -129,6 +132,7 @@ function paymentWorld(overrides: Record<string, unknown> = {}) {
     name: 'mock',
     parseWebhook: vi.fn(),
     fetchPayment: vi.fn(),
+    fetchOrderPayments: vi.fn().mockResolvedValue([]),
   };
   const redis = { set: vi.fn().mockResolvedValue('OK'), eval: vi.fn() };
   const prisma = {
@@ -141,6 +145,7 @@ function paymentWorld(overrides: Record<string, unknown> = {}) {
     prisma as unknown as PrismaService,
     audit as unknown as AuditService,
     bookings as unknown as BookingsService,
+    {} as RefundsService,
     redis as unknown as Redis,
   );
   const deliver = (event: Record<string, unknown>) => {
@@ -343,10 +348,35 @@ describe('PaymentWebhooksService status sweep', () => {
     expect(world.payment.status).toBe('INITIATED');
   });
 
-  it('asks nothing for a payment with no gateway payment id, and skips while another instance runs', async () => {
+  it('asks the gateway by order for a payment with no gateway payment id (W4-1)', async () => {
+    const world = paymentWorld();
+    world.prisma.payment.findMany.mockResolvedValue([open]);
+    const captured = {
+      providerPaymentId: 'pay_7',
+      providerOrderId: 'order_1',
+      amountMinor: 10_000,
+      currency: 'INR',
+      status: 'captured',
+      amountRefundedMinor: 0,
+      method: 'upi',
+    };
+    world.gateway.fetchOrderPayments.mockResolvedValue([captured]);
+    world.gateway.fetchPayment.mockResolvedValue(captured);
+
+    expect((await world.service.runSweep()).applied).toBe(1);
+    expect(world.gateway.fetchOrderPayments).toHaveBeenCalledWith('order_1');
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_7',
+      method: 'upi',
+    });
+  });
+
+  it('leaves a payment whose order has no payments, and skips while another instance runs', async () => {
     const world = paymentWorld();
     world.prisma.payment.findMany.mockResolvedValue([open]);
     expect((await world.service.runSweep()).checked).toBe(1);
+    expect(world.gateway.fetchOrderPayments).toHaveBeenCalledWith('order_1');
     expect(world.gateway.fetchPayment).not.toHaveBeenCalled();
 
     world.redis.set.mockResolvedValue(null);
