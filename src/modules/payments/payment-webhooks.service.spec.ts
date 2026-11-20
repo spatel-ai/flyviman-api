@@ -279,6 +279,27 @@ describe('PaymentWebhooksService applying notices', () => {
       flagged: 'DUPLICATE_CAPTURE',
     });
   });
+
+  it('still audits a refused amount mismatch when another reason is already set', async () => {
+    const world = paymentWorld({ reviewReason: 'ALREADY_PAID' });
+    await world.deliver({ amountMinor: 9_000 });
+    expect(world.tx.payment.update).not.toHaveBeenCalled();
+    expect(world.payment.status).toBe('INITIATED');
+    expect(world.audit.record).toHaveBeenCalledTimes(1);
+    expect(world.audit.record.mock.calls[0][0]).toMatchObject({
+      action: 'payment.flag',
+      actor: null,
+      before: { status: 'INITIATED', reviewReason: 'ALREADY_PAID' },
+      after: {
+        status: 'INITIATED',
+        reviewReason: 'ALREADY_PAID',
+        flagged: 'AMOUNT_MISMATCH',
+        reportedAmountMinor: 9_000,
+        source: 'webhook',
+        providerEventId: 'evt_1',
+      },
+    });
+  });
 });
 
 describe('PaymentWebhooksService status sweep', () => {

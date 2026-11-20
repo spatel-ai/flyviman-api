@@ -270,9 +270,10 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     );
     expect(created.reason).toBe('Customer cancelled.');
 
-    // Booking summary: a partial refund on a booking still paid in part.
+    // Booking summary: a partial refund on a live booking leaves it paid in
+    // part (W5-9c); only a closed booking reads REFUNDED with money kept.
     expect(await bookingOf(customer, reference)).toMatchObject({
-      paymentStatus: 'REFUNDED',
+      paymentStatus: 'PARTIALLY_PAID',
     });
 
     // Finance's lists; not for customers.
