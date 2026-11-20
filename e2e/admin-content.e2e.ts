@@ -327,7 +327,7 @@ test.describe('policy versions and concurrent editors', () => {
       put(request, slug, { title: 'T', body: 'Editor A.', baseVersion: 1 }),
       put(other, slug, { title: 'T', body: 'Editor B.', baseVersion: 1 }),
     ]);
-    expect([a.status(), b.status()].sort()).toEqual([200, 409]);
+    expect([a.status(), b.status()].sort((x, y) => x - y)).toEqual([200, 409]);
     const loser = a.status() === 409 ? a : b;
     expect((await loser.json()).error.code).toBe('CONTENT_VERSION_CONFLICT');
     expect(await stored(slug)).toEqual({ versions: 2, audits: 2 });

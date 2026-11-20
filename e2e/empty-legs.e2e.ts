@@ -569,7 +569,9 @@ test.describe('expiry', () => {
         request.post(`operator/empty-legs/${offer.id}/withdraw`, { headers }),
       ),
     );
-    expect(results.map((r) => r.status()).sort()).toEqual([200, 409]);
+    expect(results.map((r) => r.status()).sort((x, y) => x - y)).toEqual([
+      200, 409,
+    ]);
 
     // A withdrawn offer is not expired later, so the job adds nothing either.
     const anonymous = await playwright.request.newContext({ baseURL });
