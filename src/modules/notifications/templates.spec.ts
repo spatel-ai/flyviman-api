@@ -1,6 +1,9 @@
+import { EVENT_VARIABLES } from './event-templates.js';
+import { NOTIFICATION_MATRIX } from './matrix.js';
 import {
   DEFAULT_TEMPLATES,
   oneLine,
+  placeholdersOf,
   render,
   toEmailHtml,
 } from './templates.js';
@@ -66,5 +69,94 @@ describe('oneLine', () => {
     expect(oneLine('a\u0000b\tc\u2028d\u2029e\u0085f\u007fg')).toBe(
       'a b c d e f g',
     );
+  });
+});
+
+describe('the notification matrix templates', () => {
+  const find = (key: string, channel: string) =>
+    DEFAULT_TEMPLATES.find((t) => t.key === key && t.channel === channel);
+  const hostile = '<script>alert("x")</script> &   {{link}}';
+  const variables = {
+    reference: hostile,
+    link: 'https://flyviman.test/x',
+    validUntil: hostile,
+    decision: hostile,
+  };
+
+  it('has a template for every event and channel the matrix can use', () => {
+    for (const rule of NOTIFICATION_MATRIX) {
+      for (const channel of rule.channels) {
+        expect(find(rule.key, channel), `${rule.key} ${channel}`).toBeDefined();
+      }
+    }
+  });
+
+  it('uses only system-derived variables, never an amount or free text', () => {
+    for (const rule of NOTIFICATION_MATRIX) {
+      for (const channel of rule.channels) {
+        const template = find(rule.key, channel)!;
+        for (const name of [
+          ...placeholdersOf(template.subject),
+          ...placeholdersOf(template.body),
+        ]) {
+          expect(
+            EVENT_VARIABLES,
+            `${rule.key} ${channel} {{${name}}}`,
+          ).toContain(name);
+        }
+      }
+    }
+  });
+
+  it('escapes a hostile value in every email and keeps a subject to one line', () => {
+    for (const rule of NOTIFICATION_MATRIX) {
+      const template = find(rule.key, 'EMAIL')!;
+      const html = toEmailHtml(render(template.body, variables));
+      expect(html, rule.key).not.toMatch(/<(?!br>)/);
+      expect(html, rule.key).toContain('&lt;script&gt;');
+      const subject = oneLine(render(template.subject ?? '', variables));
+      expect(subject.includes('\n') || subject.includes('\u2028')).toBe(false);
+    }
+  });
+
+  it('keeps text messages short and gives each the reference and the link', () => {
+    for (const rule of NOTIFICATION_MATRIX) {
+      for (const channel of ['SMS', 'WHATSAPP'] as const) {
+        const template = find(rule.key, channel);
+        if (!template) continue;
+        const text = render(template.body, {
+          reference: 'FV-ABC123',
+          link: 'https://flyviman.test/account/trips/FV-ABC123',
+          validUntil: '21 Nov, 18:00',
+        });
+        expect(text, rule.key).toContain('FV-ABC123');
+        expect(text, rule.key).toContain('https://');
+        expect(text.length, rule.key).toBeLessThan(320);
+      }
+    }
+  });
+
+  it('never says a payment confirms a booking (rule 2)', () => {
+    for (const key of ['payment.succeeded', 'payment.failed']) {
+      for (const channel of ['IN_APP', 'EMAIL', 'SMS', 'WHATSAPP'] as const) {
+        const template = find(key, channel);
+        if (!template) continue;
+        expect(`${template.subject} ${template.body}`, key).not.toMatch(
+          /\b(is|has been|are) confirmed(?! only)/i,
+        );
+      }
+    }
+  });
+
+  it('points every air ambulance message to emergency services (rule 7)', () => {
+    for (const rule of NOTIFICATION_MATRIX.filter(
+      (r) => r.key.startsWith('air_ambulance.') && r.audience === 'CUSTOMER',
+    )) {
+      for (const channel of rule.channels) {
+        expect(find(rule.key, channel)!.body, `${rule.key} ${channel}`).toMatch(
+          /emergency/i,
+        );
+      }
+    }
   });
 });

@@ -7947,6 +7947,12 @@
           "body": {
             "type": "string"
           },
+          "href": {
+            "type": "string",
+            "nullable": true,
+            "example": "/account/trips/FV-ABC123",
+            "description": "The site path the message is about (a booking, an air ambulance request), for the reader's own portal; null when there is none."
+          },
           "readAt": {
             "type": "string",
             "format": "date-time",
@@ -7962,6 +7968,7 @@
           "templateKey",
           "title",
           "body",
+          "href",
           "readAt",
           "createdAt"
         ]

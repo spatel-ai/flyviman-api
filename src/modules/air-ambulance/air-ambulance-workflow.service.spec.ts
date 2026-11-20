@@ -5,6 +5,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
 import type { UsersService } from '../users/users.service.js';
 import { FEASIBILITY_ITEMS } from './air-ambulance-transitions.js';
+import type { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { AirAmbulanceWorkflowService } from './air-ambulance-workflow.service.js';
 
 const NOW = new Date('2026-11-20T08:00:00.000Z');
@@ -91,6 +92,7 @@ function setup(row: Record<string, unknown>, operatorStatus = 'APPROVED') {
     audit as unknown as AuditService,
     operators as unknown as OperatorsService,
     users as unknown as UsersService,
+    { notify: vi.fn() } as unknown as NotificationEventsService,
   );
   return { service, events, audit, current: () => current };
 }

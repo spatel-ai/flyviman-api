@@ -1,3 +1,4 @@
+import type { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import type { Logger } from '@nestjs/common';
 import type { PaymentGatewayProvider } from '../../integrations/payment/payment-gateway.provider.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
@@ -19,6 +20,7 @@ function setup() {
     { $transaction: transaction } as unknown as PrismaService,
     {} as AuditService,
     {} as BookingsService,
+    {} as NotificationEventsService,
   );
   const warn = vi.fn();
   (service as unknown as { logger: Pick<Logger, 'warn'> }).logger = { warn };
@@ -63,6 +65,7 @@ describe('PaymentWebhooksService refusals', () => {
       { $transaction: transaction } as unknown as PrismaService,
       {} as AuditService,
       {} as BookingsService,
+      {} as NotificationEventsService,
     );
     await expect(
       service.receive('mock', Buffer.from('{}'), {}),

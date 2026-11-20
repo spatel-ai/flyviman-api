@@ -21,6 +21,8 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
+import { bookingStatusEvents } from '../notifications/matrix.js';
 import { CustomersService } from '../customers/customers.service.js';
 import { CANCELLATION_NOTE, SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
@@ -114,6 +116,7 @@ export class BookingsService {
     private readonly customers: CustomersService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
+    private readonly events: NotificationEventsService,
   ) {}
 
   async create(
@@ -467,6 +470,9 @@ export class BookingsService {
       },
       tx,
     );
+    for (const key of bookingStatusEvents(booking.status, to, actor.kind)) {
+      await this.events.notifyBooking(tx, key, booking.id);
+    }
     return to;
   }
 

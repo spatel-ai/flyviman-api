@@ -19,6 +19,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AvailabilityService } from '../availability/availability.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { CANCELLABLE } from './booking-transitions.js';
@@ -82,6 +83,7 @@ export class TripsService {
     private readonly bookings: BookingsService,
     private readonly operators: OperatorsService,
     private readonly availability: AvailabilityService,
+    private readonly events: NotificationEventsService,
   ) {}
 
   async list(
@@ -337,6 +339,11 @@ export class TripsService {
           },
           tx,
         );
+        await this.events.notifyBooking(
+          tx,
+          'booking.change_requested',
+          booking.id,
+        );
         return changeRequestView(row, booking.reference, new Map());
       });
     } catch (error) {
@@ -422,6 +429,17 @@ export class TripsService {
           },
         },
         tx,
+      );
+      await this.events.notifyBooking(
+        tx,
+        'booking.change_decided',
+        row.booking.id,
+        {
+          decision:
+            input.decision === ChangeRequestStatus.APPROVED
+              ? 'approved'
+              : 'declined',
+        },
       );
       const notes = await decisionNotes(tx, row.booking.id);
       return changeRequestView(

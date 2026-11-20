@@ -247,6 +247,15 @@ export class EnvironmentVariables {
   OPERATIONS_INBOX_EMAIL: string = 'operations@flyviman.test';
 
   /**
+   * Whether notifications also go over WhatsApp (M10). On in development and
+   * tests (the mock only); when not set it is off in production, until a
+   * provider and registered message templates exist.
+   */
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  WHATSAPP_ENABLED: boolean = true;
+
+  /**
    * Whether an operator's empty-leg offer waits for operations to approve it
    * before it is listed (M7). Off by default: publishing lists it at once.
    */
@@ -393,6 +402,12 @@ export function validateEnv(
       ? { ...config, API_PUBLIC_URL: config.RENDER_EXTERNAL_URL }
       : config;
   const validated = plainToInstance(EnvironmentVariables, source);
+  if (
+    source.WHATSAPP_ENABLED === undefined &&
+    validated.NODE_ENV === NodeEnv.Production
+  ) {
+    validated.WHATSAPP_ENABLED = false;
+  }
   const errors = validateSync(validated, { skipMissingProperties: false });
 
   if (validated.ENABLE_DEV_TOOLS && validated.NODE_ENV === NodeEnv.Production) {

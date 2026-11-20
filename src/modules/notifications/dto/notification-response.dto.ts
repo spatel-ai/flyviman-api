@@ -13,6 +13,15 @@ export class NotificationResponseDto {
   @ApiProperty()
   body: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '/account/trips/FV-ABC123',
+    description:
+      "The site path the message is about (a booking, an air ambulance request), for the reader's own portal; null when there is none.",
+  })
+  href: string | null;
+
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   readAt: string | null;
 

@@ -13,6 +13,8 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
+import { AIR_AMBULANCE_STATUS_EVENTS } from '../notifications/matrix.js';
 import { UsersService } from '../users/users.service.js';
 import {
   actorKindFor,
@@ -85,6 +87,7 @@ export class AirAmbulanceWorkflowService {
     private readonly audit: AuditService,
     private readonly operators: OperatorsService,
     private readonly users: UsersService,
+    private readonly events: NotificationEventsService,
   ) {}
 
   // --- Operations --------------------------------------------------------
@@ -247,6 +250,10 @@ export class AirAmbulanceWorkflowService {
         currency: row.quoteCurrency,
       };
       if (row.status === AirAmbulanceStatus.QUOTED) {
+        await this.events.notify(tx, 'air_ambulance.quoted', {
+          reference: row.reference,
+          customerId: row.requesterId,
+        });
         return this.record(tx, row, actor, {
           data,
           payload: { kind: 'QUOTE', ...quote },
@@ -433,6 +440,13 @@ export class AirAmbulanceWorkflowService {
       },
       tx,
     );
+    const key = AIR_AMBULANCE_STATUS_EVENTS[to];
+    if (key) {
+      await this.events.notify(tx, key, {
+        reference: row.reference,
+        customerId: row.requesterId,
+      });
+    }
     return toView(
       await tx.airAmbulanceRequest.findUniqueOrThrow({ where: { id: row.id } }),
     );
