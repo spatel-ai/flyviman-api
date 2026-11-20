@@ -182,6 +182,12 @@ async function runSweep(request: APIRequestContext) {
     .toBe(false);
 }
 
+function setOrderId(reference: string, providerOrderId: string) {
+  return withPrisma((prisma) =>
+    prisma.payment.update({ where: { reference }, data: { providerOrderId } }),
+  );
+}
+
 function paymentRow(reference: string) {
   return withPrisma((prisma) =>
     prisma.payment.findUniqueOrThrow({ where: { reference } }),
@@ -762,6 +768,70 @@ test.describe('POST /dev/jobs/payment-sweep', () => {
           actorId: null,
         },
         orderBy: { createdAt: 'desc' },
+      }),
+    );
+    expect(audit.after).toMatchObject({ status: 'SUCCEEDED', source: 'sweep' });
+  });
+
+  test('settles an unpaid-looking payment from a notice that came before its order was recorded', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const orderId = order.checkout.orderId;
+    const simulated = await request.post(
+      `dev/payments/orders/${orderId}/simulate`,
+      { headers: await csrfHeaders(request), data: { outcome: 'success' } },
+    );
+    expect(simulated.status()).toBe(200);
+    const { checkout, webhook } = (await simulated.json()).data as {
+      checkout: { providerPaymentId: string };
+      webhook: { body: string; headers: Record<string, string> };
+    };
+
+    // The notice arrives while the order is not recorded yet; it is stored
+    // and acknowledged, so the gateway never sends it again. The checkout
+    // result never comes back either.
+    await setOrderId(
+      order.reference,
+      `order_pending_${randomUUID().slice(0, 8)}`,
+    );
+    const early = await request.post('webhooks/payments/mock', {
+      data: webhook.body,
+      headers: webhook.headers,
+    });
+    expect(early.status()).toBe(200);
+    await setOrderId(order.reference, orderId);
+    await withPrisma(
+      (prisma) => prisma.$executeRaw`
+        UPDATE "Payment" SET "updatedAt" = now() - interval '20 minutes'
+        WHERE "reference" = ${order.reference}`,
+    );
+    expect(await paymentRow(order.reference)).toMatchObject({
+      status: 'INITIATED',
+      providerPaymentId: null,
+    });
+
+    await runSweep(request);
+
+    const payment = await paymentRow(order.reference);
+    expect(payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: checkout.providerPaymentId,
+    });
+    const audit = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: {
+          entityId: payment.id,
+          action: 'payment.status',
+          actorId: null,
+        },
       }),
     );
     expect(audit.after).toMatchObject({ status: 'SUCCEEDED', source: 'sweep' });
