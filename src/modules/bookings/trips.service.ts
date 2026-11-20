@@ -184,7 +184,10 @@ export class TripsService {
       }
       const applied = {
         termsSource: quote.terms.source,
-        appliedCharge: quote.appliedCharge && { ...quote.appliedCharge },
+        appliedCharge: quote.appliedCharge && {
+          minHoursBeforeDeparture: quote.appliedCharge.minHoursBeforeDeparture,
+          chargePercent: quote.appliedCharge.chargePercent,
+        },
         hoursBeforeDeparture: quote.hoursBeforeDeparture,
         amountKnown: quote.amountKnown,
         chargeMinor: quote.chargeMinor,
@@ -265,7 +268,7 @@ export class TripsService {
         reference: booking.reference,
         status: BookingStatus.CANCELLED,
         cancelledAt: now.toISOString(),
-        cancellation: { ...quote, status: BookingStatus.CANCELLED },
+        cancellation: quoteFor(booking, now, BookingStatus.CANCELLED),
       };
     });
   }
@@ -464,7 +467,11 @@ async function lockOwn(
   return tx.booking.findUniqueOrThrow({ where: { id: found.id } });
 }
 
-function quoteFor(booking: BookingRow, now: Date): CancellationQuoteDto {
+function quoteFor(
+  booking: BookingRow,
+  now: Date,
+  status: BookingStatus = booking.status,
+): CancellationQuoteDto {
   const terms = parseCancellationTerms(booking.cancellationTerms);
   const itinerary = parseItinerary(booking.itinerary);
   const outcome = evaluateCancellation({
@@ -479,7 +486,7 @@ function quoteFor(booking: BookingRow, now: Date): CancellationQuoteDto {
     outcome.refundMinor === null ? null : minorToNumber(outcome.refundMinor);
   return {
     reference: booking.reference,
-    status: booking.status,
+    status,
     terms,
     hoursBeforeDeparture: outcome.hoursBeforeDeparture,
     appliedCharge: outcome.appliedCharge,
