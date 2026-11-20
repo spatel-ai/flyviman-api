@@ -32,12 +32,14 @@ import {
 import { OperatorsService } from '../operators/operators.service.js';
 import { UsersService } from '../users/users.service.js';
 import {
+  ALTERNATIVE_WINDOW_DAYS,
   changedFields,
   EDITABLE,
   type EmptyLegAction,
   LOCKED_WHEN_PUBLISHED,
   MATERIAL_FIELDS,
   nextEmptyLegStatus,
+  pickAlternatives,
   type OfferTerms,
   priceTypeOf,
   statusAfterEdit,
@@ -53,6 +55,9 @@ import type {
   PublicEmptyLegQueryDto,
   UpdateEmptyLegDto,
 } from './dto/empty-leg.dto.js';
+
+/** Listed offers in the date window read before distance narrows them. */
+const ALTERNATIVE_CANDIDATES = 200;
 
 const LOCK_KEY = 'empty-legs:expiry:lock';
 const LOCK_SECONDS = 5 * 60;
@@ -304,6 +309,65 @@ export class EmptyLegsService {
       this.prisma.emptyLeg.count({ where }),
     ]);
     return new Paginated(rows, query.page, query.pageSize, total);
+  }
+
+  /**
+   * Listed offers that could stand in for a charter search (M7): the same or
+   * a nearby origin and destination, leaving within a few days of the
+   * requested departure, with enough seats. Only what is listed (rule 4);
+   * each carries its own `priceType` (rule 1). Empty when the places are
+   * unknown.
+   */
+  async alternativesFor(trip: {
+    originId: string;
+    destinationId: string;
+    departureAt: Date;
+    passengers: number;
+  }): Promise<EmptyLegResponseDto[]> {
+    const places = await this.locations.pricingPoints([
+      trip.originId,
+      trip.destinationId,
+    ]);
+    const origin = places.get(trip.originId);
+    const destination = places.get(trip.destinationId);
+    if (!origin || !destination) return [];
+    const span = ALTERNATIVE_WINDOW_DAYS * 86_400_000;
+    const at = trip.departureAt.getTime();
+    const rows = await this.prisma.emptyLeg.findMany({
+      where: {
+        AND: [
+          this.listedWhere(),
+          { passengerCapacity: { gte: trip.passengers } },
+          { departureWindowEnd: { gte: new Date(at - span) } },
+          { departureWindowStart: { lte: new Date(at + span) } },
+        ],
+      },
+      include: OFFER_INCLUDE,
+      orderBy: [{ departureWindowStart: 'asc' }, { id: 'asc' }],
+      take: ALTERNATIVE_CANDIDATES,
+    });
+    const coordinates = await this.locations.pricingPoints([
+      ...new Set(rows.flatMap((r) => [r.originId, r.destinationId])),
+    ]);
+    const known = rows.flatMap((row) => {
+      const from = coordinates.get(row.originId);
+      const to = coordinates.get(row.destinationId);
+      return from && to ? [{ row, origin: from, destination: to }] : [];
+    });
+    return pickAlternatives(
+      known.map((k) => ({
+        ...k,
+        departureWindowStart: k.row.departureWindowStart,
+        departureWindowEnd: k.row.departureWindowEnd,
+        passengerCapacity: k.row.passengerCapacity,
+      })),
+      {
+        origin,
+        destination,
+        departureAt: trip.departureAt,
+        passengers: trip.passengers,
+      },
+    ).map((k) => this.toPublic(k.row));
   }
 
   /**

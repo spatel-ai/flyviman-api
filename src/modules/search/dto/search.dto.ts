@@ -15,6 +15,7 @@ import {
   PriceType,
   ServiceCategory,
 } from '../../../generated/prisma/enums.js';
+import { EmptyLegResponseDto } from '../../empty-legs/dto/empty-leg.dto.js';
 
 /** Fixed-wing categories a charter search can ask for. */
 export const CHARTER_CATEGORIES = [
@@ -237,6 +238,13 @@ export class SearchResponseDto {
     description: 'Priced first, cheapest first.',
   })
   results: SearchResultDto[];
+
+  @ApiProperty({
+    type: [EmptyLegResponseDto],
+    description:
+      'Charter only (empty otherwise): listed empty legs on the same or a nearby route, leaving within two days of the first departure, with enough seats. Each carries its own price and `priceType`. Soonest and closest first, at most five.',
+  })
+  emptyLegAlternatives: EmptyLegResponseDto[];
 }
 
 export class BreakdownLineDto {

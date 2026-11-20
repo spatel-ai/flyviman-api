@@ -11363,6 +11363,13 @@
             "items": {
               "$ref": "#/components/schemas/SearchResultDto"
             }
+          },
+          "emptyLegAlternatives": {
+            "description": "Charter only (empty otherwise): listed empty legs on the same or a nearby route, leaving within two days of the first departure, with enough seats. Each carries its own price and `priceType`. Soonest and closest first, at most five.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmptyLegResponseDto"
+            }
           }
         },
         "required": [
@@ -11372,7 +11379,8 @@
           "legs",
           "passengerCount",
           "createdAt",
-          "results"
+          "results",
+          "emptyLegAlternatives"
         ]
       },
       "HelicopterSearchDto": {
