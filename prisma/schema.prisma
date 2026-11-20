@@ -351,6 +351,8 @@ enum FilePurpose {
   AIRCRAFT_PHOTO
   AIRCRAFT_FLOOR_PLAN
   AIRCRAFT_DOCUMENT
+  /// A medical document for an air ambulance request (restricted, rule 8).
+  AIR_AMBULANCE_DOCUMENT
 }
 
 /// Metadata for a file in private storage. A file is usable once `uploadedAt`
@@ -1477,8 +1479,20 @@ model AirAmbulanceRequest {
   status                AirAmbulanceStatus @default(SUBMITTED)
   /// The operations owner. No foreign key, like Booking.assignedToId.
   assignedToId          String?            @db.Uuid
-  /// Set when the customer accepts an operator's offer.
+  /// The approved operator operations chose when quoting (W4-5). Its
+  /// administrators read the medical details only once ACCEPTED or later.
   selectedOperatorId    String?            @db.Uuid
+  /// The quotation sent to the customer (priceType QUOTE, rule 1). Paise.
+  quoteAmountMinor      Int?
+  quoteCurrency         String?            @db.Char(3)
+  /// Service and cancellation conditions shown before the customer accepts
+  /// (rule 9).
+  quoteConditions       String?
+  quotedAt              DateTime?          @db.Timestamptz
+  /// The feasibility checklist as last recorded (booleans only, never
+  /// medical text); each recording is also a timeline entry. CONFIRMED needs
+  /// every item checked (rule 7).
+  feasibility           Json?
   confirmedAt           DateTime?          @db.Timestamptz
   completedAt           DateTime?          @db.Timestamptz
   /// When it was DECLINED or CANCELLED.
@@ -1538,6 +1552,10 @@ model AirAmbulanceRequestEvent {
   toStatus   AirAmbulanceStatus
   actorId    String?             @db.Uuid
   actorRole  Role?
+  /// What the step recorded, never medical or personal data: the
+  /// feasibility checklist (booleans), a quote's amount and operator, an
+  /// assignee id (W4-5).
+  payload    Json?
   createdAt  DateTime            @default(now()) @db.Timestamptz
 
   request AirAmbulanceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
