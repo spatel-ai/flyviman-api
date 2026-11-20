@@ -10,7 +10,7 @@ import { Role } from '../../generated/prisma/enums.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AuditService } from './audit.service.js';
-import { canReadAuditContents } from './audit-visibility.js';
+import { presentAuditContents } from './audit-visibility.js';
 import { AuditLogResponseDto } from './dto/audit-log-response.dto.js';
 import { ListAuditLogsDto } from './dto/list-audit-logs.dto.js';
 
@@ -27,7 +27,10 @@ export class AdminAuditController {
     description:
       'Newest first. Filter by entity, actor, action and time range. ' +
       'Pricing rule records show before, after and reason to finance and ' +
-      'super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields.',
+      'super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields. ' +
+      'Passenger and medical fields inside before and after are null for roles that may not read them ' +
+      '(medical: super admin only; identity document numbers: no one; passenger details: operations and super admin). ' +
+      '`restricted` is true on every row where something was withheld or redacted.',
   })
   @ApiOkResponse({ type: [AuditLogResponseDto] })
   async list(
@@ -37,7 +40,7 @@ export class AdminAuditController {
     const result = await this.audit.list(query);
     return new Paginated(
       result.items.map((log) => {
-        const readable = canReadAuditContents(log, user.role);
+        const contents = presentAuditContents(log, user.role);
         return {
           id: log.id,
           actorId: log.actorId,
@@ -45,9 +48,10 @@ export class AdminAuditController {
           action: log.action,
           entityType: log.entityType,
           entityId: log.entityId,
-          before: readable ? log.before : null,
-          after: readable ? log.after : null,
-          reason: readable ? log.reason : null,
+          before: contents.before,
+          after: contents.after,
+          reason: contents.reason,
+          restricted: contents.restricted,
           ipAddress: log.ipAddress,
           requestId: log.requestId,
           createdAt: log.createdAt.toISOString(),

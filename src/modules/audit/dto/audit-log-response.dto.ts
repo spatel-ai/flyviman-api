@@ -29,6 +29,12 @@ export class AuditLogResponseDto {
   @ApiProperty({ type: String, nullable: true })
   reason: string | null;
 
+  @ApiProperty({
+    description:
+      'True when this role was shown less than the record holds: before, after or reason withheld, or passenger or medical fields in them set to null.',
+  })
+  restricted: boolean;
+
   @ApiProperty({ type: String, nullable: true })
   ipAddress: string | null;
 

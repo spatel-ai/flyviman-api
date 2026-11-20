@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { withPrisma } from './support/db.js';
 import { signIn } from './support/session.js';
 
 test.describe('GET /admin/audit-logs', () => {
@@ -53,5 +55,69 @@ test.describe('GET /admin/audit-logs', () => {
     });
     expect(response.status()).toBe(400);
     expect((await response.json()).error.code).toBe('VALIDATION_ERROR');
+  });
+
+  test.describe('passenger and medical fields (rule 8)', () => {
+    // No route writes such a payload today; the record is planted directly
+    // to prove the backstop.
+    const entityId = randomUUID();
+    test.beforeAll(async () => {
+      await withPrisma((prisma) =>
+        prisma.auditLog.create({
+          data: {
+            action: 'e2e.restricted',
+            entityType: 'Booking',
+            entityId,
+            after: {
+              reference: 'FLY-BK-E2E000',
+              passengerCount: 1,
+              passengers: [{ firstName: 'Asha', documentNumber: 'P1234567' }],
+              medicalDetails: { diagnosis: 'e2e' },
+            },
+          },
+        }),
+      );
+    });
+
+    const cases = [
+      {
+        account: 'ops',
+        passengers: [{ firstName: 'Asha', documentNumber: null }],
+        medicalDetails: null,
+      },
+      { account: 'finance', passengers: null, medicalDetails: null },
+      {
+        account: 'superAdmin',
+        passengers: [{ firstName: 'Asha', documentNumber: null }],
+        medicalDetails: { diagnosis: 'e2e' },
+      },
+    ] as const;
+    for (const expected of cases) {
+      test(`are redacted for the ${expected.account} role and the row says so`, async ({
+        request,
+      }) => {
+        await signIn(request, expected.account);
+        const response = await request.get('admin/audit-logs', {
+          params: { entityId },
+        });
+        expect(response.status()).toBe(200);
+        const [row] = (await response.json()).data;
+        expect(row.restricted).toBe(true);
+        expect(row.after).toEqual({
+          reference: 'FLY-BK-E2E000',
+          passengerCount: 1,
+          passengers: expected.passengers,
+          medicalDetails: expected.medicalDetails,
+        });
+      });
+    }
+
+    test('an ordinary record is not marked restricted', async ({ request }) => {
+      await signIn(request, 'finance');
+      const response = await request.get('admin/audit-logs', {
+        params: { action: 'auth.login', pageSize: 1 },
+      });
+      expect((await response.json()).data[0].restricted).toBe(false);
+    });
   });
 });

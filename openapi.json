@@ -5178,7 +5178,7 @@
     },
     "/api/v1/admin/audit-logs": {
       "get": {
-        "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields.",
+        "description": "Newest first. Filter by entity, actor, action and time range. Pricing rule records show before, after and reason to finance and super admins only, and of matching limits (MATCHING_LIMITS) to operations; other roles get null for those fields. Passenger and medical fields inside before and after are null for roles that may not read them (medical: super admin only; identity document numbers: no one; passenger details: operations and super admin). `restricted` is true on every row where something was withheld or redacted.",
         "operationId": "AdminAuditController_list",
         "parameters": [
           {
@@ -12198,6 +12198,10 @@
             "type": "string",
             "nullable": true
           },
+          "restricted": {
+            "type": "boolean",
+            "description": "True when this role was shown less than the record holds: before, after or reason withheld, or passenger or medical fields in them set to null."
+          },
           "ipAddress": {
             "type": "string",
             "nullable": true
@@ -12221,6 +12225,7 @@
           "before",
           "after",
           "reason",
+          "restricted",
           "ipAddress",
           "requestId",
           "createdAt"
