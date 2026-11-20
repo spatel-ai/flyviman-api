@@ -303,9 +303,14 @@ export class PaymentWebhooksService {
         BigInt(report.amountMinor) !== payment.amountMinor ||
         report.currency !== payment.currency)
     ) {
-      // Never a success for an amount other than the order's.
-      if (payment.reviewReason !== null) return false;
+      // Never a success for an amount other than the order's. A webhook is
+      // always audited (rule 6); the sweep, which asks again every run,
+      // records a flagged payment only once.
+      if (payment.reviewReason !== null && origin.source === 'sweep') {
+        return false;
+      }
       await this.flag(tx, payment, PaymentReviewReason.AMOUNT_MISMATCH, {
+        ...origin,
         reportedAmountMinor: report.amountMinor ?? null,
         reportedCurrency: report.currency ?? null,
         amountMinor: minorToNumber(payment.amountMinor),
@@ -342,8 +347,8 @@ export class PaymentWebhooksService {
     }
 
     // A success is always recorded: money moved. If the booking is closed
-    // or already paid, operations are told through `reviewReason` (the
-    // refund follows in W4-1).
+    // or already paid, operations are told through `reviewReason`, and the
+    // payment is listed in the finance refunds-due queue.
     const reviewReason = reviewOnSuccess(booking, payment.purpose);
     await tx.payment.update({
       where: { id: payment.id },

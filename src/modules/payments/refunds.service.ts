@@ -606,9 +606,13 @@ export class RefundsService {
     // Re-read: an earlier step of this transaction may have moved it.
     const current = await tx.booking.findUniqueOrThrow({
       where: { id: booking.id },
-      select: { paymentStatus: true },
+      select: { paymentStatus: true, status: true },
     });
-    const summary = bookingPaymentSummary(booking.totalMinor, payments);
+    const summary = bookingPaymentSummary(
+      booking.totalMinor,
+      payments,
+      current.status,
+    );
     if (summary !== current.paymentStatus) {
       await this.bookings.recordPaymentStatus(
         tx,

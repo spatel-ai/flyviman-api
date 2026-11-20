@@ -424,6 +424,8 @@ describe('refunds', () => {
 
 describe('bookingPaymentSummary', () => {
   const R = RefundStatus;
+  const LIVE = BookingStatus.CONFIRMED;
+  const CLOSED = BookingStatus.CANCELLED;
   const paid = (
     amountMinor: bigint,
     refunds: { status: RefundStatus; amountMinor: bigint }[] = [],
@@ -432,43 +434,97 @@ describe('bookingPaymentSummary', () => {
 
   it('is REFUND_PENDING while any refund is under way', () => {
     expect(
-      bookingPaymentSummary(1_000n, [paid(1_000n, [refund(R.PENDING, 1n)])]),
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.PENDING, 1n)])],
+        LIVE,
+      ),
     ).toBe('REFUND_PENDING');
   });
 
-  it('is REFUNDED after a full refund, or a partial one under a charge', () => {
+  it('is REFUNDED on a cancelled booking after a full refund, or a partial one under a charge', () => {
     expect(
-      bookingPaymentSummary(1_000n, [
-        paid(1_000n, [refund(R.COMPLETED, 1_000n)]),
-      ]),
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.COMPLETED, 1_000n)])],
+        CLOSED,
+      ),
     ).toBe('REFUNDED');
     expect(
-      bookingPaymentSummary(1_000n, [
-        paid(1_000n, [refund(R.COMPLETED, 800n)]),
-      ]),
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.COMPLETED, 800n)])],
+        CLOSED,
+      ),
     ).toBe('REFUNDED');
+  });
+
+  it('is PARTIALLY_PAID on a live deposit booking whose duplicate deposit was refunded, so the balance is due', () => {
+    const summary = bookingPaymentSummary(
+      1_000n,
+      [paid(250n), paid(250n, [refund(R.COMPLETED, 250n)])],
+      LIVE,
+    );
+    expect(summary).toBe('PARTIALLY_PAID');
+    expect(
+      amountDue(
+        {
+          ...due,
+          status: LIVE,
+          paymentModel: PaymentModel.C_DEPOSIT,
+          paymentStatus: summary,
+          totalMinor: 1_000n,
+          paidMinor: 250n,
+        },
+        25,
+        NOW,
+      ),
+    ).toEqual({ due: true, purpose: 'BALANCE', amountMinor: 750n });
+  });
+
+  it('is REFUNDED on a live booking only when nothing is kept', () => {
+    expect(
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.COMPLETED, 1_000n)])],
+        LIVE,
+      ),
+    ).toBe('REFUNDED');
+    expect(
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.COMPLETED, 200n)])],
+        LIVE,
+      ),
+    ).toBe('PARTIALLY_PAID');
   });
 
   it('stays PAID when a second payment for a paid booking is refunded', () => {
     expect(
-      bookingPaymentSummary(1_000n, [
-        paid(1_000n),
-        paid(1_000n, [refund(R.COMPLETED, 1_000n)]),
-      ]),
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n), paid(1_000n, [refund(R.COMPLETED, 1_000n)])],
+        LIVE,
+      ),
     ).toBe('PAID');
   });
 
   it('goes back after a failed refund, and ignores money that never arrived', () => {
     expect(
-      bookingPaymentSummary(1_000n, [paid(1_000n, [refund(R.FAILED, 1_000n)])]),
+      bookingPaymentSummary(
+        1_000n,
+        [paid(1_000n, [refund(R.FAILED, 1_000n)])],
+        LIVE,
+      ),
     ).toBe('PAID');
     expect(
-      bookingPaymentSummary(1_000n, [
-        paid(250n),
-        paid(750n, [], PaymentStatus.PENDING),
-      ]),
+      bookingPaymentSummary(
+        1_000n,
+        [paid(250n), paid(750n, [], PaymentStatus.PENDING)],
+        LIVE,
+      ),
     ).toBe('PARTIALLY_PAID');
-    expect(bookingPaymentSummary(1_000n, [])).toBe('UNPAID');
+    expect(bookingPaymentSummary(1_000n, [], LIVE)).toBe('UNPAID');
   });
 
   function refund(status: RefundStatus, amountMinor: bigint) {

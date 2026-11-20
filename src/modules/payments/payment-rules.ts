@@ -340,17 +340,22 @@ export interface SummaryPayment {
 
 /**
  * The booking's payment summary from all its payments, after a refund moved
- * (state-machines.md: a summary of its payments). Every payment whose money
- * arrived counts, flagged ones too, since their refunds are counted as well:
+ * (state-machines.md: a summary of its payments), derived from the money
+ * kept (succeeded payments less completed refunds). Every payment whose
+ * money arrived counts, flagged ones too, since their refunds are counted
+ * as well:
  * - a refund under way anywhere: `REFUND_PENDING`;
  * - the money kept covers the total: `PAID` (a second payment refunded);
- * - otherwise, once any refund completed: `REFUNDED` (all of it, or the part
- *   above a cancellation charge);
- * - otherwise `PARTIALLY_PAID` with some money kept, `UNPAID` with none.
+ * - a closed booking with a completed refund: `REFUNDED` (all of it, or the
+ *   part above a cancellation charge);
+ * - a live booking keeping some money: `PARTIALLY_PAID` (a duplicate
+ *   deposit refunded leaves the balance due);
+ * - nothing kept: `REFUNDED` once any refund completed, else `UNPAID`.
  */
 export function bookingPaymentSummary(
   totalMinor: bigint,
   payments: readonly SummaryPayment[],
+  bookingStatus: BookingStatus,
 ): BookingPaymentStatus {
   const counted = payments.filter(
     (payment) => PAYMENT_RANK[payment.status] >= PAYMENT_RANK.SUCCEEDED,
@@ -363,8 +368,11 @@ export function bookingPaymentSummary(
   const refunded = sum(refunds, [RefundStatus.COMPLETED]);
   const kept = received - refunded;
   if (kept >= totalMinor && kept > 0n) return BookingPaymentStatus.PAID;
-  if (refunded > 0n) return BookingPaymentStatus.REFUNDED;
-  return kept > 0n
-    ? BookingPaymentStatus.PARTIALLY_PAID
+  if (refunded > 0n && CLOSED.includes(bookingStatus)) {
+    return BookingPaymentStatus.REFUNDED;
+  }
+  if (kept > 0n) return BookingPaymentStatus.PARTIALLY_PAID;
+  return refunded > 0n
+    ? BookingPaymentStatus.REFUNDED
     : BookingPaymentStatus.UNPAID;
 }
