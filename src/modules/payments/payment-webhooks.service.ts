@@ -29,6 +29,7 @@ import {
   BookingsService,
   type PayableBookingRow,
 } from '../bookings/bookings.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import type { WebhookAckResponseDto } from './dto/webhook-ack-response.dto.js';
 import {
   bookingPaymentStatusAfterSuccess,
@@ -90,6 +91,7 @@ export class PaymentWebhooksService {
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly events: NotificationEventsService,
   ) {}
 
   async receive(
@@ -281,6 +283,7 @@ export class PaymentWebhooksService {
         },
         tx,
       );
+      await this.events.notifyBooking(tx, 'payment.failed', booking.id);
       return true;
     }
 
@@ -324,6 +327,7 @@ export class PaymentWebhooksService {
         purpose: payment.purpose,
       });
     }
+    await this.events.notifyBooking(tx, 'payment.succeeded', booking.id);
     return true;
   }
 

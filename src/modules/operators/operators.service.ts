@@ -12,6 +12,7 @@ import {
   OperatorDocumentType,
   OperatorStatus,
   Role,
+  UserStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -37,6 +38,8 @@ import {
 } from '../users/users.service.js';
 import {
   adminAccess,
+  can,
+  inScope,
   OperatorAccess,
   parsePermissions,
   staffAccess,
@@ -421,6 +424,42 @@ export class OperatorsService implements OnModuleInit {
       select: { user: { select: { id: true, email: true } } },
     });
     return members.map((member) => member.user);
+  }
+
+  /**
+   * Who is told of a booking on one aircraft (M10): the operator's active
+   * administrators, and active staff who manage bookings with that
+   * aircraft in reach.
+   */
+  async bookingRecipients(
+    operatorId: string,
+    aircraftId: string | null,
+  ): Promise<string[]> {
+    const members = await this.prisma.operatorMember.findMany({
+      where: {
+        operatorId,
+        user: {
+          status: UserStatus.ACTIVE,
+          role: { in: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF] },
+        },
+      },
+      select: {
+        userId: true,
+        permissions: true,
+        user: { select: { role: true } },
+      },
+    });
+    return members
+      .filter(({ user, permissions }) => {
+        if (user.role === Role.OPERATOR_ADMIN) return true;
+        const access = staffAccess(operatorId, parsePermissions(permissions));
+        return (
+          aircraftId !== null &&
+          can(access, 'MANAGE_BOOKINGS') &&
+          inScope(access, aircraftId)
+        );
+      })
+      .map((member) => member.userId);
   }
 
   async updateProfile(

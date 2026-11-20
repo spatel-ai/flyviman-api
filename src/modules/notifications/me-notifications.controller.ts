@@ -28,6 +28,7 @@ function toDto(item: InAppNotification): NotificationResponseDto {
     templateKey: item.templateKey,
     title: item.title,
     body: item.body,
+    href: item.href,
     readAt: item.readAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
   };

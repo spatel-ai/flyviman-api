@@ -52,6 +52,8 @@ export interface InAppNotification {
   templateKey: string;
   title: string;
   body: string;
+  /** A site path from the event, for the reader's own portal. */
+  href: string | null;
   readAt: Date | null;
   createdAt: Date;
 }
@@ -67,6 +69,13 @@ export interface InAppNotification {
  */
 function clearPersonal(templateKey: string) {
   return PERSONAL_TEMPLATES.has(templateKey) ? { payload: {} } : {};
+}
+
+/** A path on this site only: stored values are ours, but a link is never trusted blindly. */
+function safeHref(value: unknown): string | null {
+  return typeof value === 'string' && /^\/(?!\/)[\w\-./]*$/.test(value)
+    ? value
+    : null;
 }
 
 @Injectable()
@@ -428,6 +437,7 @@ export class NotificationsService {
       templateKey: row.templateKey,
       title: render(template.subject ?? '', variables),
       body: render(template.body, variables),
+      href: safeHref(variables.href),
       readAt: row.readAt,
       createdAt: row.createdAt,
     };

@@ -495,6 +495,36 @@ export class UsersService {
     return new Map(rows.map(({ id, ...rest }) => [id, rest]));
   }
 
+  /**
+   * Where to reach accounts (M10): the email address, and the phone number
+   * only once it is verified. Accounts not in the list are left out.
+   */
+  async contacts(
+    ids: string[],
+  ): Promise<{ id: string; email: string | null; phone: string | null }[]> {
+    if (ids.length === 0) return [];
+    return this.contactRows({ id: { in: ids } });
+  }
+
+  /** The active accounts holding `role`, for staff alerts. */
+  async contactsByRole(
+    role: Role,
+  ): Promise<{ id: string; email: string | null; phone: string | null }[]> {
+    return this.contactRows({ role, status: UserStatus.ACTIVE });
+  }
+
+  private async contactRows(where: Prisma.UserWhereInput) {
+    const rows = await this.prisma.user.findMany({
+      where,
+      select: { id: true, email: true, phone: true, phoneVerifiedAt: true },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      phone: row.phoneVerifiedAt ? row.phone : null,
+    }));
+  }
+
   /** The web page where a reset or invitation token is exchanged. */
   passwordLink(token: string): string {
     const origin = this.config.getOrThrow<string>('WEB_ORIGIN');

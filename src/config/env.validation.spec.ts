@@ -29,6 +29,24 @@ describe('validateEnv', () => {
     expect(env.RATE_LIMIT_AUTH_PER_MINUTE).toBe(5);
   });
 
+  it('turns WhatsApp on by default, and off by default in production', () => {
+    expect(validateEnv(valid).WHATSAPP_ENABLED).toBe(true);
+    expect(
+      validateEnv({ ...valid, WHATSAPP_ENABLED: 'false' }).WHATSAPP_ENABLED,
+    ).toBe(false);
+    const production = {
+      ...valid,
+      ...PAYMENT_SECRETS,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'sink',
+    };
+    expect(validateEnv(production).WHATSAPP_ENABLED).toBe(false);
+    expect(
+      validateEnv({ ...production, WHATSAPP_ENABLED: 'true' }).WHATSAPP_ENABLED,
+    ).toBe(true);
+  });
+
   it('rejects a short or missing JWT_ACCESS_SECRET', () => {
     for (const secret of [undefined, 'too-short']) {
       expect(() =>

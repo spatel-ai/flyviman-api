@@ -21,6 +21,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { CLOSED } from './air-ambulance-transitions.js';
 
@@ -190,6 +191,7 @@ export class AirAmbulanceService implements OnModuleInit {
     private readonly operators: OperatorsService,
     private readonly locations: LocationsService,
     private readonly documents: DocumentsService,
+    private readonly events: NotificationEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -332,6 +334,10 @@ export class AirAmbulanceService implements OnModuleInit {
             },
             tx,
           );
+          // Operations only, reference only: no contact or medical detail (rule 8).
+          await this.events.notify(tx, 'air_ambulance.received', {
+            reference: row.reference,
+          });
           return toView(row);
         });
       } catch (error) {

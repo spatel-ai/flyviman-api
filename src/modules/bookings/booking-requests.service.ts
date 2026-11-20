@@ -19,7 +19,6 @@ import {
   BookingEventType,
   BookingPaymentStatus,
   BookingStatus,
-  NotificationChannel,
   OperatorStatus,
   PriceType,
   QuoteStatus,
@@ -30,6 +29,7 @@ import { REDIS } from '../../redis/redis.module.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import {
   aircraftWhere,
@@ -166,7 +166,7 @@ export class BookingRequestsService {
     private readonly quotes: QuotesService,
     private readonly availability: AvailabilityService,
     private readonly operators: OperatorsService,
-    private readonly users: UsersService,
+    private readonly events: NotificationEventsService,
     private readonly notifications: NotificationsService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
@@ -651,7 +651,8 @@ export class BookingRequestsService {
             validUntil: validUntil.toISOString(),
             override: true,
           });
-          return this.notifyCustomer(tx, row, 'booking.quote_sent', {
+          // Flyviman's own price, not the operator's quote.
+          return this.notifyCustomer(tx, row, 'booking.price_overridden', {
             quoteReference: quote.reference,
             validUntil: validUntil.toISOString(),
           });
@@ -1318,68 +1319,31 @@ export class BookingRequestsService {
     });
   }
 
-  /** Queues the customer's in-app message and email (reference only). */
-  private async notifyCustomer(
+  /** Queues the customer's messages for the event (the notification matrix). */
+  private notifyCustomer(
     tx: Prisma.TransactionClient,
     row: BookingRow,
     templateKey: string,
     extra: Record<string, string>,
   ): Promise<string[]> {
-    const variables = { reference: row.reference, ...extra };
-    const ids = [
-      await this.notifications.enqueue(
-        {
-          userId: row.customerId,
-          channel: NotificationChannel.IN_APP,
-          templateKey,
-          variables,
-        },
-        tx,
-      ),
-    ];
-    const account = (await this.users.summaries([row.customerId])).get(
-      row.customerId,
-    );
-    if (account?.email) {
-      ids.push(
-        await this.notifications.enqueue(
-          {
-            userId: row.customerId,
-            channel: NotificationChannel.EMAIL,
-            to: account.email,
-            templateKey,
-            variables,
-          },
-          tx,
-        ),
-      );
-    }
-    return ids;
+    return this.events.notify(tx, templateKey, {
+      reference: row.reference,
+      customerId: row.customerId,
+      variables: extra,
+    });
   }
 
-  /** Queues an in-app message to the operator's administrators. */
-  private async notifyOperator(
+  /** Queues the messages for the operator's team (the notification matrix). */
+  private notifyOperator(
     tx: Prisma.TransactionClient,
     row: BookingRow,
     templateKey: string,
   ): Promise<string[]> {
-    if (!row.operatorId) return [];
-    const administrators = await this.operators.administrators(row.operatorId);
-    const ids: string[] = [];
-    for (const administrator of administrators) {
-      ids.push(
-        await this.notifications.enqueue(
-          {
-            userId: administrator.id,
-            channel: NotificationChannel.IN_APP,
-            templateKey,
-            variables: { reference: row.reference },
-          },
-          tx,
-        ),
-      );
-    }
-    return ids;
+    return this.events.notify(tx, templateKey, {
+      reference: row.reference,
+      operatorId: row.operatorId,
+      aircraftId: row.aircraftId,
+    });
   }
 
   private priceOf(row: BookingRow): BookingPriceDto | null {

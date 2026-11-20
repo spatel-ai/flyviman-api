@@ -3,6 +3,7 @@ import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AvailabilityModule } from '../availability/availability.module.js';
 import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
+import { NotificationEventsModule } from '../notifications/events/notification-events.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OperatorsModule } from '../operators/operators.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
@@ -45,6 +46,7 @@ import { TripsService } from './trips.service.js';
     UsersModule,
     NotificationsModule,
     PricingModule,
+    NotificationEventsModule,
   ],
   controllers: [
     BookingsController,

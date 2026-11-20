@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import type { ConfigService } from '@nestjs/config';
 import { FieldCipher, isEncrypted } from '../../common/crypto/field-cipher.js';
 import { AIR_AMBULANCE_REFERENCE } from '../../common/reference.js';
@@ -138,6 +139,7 @@ function setup(
     operators as unknown as OperatorsService,
     locations as unknown as LocationsService,
     {} as DocumentsService,
+    { notify: vi.fn() } as unknown as NotificationEventsService,
   );
   return { service, stored, events, audit, tx, locations };
 }

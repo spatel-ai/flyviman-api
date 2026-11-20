@@ -30,6 +30,8 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
+import { bookingStatusEvents } from '../notifications/matrix.js';
 import { CustomersService } from '../customers/customers.service.js';
 import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
 import { PromotionsService } from '../pricing/promotions.service.js';
@@ -146,6 +148,7 @@ export class BookingsService implements OnApplicationBootstrap {
     private readonly quotes: QuotesService,
     private readonly cancellationTerms: CancellationTermsService,
     private readonly promotions: PromotionsService,
+    private readonly events: NotificationEventsService,
   ) {}
 
   /**
@@ -554,6 +557,9 @@ export class BookingsService implements OnApplicationBootstrap {
       },
       tx,
     );
+    for (const key of bookingStatusEvents(booking.status, to, actor.kind)) {
+      await this.events.notifyBooking(tx, key, booking.id);
+    }
     return to;
   }
 

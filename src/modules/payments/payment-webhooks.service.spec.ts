@@ -1,3 +1,4 @@
+import type { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import type { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import {
@@ -24,6 +25,7 @@ function setup() {
     {} as AuditService,
     {} as BookingsService,
     {} as Redis,
+    {} as NotificationEventsService,
   );
   const warn = vi.fn();
   (service as unknown as { logger: Pick<Logger, 'warn'> }).logger = { warn };
@@ -69,6 +71,7 @@ describe('PaymentWebhooksService refusals', () => {
       {} as AuditService,
       {} as BookingsService,
       {} as Redis,
+      {} as NotificationEventsService,
     );
     await expect(
       service.receive('mock', Buffer.from('{}'), {}),
@@ -142,6 +145,7 @@ function paymentWorld(overrides: Record<string, unknown> = {}) {
     audit as unknown as AuditService,
     bookings as unknown as BookingsService,
     redis as unknown as Redis,
+    { notifyBooking: vi.fn() } as unknown as NotificationEventsService,
   );
   const deliver = (event: Record<string, unknown>) => {
     gateway.parseWebhook.mockReturnValue({
