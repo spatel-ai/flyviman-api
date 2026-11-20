@@ -30,7 +30,11 @@ import {
   PaymentResponseDto,
   VerifyPaymentDto,
 } from './dto/payment.dto.js';
-import { PaymentDetailDto, PaymentReceiptDto } from './dto/payment-view.dto.js';
+import {
+  BookingPaymentDto,
+  PaymentDetailDto,
+  PaymentReceiptDto,
+} from './dto/payment-view.dto.js';
 import { PaymentReferencePipe } from './payment-reference.pipe.js';
 import { PaymentsService } from './payments.service.js';
 import { ReceiptsService } from './receipts.service.js';
@@ -49,6 +53,20 @@ export class PaymentsController {
     private readonly payments: PaymentsService,
     private readonly receipts: ReceiptsService,
   ) {}
+
+  @Get('bookings/:reference/payments')
+  @ApiOperation({
+    summary: 'The payments of one of the caller’s bookings, with receipts',
+    description:
+      'Newest first: every attempt with its status, method type, refunds, and `receipt` (null until it has succeeded; the same as `GET /payments/:reference/receipt`). What is due now is the booking’s `amountDue`. Another customer’s booking is 404.',
+  })
+  @ApiOkResponse({ type: [BookingPaymentDto] })
+  forBooking(
+    @CurrentUser() user: AuthUser,
+    @Param('reference', BookingReferencePipe) reference: string,
+  ): Promise<BookingPaymentDto[]> {
+    return this.receipts.forBooking(user, reference);
+  }
 
   @Get('payments/:reference')
   @Roles(Role.CUSTOMER, Role.FINANCE_ADMIN, Role.SUPER_ADMIN)

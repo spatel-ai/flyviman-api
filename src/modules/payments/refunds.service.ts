@@ -32,6 +32,7 @@ import {
 } from '../bookings/paid-amount.js';
 import { cancellationsWithRefundDue } from '../bookings/refund-due.js';
 import type {
+  AdminRefundsQueryDto,
   CreateRefundDto,
   RefundDueItemDto,
   RefundResponseDto,
@@ -618,38 +619,65 @@ export class RefundsService {
     }
   }
 
-  private async toResponse(refundId: string): Promise<RefundResponseDto> {
-    const refund = await this.prisma.refund.findUniqueOrThrow({
-      where: { id: refundId },
-      include: {
-        payment: {
-          select: {
-            reference: true,
-            status: true,
-            amountMinor: true,
-            booking: { select: { reference: true } },
-            refunds: { select: { status: true, amountMinor: true } },
-          },
-        },
-      },
-    });
-    return {
-      reference: refund.reference,
-      amountMinor: minorToNumber(refund.amountMinor),
-      currency: refund.currency,
-      status: refund.status,
-      createdAt: refund.createdAt.toISOString(),
-      updatedAt: refund.updatedAt.toISOString(),
-      paymentReference: refund.payment.reference,
-      bookingReference: refund.payment.booking.reference,
-      reason: refund.reason,
-      paymentStatus: refund.payment.status,
-      refundableMinor: minorToNumber(
-        refundableRemainderMinor(
-          refund.payment.amountMinor,
-          refund.payment.refunds,
-        ),
-      ),
-    };
+  /** Every refund, newest first, for finance (`GET /admin/refunds`). */
+  async list(
+    query: AdminRefundsQueryDto,
+  ): Promise<{ items: RefundResponseDto[]; total: number }> {
+    const where: Prisma.RefundWhereInput = { status: query.status };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.refund.findMany({
+        where,
+        include: RESPONSE_INCLUDE,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.refund.count({ where }),
+    ]);
+    return { items: rows.map(toRefundResponse), total };
   }
+
+  private async toResponse(refundId: string): Promise<RefundResponseDto> {
+    return toRefundResponse(
+      await this.prisma.refund.findUniqueOrThrow({
+        where: { id: refundId },
+        include: RESPONSE_INCLUDE,
+      }),
+    );
+  }
+}
+
+const RESPONSE_INCLUDE = {
+  payment: {
+    select: {
+      reference: true,
+      status: true,
+      amountMinor: true,
+      booking: { select: { reference: true } },
+      refunds: { select: { status: true, amountMinor: true } },
+    },
+  },
+} as const satisfies Prisma.RefundInclude;
+
+function toRefundResponse(
+  refund: Prisma.RefundGetPayload<{ include: typeof RESPONSE_INCLUDE }>,
+): RefundResponseDto {
+  return {
+    reference: refund.reference,
+    amountMinor: minorToNumber(refund.amountMinor),
+    currency: refund.currency,
+    status: refund.status,
+    createdAt: refund.createdAt.toISOString(),
+    updatedAt: refund.updatedAt.toISOString(),
+    paymentReference: refund.payment.reference,
+    bookingReference: refund.payment.booking.reference,
+    reason: refund.reason,
+    paymentStatus: refund.payment.status,
+    refundableMinor: minorToNumber(
+      refundableRemainderMinor(
+        refund.payment.amountMinor,
+        refund.payment.refunds,
+      ),
+    ),
+  };
 }

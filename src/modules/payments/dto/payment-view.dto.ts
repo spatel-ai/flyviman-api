@@ -1,6 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsOptional, Matches } from 'class-validator';
+import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
+import { BOOKING_REFERENCE } from '../../../common/reference.js';
 import {
   PaymentPurpose,
+  PaymentReviewReason,
+  PaymentStatus,
   ServiceCategory,
 } from '../../../generated/prisma/enums.js';
 import { PaymentPriceDto, PaymentResponseDto } from './payment.dto.js';
@@ -107,4 +112,46 @@ export class PaymentReceiptDto {
 
   @ApiProperty({ description: 'Paise kept: the amount less refunds returned.' })
   netPaidMinor: number;
+}
+
+/** A booking's payment with its receipt (`GET /bookings/:reference/payments`). */
+export class BookingPaymentDto extends PaymentDetailDto {
+  @ApiProperty({
+    type: PaymentReceiptDto,
+    nullable: true,
+    description: 'Null until the payment has succeeded.',
+  })
+  receipt: PaymentReceiptDto | null;
+}
+
+/** A payment as finance sees it (`GET /admin/payments`). */
+export class AdminPaymentDto extends PaymentDetailDto {
+  @ApiProperty({
+    enum: PaymentReviewReason,
+    enumName: 'PaymentReviewReason',
+    nullable: true,
+    description:
+      'Set when a verified event needs a person: `BOOKING_CLOSED`, `ALREADY_PAID`, `AMOUNT_MISMATCH`, `DUPLICATE_CAPTURE`.',
+  })
+  reviewReason: PaymentReviewReason | null;
+}
+
+export class AdminPaymentsQueryDto extends PageQueryDto {
+  @ApiPropertyOptional({ enum: PaymentStatus, enumName: 'PaymentStatus' })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  status?: PaymentStatus;
+
+  @ApiPropertyOptional({
+    enum: PaymentReviewReason,
+    enumName: 'PaymentReviewReason',
+  })
+  @IsOptional()
+  @IsEnum(PaymentReviewReason)
+  reviewReason?: PaymentReviewReason;
+
+  @ApiPropertyOptional({ example: 'FLY-BK-7K2M9Q' })
+  @IsOptional()
+  @Matches(BOOKING_REFERENCE)
+  bookingReference?: string;
 }

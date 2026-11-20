@@ -22,6 +22,7 @@ import {
   type BookingPaymentStatus,
   BookingStatus,
   OperatorStatus,
+  PaymentModel,
   PriceType,
   QuoteStatus,
 } from '../../generated/prisma/enums.js';
@@ -37,6 +38,7 @@ import { SearchService } from '../search/search.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import { encryptLegacyFreeText } from './free-text-backfill.js';
+import { readPaidMinor } from './paid-amount.js';
 import {
   holdExpiry,
   isQuoteRequest,
@@ -55,7 +57,9 @@ import {
   statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
+import { amountDue } from '../payments/payment-rules.js';
 import type {
+  BookingAmountDueDto,
   BookingCreatedDto,
   BookingResponseDto,
   CreateBookingDto,
@@ -424,6 +428,7 @@ export class BookingsService implements OnApplicationBootstrap {
       category: booking.category,
       status: booking.status,
       paymentStatus: booking.paymentStatus,
+      amountDue: await this.amountDueNow(booking),
       bookingMode: booking.bookingMode,
       paymentModel: booking.paymentModel,
       price: isQuoteRequest(booking)
@@ -459,6 +464,43 @@ export class BookingsService implements OnApplicationBootstrap {
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * What the customer owes now, by the rule the payment route applies
+   * (`payments/payment-rules.ts`, a pure function), or null (W4-1).
+   */
+  private async amountDueNow(
+    booking: PayableBookingRow,
+  ): Promise<BookingAmountDueDto | null> {
+    const depositPercent =
+      booking.paymentModel === PaymentModel.C_DEPOSIT
+        ? (await this.categories.resolve(booking.category)).depositPercent
+        : 100;
+    const due = amountDue(
+      {
+        status: booking.status,
+        priceType: booking.priceType,
+        paymentModel: booking.paymentModel,
+        operatorAccepted: booking.operatorAcceptedAt !== null,
+        paymentStatus: booking.paymentStatus,
+        totalMinor: booking.totalMinor,
+        paidMinor: await readPaidMinor(this.prisma, booking.id),
+        departureAt: new Date(
+          parseItinerary(booking.itinerary).legs[0].departureAt,
+        ),
+      },
+      depositPercent,
+      new Date(),
+    );
+    return due.due
+      ? {
+          amountMinor: minorToNumber(due.amountMinor),
+          currency: booking.currency,
+          priceType: PriceType.CONFIRMED,
+          kind: due.purpose,
+        }
+      : null;
   }
 
   /**

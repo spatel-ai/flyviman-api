@@ -26,20 +26,60 @@ import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import {
+  AdminPaymentDto,
+  AdminPaymentsQueryDto,
+} from './dto/payment-view.dto.js';
+import {
+  AdminRefundsQueryDto,
   CreateRefundDto,
   RefundDueItemDto,
   RefundResponseDto,
 } from './dto/refund.dto.js';
 import { PaymentReferencePipe } from './payment-reference.pipe.js';
+import { ReceiptsService } from './receipts.service.js';
 import { RefundsService } from './refunds.service.js';
 
-/** Refunds (M9, W4-1): finance and the super administrator only. */
+/**
+ * Payments and refunds for finance (M9, W4-1): finance and the super
+ * administrator only.
+ */
 @ApiTags('admin-payments')
 @ApiCookieAuth()
 @Roles(Role.FINANCE_ADMIN, Role.SUPER_ADMIN)
 @Controller('admin')
-export class AdminRefundsController {
-  constructor(private readonly refunds: RefundsService) {}
+export class AdminPaymentsController {
+  constructor(
+    private readonly refunds: RefundsService,
+    private readonly receipts: ReceiptsService,
+  ) {}
+
+  @Get('payments')
+  @ApiOperation({
+    summary: 'Payments, newest first',
+    description:
+      'Filter by `status`, `reviewReason` (payments flagged for a person) or `bookingReference`. Each with its method type, refunds and `reviewReason`.',
+  })
+  @ApiOkResponse({ type: [AdminPaymentDto] })
+  async payments(
+    @Query() query: AdminPaymentsQueryDto,
+  ): Promise<Paginated<AdminPaymentDto>> {
+    const { items, total } = await this.receipts.adminList(query);
+    return new Paginated(items, query.page, query.pageSize, total);
+  }
+
+  @Get('refunds')
+  @ApiOperation({
+    summary: 'Refunds, newest first',
+    description:
+      'Filter by `status`. Each with its payment, booking, reason and what is still refundable from the payment.',
+  })
+  @ApiOkResponse({ type: [RefundResponseDto] })
+  async list(
+    @Query() query: AdminRefundsQueryDto,
+  ): Promise<Paginated<RefundResponseDto>> {
+    const { items, total } = await this.refunds.list(query);
+    return new Paginated(items, query.page, query.pageSize, total);
+  }
 
   @Post('payments/:reference/refunds')
   @Idempotent()

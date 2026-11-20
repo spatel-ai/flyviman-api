@@ -9,6 +9,9 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { MONEY_IN } from '../bookings/paid-amount.js';
 import type {
+  AdminPaymentDto,
+  AdminPaymentsQueryDto,
+  BookingPaymentDto,
   PaymentDetailDto,
   PaymentMethodDto,
   PaymentReceiptDto,
@@ -86,7 +89,70 @@ export class ReceiptsService {
   ) {}
 
   async detail(user: AuthUser, reference: string): Promise<PaymentDetailDto> {
-    const row = await this.find(user, reference);
+    return this.toDetail(await this.find(user, reference));
+  }
+
+  /**
+   * The payments of the caller's own booking, newest first, each with its
+   * receipt once it has succeeded. Someone else's booking is 404.
+   */
+  async forBooking(
+    user: AuthUser,
+    bookingReference: string,
+  ): Promise<BookingPaymentDto[]> {
+    const booking = await this.prisma.booking.findFirst({
+      where: { reference: bookingReference, customerId: user.id },
+      select: { id: true },
+    });
+    if (!booking) {
+      throw new AppException(
+        'NOT_FOUND',
+        'Booking not found.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const rows = await this.prisma.payment.findMany({
+      where: { bookingId: booking.id },
+      select: VIEW,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    return rows.map((row) => ({
+      ...this.toDetail(row),
+      receipt: hasReceipt(row) ? this.toReceipt(row) : null,
+    }));
+  }
+
+  /** Finance's list of payments, newest first, filtered. */
+  async adminList(
+    query: AdminPaymentsQueryDto,
+  ): Promise<{ items: AdminPaymentDto[]; total: number }> {
+    const where: Prisma.PaymentWhereInput = {
+      status: query.status,
+      reviewReason: query.reviewReason,
+      booking: query.bookingReference
+        ? { reference: query.bookingReference }
+        : undefined,
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.payment.findMany({
+        where,
+        select: { ...VIEW, reviewReason: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        ...this.toDetail(row),
+        reviewReason: row.reviewReason,
+      })),
+      total,
+    };
+  }
+
+  private toDetail(row: ViewRow): PaymentDetailDto {
     return {
       reference: row.reference,
       bookingReference: row.booking.reference,
@@ -116,7 +182,7 @@ export class ReceiptsService {
    */
   async receipt(user: AuthUser, reference: string): Promise<PaymentReceiptDto> {
     const row = await this.find(user, reference);
-    if (!MONEY_IN.includes(row.status) || !row.paidAt) {
+    if (!hasReceipt(row)) {
       throw new AppException(
         'PAYMENT_NOT_SUCCEEDED',
         'There is no receipt until the payment has succeeded.',
@@ -124,6 +190,10 @@ export class ReceiptsService {
         [{ field: 'status', issue: row.status }],
       );
     }
+    return this.toReceipt(row);
+  }
+
+  private toReceipt(row: ViewRow & { paidAt: Date }): PaymentReceiptDto {
     const back = refunded(row);
     return {
       documentType: 'PAYMENT_RECEIPT',
@@ -162,6 +232,10 @@ export class ReceiptsService {
     if (!row) throw notFound();
     return row;
   }
+}
+
+function hasReceipt(row: ViewRow): row is ViewRow & { paidAt: Date } {
+  return MONEY_IN.includes(row.status) && row.paidAt !== null;
 }
 
 function refunded(row: ViewRow): bigint {

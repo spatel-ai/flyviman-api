@@ -24,9 +24,34 @@ import {
   Gender,
   IdentityDocumentType,
   PaymentModel,
+  PaymentPurpose,
   PriceType,
   ServiceCategory,
 } from '../../../generated/prisma/enums.js';
+
+/** What the customer owes now, to pass to `POST /bookings/:reference/payments`. */
+export class BookingAmountDueDto {
+  @ApiProperty({ description: 'Paise: send it as `expectedAmountMinor`.' })
+  amountMinor: number;
+
+  @ApiProperty({ example: 'INR' })
+  currency: string;
+
+  @ApiProperty({
+    enum: [PriceType.CONFIRMED],
+    enumName: 'PriceType',
+    description: 'Only a confirmed price is ever charged (rule 1).',
+  })
+  priceType: PriceType;
+
+  @ApiProperty({
+    enum: PaymentPurpose,
+    enumName: 'PaymentPurpose',
+    description:
+      '`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).',
+  })
+  kind: PaymentPurpose;
+}
 
 /** ₹10 crore in paise: far above any charter, far below 2^53. */
 const MAX_TOTAL_MINOR = 10_000_000_000;
@@ -323,6 +348,14 @@ export class BookingResponseDto {
       'Separate from `status`: payment never confirms a booking by itself.',
   })
   paymentStatus: BookingPaymentStatus;
+
+  @ApiProperty({
+    type: BookingAmountDueDto,
+    nullable: true,
+    description:
+      'What is due now (the same rule `POST /bookings/:reference/payments` applies), or null when nothing is: not awaiting payment, price not confirmed, operator not yet accepted (model B), paid, or past departure for a balance (W4-1).',
+  })
+  amountDue: BookingAmountDueDto | null;
 
   // Not `enumName`: that would replace the shared schema's description.
   @ApiProperty({

@@ -1,5 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsEnum,
+  IsOptional,
   IsIn,
   IsInt,
   IsString,
@@ -8,6 +10,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
 import { IsPlainText } from '../../../common/validation/text.js';
 import {
   BookingPaymentStatus,
@@ -157,4 +160,11 @@ export class RefundDueItemDto {
     description: 'When it became due: the cancellation, or the payment.',
   })
   since: string;
+}
+
+export class AdminRefundsQueryDto extends PageQueryDto {
+  @ApiPropertyOptional({ enum: RefundStatus, enumName: 'RefundStatus' })
+  @IsOptional()
+  @IsEnum(RefundStatus)
+  status?: RefundStatus;
 }
