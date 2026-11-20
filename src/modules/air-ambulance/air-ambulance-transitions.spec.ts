@@ -3,6 +3,7 @@ import { AirAmbulanceStatus, Role } from '../../generated/prisma/enums.js';
 import {
   actorKindFor,
   checkTransition,
+  CLOSED,
   FEASIBILITY_ITEMS,
   missingFeasibility,
   parseChecklist,
@@ -65,7 +66,7 @@ describe('air ambulance transitions', () => {
 
   it('lets anyone cancel before COMPLETED, and nothing moves once closed', () => {
     for (const from of ALL) {
-      const closed = [S.COMPLETED, S.DECLINED, S.CANCELLED].includes(from);
+      const closed = CLOSED.has(from);
       for (const by of ['CUSTOMER', 'OPERATIONS'] as const) {
         expect(
           checkTransition(from, S.CANCELLED, by, complete).allowed,
