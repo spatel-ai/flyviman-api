@@ -11,6 +11,7 @@ import {
   UserStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { UsersService } from '../users/users.service.js';
@@ -85,6 +86,7 @@ export class AirAmbulanceWorkflowService {
     private readonly audit: AuditService,
     private readonly operators: OperatorsService,
     private readonly users: UsersService,
+    private readonly aircraft: AircraftService,
   ) {}
 
   // --- Operations --------------------------------------------------------
@@ -176,6 +178,7 @@ export class AirAmbulanceWorkflowService {
           );
         }
         await this.assertApproved(tx, row.selectedOperatorId);
+        await this.assertEligible(tx, row.selectedOperatorId);
       }
       return this.apply(tx, row, to, actor);
     });
@@ -229,6 +232,7 @@ export class AirAmbulanceWorkflowService {
         throw invalidTransition(`a ${row.status} request cannot be quoted`);
       }
       await this.assertApproved(tx, input.operatorId);
+      await this.assertEligible(tx, input.operatorId);
       const data = {
         selectedOperatorId: input.operatorId,
         quoteAmountMinor: input.amountMinor,
@@ -370,6 +374,22 @@ export class AirAmbulanceWorkflowService {
       throw conflict(
         'OPERATOR_NOT_APPROVED',
         'The operator is not approved, so it cannot be offered.',
+      );
+    }
+  }
+
+  /**
+   * Only an operator with an approved air ambulance aircraft may be quoted
+   * or confirmed for a mission (owner decision 2026-11-20, W4-6).
+   */
+  private async assertEligible(tx: Tx, operatorId: string | null) {
+    const eligible =
+      operatorId !== null &&
+      (await this.aircraft.hasAirAmbulanceAircraft(operatorId, tx));
+    if (!eligible) {
+      throw conflict(
+        'AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE',
+        'This operator has no approved air ambulance aircraft, so it cannot fly this mission.',
       );
     }
   }

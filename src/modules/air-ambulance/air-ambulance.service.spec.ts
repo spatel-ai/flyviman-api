@@ -8,6 +8,7 @@ import {
   Role,
 } from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
+import type { AircraftService } from '../aircraft/aircraft.service.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { DocumentsService } from '../documents/documents.service.js';
 import type { LocationsService } from '../locations/locations.service.js';
@@ -66,6 +67,7 @@ function setup(
     medical?: Record<string, unknown>;
   } = {};
   const events: Record<string, unknown>[] = [];
+  const findMany = vi.fn(async (_query: unknown) => [] as unknown[]);
   const tx = {
     idempotencyKey: { updateMany: vi.fn(async () => ({ count: 1 })) },
     airAmbulanceRequest: {
@@ -108,6 +110,8 @@ function setup(
           ? { ...stored.request, status: options.status ?? 'SUBMITTED' }
           : null,
       ),
+      findMany,
+      count: vi.fn(async () => 0),
     },
     airAmbulanceMedical: {
       findUnique: vi.fn(async () =>
@@ -124,7 +128,17 @@ function setup(
   const locations = {
     isActive: vi.fn(async (id: string) => active.includes(id)),
   };
+  const aircraft = {
+    airAmbulanceOperatorIds: vi.fn(async () => ['op-b', 'op-a', 'op-draft']),
+  };
   const operators = {
+    approvedForMatching: vi.fn(
+      async () =>
+        new Map([
+          ['op-b', { name: 'Zenith Air', restrictions: null }],
+          ['op-a', { name: 'Apex Medevac', restrictions: null }],
+        ]),
+    ),
     forMember: vi.fn(async (userId: string) => {
       const id = memberOf[userId];
       if (!id) throw new Error('not a member');
@@ -138,8 +152,9 @@ function setup(
     operators as unknown as OperatorsService,
     locations as unknown as LocationsService,
     {} as DocumentsService,
+    aircraft as unknown as AircraftService,
   );
-  return { service, stored, events, audit, tx, locations };
+  return { service, stored, events, audit, tx, locations, findMany, operators };
 }
 
 const customer: AirAmbulanceActor = { id: REQUESTER, role: Role.CUSTOMER };
@@ -476,5 +491,48 @@ describe('AirAmbulanceService.findOne', () => {
     await expect(service.findOne('missing', customer)).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+  });
+});
+
+describe('AirAmbulanceService.listForOperator', () => {
+  const oa = { id: 'u-oa', role: Role.OPERATOR_ADMIN };
+
+  it('lists only the operator’s own missions from acceptance on', async () => {
+    const { service, findMany } = setup({ memberOf: { 'u-oa': OPERATOR_ID } });
+    await service.listForOperator(oa, 1, 20);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          selectedOperatorId: OPERATOR_ID,
+          status: { in: ['ACCEPTED', 'CONFIRMED', 'COMPLETED'] },
+        },
+      }),
+    );
+  });
+
+  it('refuses a suspended operator’s administrators', async () => {
+    const { service, findMany } = setup({
+      memberOf: { 'u-oa': OPERATOR_ID },
+      suspended: [OPERATOR_ID],
+    });
+    await expect(service.listForOperator(oa, 1, 20)).rejects.toMatchObject({
+      code: 'OPERATOR_NOT_APPROVED',
+    });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('AirAmbulanceService.eligibleOperators', () => {
+  it('lists approved operators with an air ambulance aircraft, by name', async () => {
+    const { service, operators } = setup();
+    expect(await service.eligibleOperators()).toEqual([
+      { id: 'op-a', name: 'Apex Medevac' },
+      { id: 'op-b', name: 'Zenith Air' },
+    ]);
+    expect(operators.approvedForMatching).toHaveBeenCalledWith([
+      'op-b',
+      'op-a',
+      'op-draft',
+    ]);
   });
 });

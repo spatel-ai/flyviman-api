@@ -6937,7 +6937,7 @@
     },
     "/api/v1/admin/air-ambulance/requests/{reference}/status": {
       "patch": {
-        "description": "ASSIGNED to SOURCING to FEASIBILITY_CHECK; ACCEPTED to CONFIRMED; CONFIRMED to COMPLETED; DECLINED or CANCELLED from any open status. CONFIRMED needs every feasibility item checked (422 `AIR_AMBULANCE_FEASIBILITY_INCOMPLETE`, the missing items in `details`) and the selected operator still approved (409 `OPERATOR_NOT_APPROVED`); it is never reached any other way (rule 7). 409 `AIR_AMBULANCE_INVALID_TRANSITION` for any other move. Writes a timeline entry and an audit record.",
+        "description": "ASSIGNED to SOURCING to FEASIBILITY_CHECK; ACCEPTED to CONFIRMED; CONFIRMED to COMPLETED; DECLINED or CANCELLED from any open status. CONFIRMED needs every feasibility item checked (422 `AIR_AMBULANCE_FEASIBILITY_INCOMPLETE`, the missing items in `details`) and the selected operator still approved (409 `OPERATOR_NOT_APPROVED`) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`); it is never reached any other way (rule 7). 409 `AIR_AMBULANCE_INVALID_TRANSITION` for any other move. Writes a timeline entry and an audit record.",
         "operationId": "AdminAirAmbulanceController_move",
         "parameters": [
           {
@@ -7031,7 +7031,7 @@
     },
     "/api/v1/admin/air-ambulance/requests/{reference}/quote": {
       "post": {
-        "description": "From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation. 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.",
+        "description": "From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation. 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.",
         "operationId": "AdminAirAmbulanceController_quote",
         "parameters": [
           {
@@ -7073,6 +7073,128 @@
         "summary": "Send the customer a quotation",
         "tags": [
           "admin: air ambulance"
+        ]
+      }
+    },
+    "/api/v1/admin/air-ambulance/operators": {
+      "get": {
+        "description": "Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name, at most 200. Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.",
+        "operationId": "AdminAirAmbulanceOperatorsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AirAmbulanceOperatorDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Operators that may be quoted for a mission",
+        "tags": [
+          "admin: air ambulance"
+        ]
+      }
+    },
+    "/api/v1/operator/air-ambulance/requests": {
+      "get": {
+        "description": "Requests where this operator is selected and the status is ACCEPTED, CONFIRMED or COMPLETED. Approved operator only (409 `OPERATOR_NOT_APPROVED`). Summary rows: no medical, contact or price data.",
+        "operationId": "OperatorAirAmbulanceController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorAirAmbulanceSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Missions the operator was selected for, newest first",
+        "tags": [
+          "operator: air ambulance"
+        ]
+      }
+    },
+    "/api/v1/operator/air-ambulance/requests/{reference}": {
+      "get": {
+        "description": "Every read of the medical details is audited (`air_ambulance_request.medical_read`, no medical data). 404 for a request this operator was not selected for, one not yet accepted, or when the operator is not approved. No customer contact details or quotation amount.",
+        "operationId": "OperatorAirAmbulanceController_get",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorAirAmbulanceRequestDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "One mission, with the places and medical details",
+        "tags": [
+          "operator: air ambulance"
         ]
       }
     },
@@ -16498,6 +16620,162 @@
           "amountMinor",
           "currency",
           "conditions"
+        ]
+      },
+      "AirAmbulanceOperatorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "example": "Skyline Medevac"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "OperatorAirAmbulanceSummaryDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-AA-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AirAmbulanceStatus"
+              }
+            ]
+          },
+          "originName": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "patientCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "originName",
+          "destinationName",
+          "preferredAt",
+          "patientCount",
+          "createdAt"
+        ]
+      },
+      "OperatorAirAmbulanceRequestDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-AA-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AirAmbulanceStatus"
+              }
+            ]
+          },
+          "originName": {
+            "type": "string",
+            "nullable": true
+          },
+          "destinationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "patientCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "pickupAddress": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decrypted."
+          },
+          "destinationFacility": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decrypted."
+          },
+          "accompanyingPersons": {
+            "type": "number"
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "medical": {
+            "nullable": true,
+            "description": "Every read is audited (`air_ambulance_request.medical_read`). Null only if the details are missing.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MedicalDetailsDto"
+              }
+            ]
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirAmbulanceTimelineEntryDto"
+            }
+          },
+          "emergencyNotice": {
+            "type": "string",
+            "example": "For an immediate medical emergency, call 112 or your local emergency services now. An air ambulance request is not an emergency response."
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "originName",
+          "destinationName",
+          "preferredAt",
+          "patientCount",
+          "createdAt",
+          "pickupAddress",
+          "destinationFacility",
+          "accompanyingPersons",
+          "confirmedAt",
+          "completedAt",
+          "medical",
+          "timeline",
+          "emergencyNotice"
         ]
       },
       "EnquiryTopic": {

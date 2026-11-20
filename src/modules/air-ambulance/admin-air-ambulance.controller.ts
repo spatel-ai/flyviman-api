@@ -29,6 +29,7 @@ import {
   AirAmbulanceService,
 } from './air-ambulance.service.js';
 import {
+  AirAmbulanceOperatorDto,
   AdminAirAmbulanceRequestDto,
   AdminAirAmbulanceSummaryDto,
   AssignAirAmbulanceDto,
@@ -120,7 +121,7 @@ export class AdminAirAmbulanceController {
   @ApiOperation({
     summary: 'Move the request through the workflow',
     description:
-      'ASSIGNED to SOURCING to FEASIBILITY_CHECK; ACCEPTED to CONFIRMED; CONFIRMED to COMPLETED; DECLINED or CANCELLED from any open status. CONFIRMED needs every feasibility item checked (422 `AIR_AMBULANCE_FEASIBILITY_INCOMPLETE`, the missing items in `details`) and the selected operator still approved (409 `OPERATOR_NOT_APPROVED`); it is never reached any other way (rule 7). 409 `AIR_AMBULANCE_INVALID_TRANSITION` for any other move. Writes a timeline entry and an audit record.',
+      'ASSIGNED to SOURCING to FEASIBILITY_CHECK; ACCEPTED to CONFIRMED; CONFIRMED to COMPLETED; DECLINED or CANCELLED from any open status. CONFIRMED needs every feasibility item checked (422 `AIR_AMBULANCE_FEASIBILITY_INCOMPLETE`, the missing items in `details`) and the selected operator still approved (409 `OPERATOR_NOT_APPROVED`) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`); it is never reached any other way (rule 7). 409 `AIR_AMBULANCE_INVALID_TRANSITION` for any other move. Writes a timeline entry and an audit record.',
   })
   @ApiOkResponse({ type: AdminAirAmbulanceSummaryDto })
   async move(
@@ -165,7 +166,7 @@ export class AdminAirAmbulanceController {
   @ApiOperation({
     summary: 'Send the customer a quotation',
     description:
-      'From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation. 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.',
+      'From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation. 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.',
   })
   @ApiOkResponse({ type: AdminAirAmbulanceSummaryDto })
   async quote(
@@ -176,5 +177,25 @@ export class AdminAirAmbulanceController {
     return this.summary(
       await this.workflow.quote(actorOf(user), reference, body),
     );
+  }
+}
+
+/** Who operations may quote (W4-6). Its own path, so `:reference` cannot take it. */
+@ApiTags('admin: air ambulance')
+@ApiCookieAuth()
+@Roles(Role.OPS, Role.SUPER_ADMIN)
+@Controller('admin/air-ambulance/operators')
+export class AdminAirAmbulanceOperatorsController {
+  constructor(private readonly service: AirAmbulanceService) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'Operators that may be quoted for a mission',
+    description:
+      'Approved operators with at least one approved air ambulance aircraft (category `AIR_AMBULANCE_FIXED` or `AIR_AMBULANCE_ROTARY`), by name, at most 200. Quoting any other operator answers 409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`.',
+  })
+  @ApiOkResponse({ type: [AirAmbulanceOperatorDto] })
+  list(): Promise<AirAmbulanceOperatorDto[]> {
+    return this.service.eligibleOperators();
   }
 }

@@ -18,6 +18,10 @@ import {
   type AirAmbulanceSummaryDto,
   EMERGENCY_NOTICE,
 } from './dto/air-ambulance.dto.js';
+import type {
+  OperatorAirAmbulanceRequestDto,
+  OperatorAirAmbulanceSummaryDto,
+} from './dto/operator-air-ambulance.dto.js';
 
 /** Response DTOs from service views. Medical data only through `findOne`. */
 
@@ -70,6 +74,54 @@ export async function adminSummaries(
     price: price(view),
     createdAt: view.createdAt.toISOString(),
   }));
+}
+
+export async function operatorSummaries(
+  service: AirAmbulanceService,
+  views: AirAmbulanceRequestView[],
+): Promise<OperatorAirAmbulanceSummaryDto[]> {
+  const names = await service.locationNames(
+    views.flatMap((v) => [v.originLocationId, v.destinationLocationId]),
+  );
+  return views.map((view) => ({
+    reference: view.reference,
+    status: view.status,
+    originName: names.get(view.originLocationId) ?? null,
+    destinationName: names.get(view.destinationLocationId) ?? null,
+    preferredAt: view.preferredAt.toISOString(),
+    patientCount: view.patientCount,
+    createdAt: view.createdAt.toISOString(),
+  }));
+}
+
+/**
+ * One mission for the selected operator's administrator: `findOne` decides
+ * (404 before acceptance, to other operators and to a suspended one) and
+ * audits the medical read. Contacts and the quotation stay out.
+ */
+export async function operatorDetail(
+  service: AirAmbulanceService,
+  reference: string,
+  actor: AirAmbulanceActor,
+): Promise<OperatorAirAmbulanceRequestDto> {
+  const { customer, view } = await build(service, reference, actor);
+  return {
+    reference: customer.reference,
+    status: customer.status,
+    originName: customer.originName,
+    destinationName: customer.destinationName,
+    preferredAt: customer.preferredAt,
+    patientCount: customer.patientCount,
+    createdAt: customer.createdAt,
+    pickupAddress: customer.pickupAddress,
+    destinationFacility: customer.destinationFacility,
+    accompanyingPersons: view.accompanyingPersons,
+    confirmedAt: customer.confirmedAt,
+    completedAt: customer.completedAt,
+    medical: customer.medical,
+    timeline: customer.timeline,
+    emergencyNotice: EMERGENCY_NOTICE,
+  };
 }
 
 /**

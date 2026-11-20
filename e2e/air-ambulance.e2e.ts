@@ -81,6 +81,24 @@ async function customerWithRequest(playwright: Playwright, baseURL?: string) {
   return { customer, customerId: id, reference };
 }
 
+/** Gives an operator an approved air ambulance aircraft (W4-6 eligibility). */
+async function addAmbulanceAircraft(operatorId: string) {
+  await withPrisma((prisma) =>
+    prisma.aircraft.create({
+      data: {
+        operatorId,
+        registration: `VT-${randomUUID().slice(0, 13).toUpperCase()}`,
+        manufacturer: 'Beechcraft',
+        model: 'King Air B200 (medical)',
+        category: 'AIR_AMBULANCE_FIXED',
+        wingType: 'FIXED_WING',
+        passengerCapacity: 4,
+        listingStatus: 'APPROVED',
+      },
+    }),
+  );
+}
+
 async function as(
   playwright: Playwright,
   baseURL: string | undefined,
@@ -588,6 +606,34 @@ test.describe('operations queue', () => {
     expect(
       (await staff.get(`air-ambulance/requests/${reference}`)).status(),
     ).toBe(403);
+    // The operator side is for operator administrators; the quote form's
+    // operator list for operations.
+    for (const [name, context] of [
+      ['finance', finance],
+      ['operator staff', staff],
+      ['customer', customer],
+    ] as const) {
+      expect(
+        (await context.get('operator/air-ambulance/requests')).status(),
+        name,
+      ).toBe(403);
+      expect(
+        (
+          await context.get(`operator/air-ambulance/requests/${reference}`)
+        ).status(),
+        name,
+      ).toBe(403);
+    }
+    for (const [name, context] of [
+      ['finance', finance],
+      ['operator admin', request],
+      ['customer', customer],
+    ] as const) {
+      expect(
+        (await context.get('admin/air-ambulance/operators')).status(),
+        name,
+      ).toBe(403);
+    }
     for (const context of [customer, staff, finance]) await context.dispose();
   });
 
@@ -663,6 +709,22 @@ test.describe('operations queue', () => {
       });
     expect((await quote(draftId)).status()).toBe(409);
     expect((await quote(randomUUID())).status()).toBe(404);
+    // An approved operator without an approved air ambulance aircraft may
+    // not be quoted (W4-6), and is not offered in the quote form.
+    const ineligible = await quote(operatorId);
+    expect(ineligible.status()).toBe(409);
+    expect((await ineligible.json()).error.code).toBe(
+      'AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE',
+    );
+    const offered = async () =>
+      (
+        (await (await ops.get('admin/air-ambulance/operators')).json())
+          .data as { id: string; name: string }[]
+      ).map((o) => o.id);
+    expect(await offered()).not.toContain(operatorId);
+    await addAmbulanceAircraft(operatorId);
+    expect(await offered()).toContain(operatorId);
+    expect(await offered()).not.toContain(draftId);
     const quoted = await quote(operatorId);
     expect(quoted.status()).toBe(200);
     expect((await quoted.json()).data).toMatchObject({
@@ -683,10 +745,27 @@ test.describe('operations queue', () => {
       operatorName: expect.any(String),
     });
 
-    // The selected operator's administrator reads nothing medical yet.
+    // The selected operator's administrator reads nothing medical yet, and
+    // does not see the mission before the customer accepts.
     expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
       404,
     );
+    const missions = async (context: APIRequestContext) =>
+      (
+        (
+          await (
+            await context.get('operator/air-ambulance/requests', {
+              params: { pageSize: 100 },
+            })
+          ).json()
+        ).data as { reference: string }[]
+      ).map((m) => m.reference);
+    expect(await missions(request)).not.toContain(reference);
+    expect(
+      (
+        await request.get(`operator/air-ambulance/requests/${reference}`)
+      ).status(),
+    ).toBe(404);
 
     // Operations cannot confirm before acceptance.
     expect((await move('CONFIRMED')).status()).toBe(409);
@@ -708,6 +787,46 @@ test.describe('operations queue', () => {
     expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
       200,
     );
+    expect(await missions(request)).toContain(reference);
+    const readsBefore = (await medicalReads(reference)).length;
+    const mission = await request.get(
+      `operator/air-ambulance/requests/${reference}`,
+    );
+    expect(mission.status()).toBe(200);
+    const missionData = (await mission.json()).data;
+    expect(missionData).toMatchObject({
+      reference,
+      status: 'ACCEPTED',
+      pickupAddress: 'City Hospital, Ward 4',
+      medical: {
+        patientCondition: CONDITION,
+        documents: [{ fileId, fileName: 'report.pdf' }],
+      },
+      emergencyNotice: expect.stringContaining('112'),
+    });
+    // No customer contacts, quotation or operations' internal steps.
+    expect(JSON.stringify(missionData)).not.toMatch(/Asha|\+91|asha@/);
+    for (const key of ['contactName', 'quote', 'events', 'assignedToId']) {
+      expect(missionData).not.toHaveProperty(key);
+    }
+    const reads = await medicalReads(reference);
+    expect(reads).toHaveLength(readsBefore + 1);
+    expect(reads.at(-1)?.actorRole).toBe('OPERATOR_ADMIN');
+
+    // Another approved operator sees nothing of it.
+    const other = await playwright.request.newContext({ baseURL });
+    await approvedOperator(other, playwright, baseURL);
+    expect(await missions(other)).not.toContain(reference);
+    expect(
+      (
+        await other.get(`operator/air-ambulance/requests/${reference}`)
+      ).status(),
+    ).toBe(404);
+    await other.dispose();
+    // An operator not approved has no mission list.
+    const draftList = await draft.get('operator/air-ambulance/requests');
+    expect(draftList.status()).toBe(409);
+    expect((await draftList.json()).error.code).toBe('OPERATOR_NOT_APPROVED');
 
     // Confirmation without the whole checklist is refused, and changes nothing.
     const refused = await move('CONFIRMED');
@@ -806,6 +925,14 @@ test.describe('operations queue', () => {
     expect((await request.get(`documents/${fileId}/download`)).status()).toBe(
       404,
     );
+    expect(
+      (await request.get('operator/air-ambulance/requests')).status(),
+    ).toBe(409);
+    expect(
+      (
+        await request.get(`operator/air-ambulance/requests/${reference}`)
+      ).status(),
+    ).toBe(404);
 
     for (const context of [draft, customer, ops]) await context.dispose();
   });
