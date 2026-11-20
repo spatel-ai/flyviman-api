@@ -9,6 +9,8 @@ import {
 } from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
+import type { DocumentsService } from '../documents/documents.service.js';
+import type { LocationsService } from '../locations/locations.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
 import {
   type AirAmbulanceActor,
@@ -55,6 +57,8 @@ function setup(
   options: {
     status?: AirAmbulanceStatus;
     memberOf?: Record<string, string>;
+    activeLocations?: string[];
+    suspended?: string[];
   } = {},
 ) {
   const stored: {
@@ -115,11 +119,16 @@ function setup(
   } as unknown as PrismaService;
   const audit = { record: vi.fn(async (): Promise<void> => undefined) };
   const memberOf = options.memberOf ?? {};
+  const suspended = options.suspended ?? [];
+  const active = options.activeLocations ?? ['loc-1', 'loc-2'];
+  const locations = {
+    isActive: vi.fn(async (id: string) => active.includes(id)),
+  };
   const operators = {
     forMember: vi.fn(async (userId: string) => {
       const id = memberOf[userId];
       if (!id) throw new Error('not a member');
-      return { id };
+      return { id, status: suspended.includes(id) ? 'SUSPENDED' : 'APPROVED' };
     }),
   };
   const service = new AirAmbulanceService(
@@ -127,8 +136,10 @@ function setup(
     audit as unknown as AuditService,
     cipher,
     operators as unknown as OperatorsService,
+    locations as unknown as LocationsService,
+    {} as DocumentsService,
   );
-  return { service, stored, events, audit, tx };
+  return { service, stored, events, audit, tx, locations };
 }
 
 const customer: AirAmbulanceActor = { id: REQUESTER, role: Role.CUSTOMER };
@@ -186,6 +197,28 @@ describe('AirAmbulanceService.create', () => {
       },
       tx,
     );
+  });
+});
+
+describe('AirAmbulanceService.create: locations', () => {
+  it('refuses the same place at both ends with 400 and stores nothing', async () => {
+    const { service, stored } = setup();
+    await expect(
+      service.create(
+        customer,
+        { ...input(), destinationLocationId: 'loc-1' },
+        CLAIM,
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(stored.request).toBeUndefined();
+  });
+
+  it('answers 404 for an unknown or inactive location, never a foreign-key error', async () => {
+    const { service, stored } = setup({ activeLocations: ['loc-1'] });
+    await expect(
+      service.create(customer, input(), CLAIM),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(stored.request).toBeUndefined();
   });
 });
 
@@ -385,6 +418,49 @@ describe('AirAmbulanceService.findOne', () => {
     const detail = await after.service.findOne('aa-1', oa);
     expect(detail.medical?.patientCondition).toBe(CONDITION);
     expect(after.audit.record).toHaveBeenCalledOnce();
+  });
+
+  it('closes the request to a suspended operator’s administrators', async () => {
+    const oa = { id: 'u-oa', role: Role.OPERATOR_ADMIN };
+    const { service } = await created({
+      status: 'ACCEPTED',
+      memberOf: { 'u-oa': OPERATOR_ID },
+      suspended: [OPERATOR_ID],
+    });
+    await expect(service.findOne('aa-1', oa)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('stores the collection and receiving places encrypted and returns them only with the medical details', async () => {
+    const { service, stored } = setup();
+    await service.create(
+      customer,
+      {
+        ...input(),
+        pickupAddress: 'City Cardiac Centre',
+        destinationFacility: 'Apollo Hospital',
+      },
+      CLAIM,
+    );
+    expect(isEncrypted(stored.request!.pickupAddress as string)).toBe(true);
+    expect(isEncrypted(stored.request!.destinationFacility as string)).toBe(
+      true,
+    );
+    const own = await service.findOne('aa-1', customer);
+    expect(own).toMatchObject({
+      pickupAddress: 'City Cardiac Centre',
+      destinationFacility: 'Apollo Hospital',
+    });
+    const unassigned = await service.findOne('aa-1', {
+      id: 'u-ops-2',
+      role: Role.OPS,
+    });
+    expect(unassigned).toMatchObject({
+      pickupAddress: null,
+      destinationFacility: null,
+      medical: null,
+    });
   });
 
   it('returns nothing medical when the read cannot be audited', async () => {

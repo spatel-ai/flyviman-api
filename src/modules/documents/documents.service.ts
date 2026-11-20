@@ -52,6 +52,8 @@ const PURPOSE_ROLES: Record<FilePurpose, Role[]> = {
   AIRCRAFT_PHOTO: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF],
   AIRCRAFT_FLOOR_PLAN: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF],
   AIRCRAFT_DOCUMENT: [Role.OPERATOR_ADMIN, Role.OPERATOR_STAFF],
+  // The requester attaches medical documents to their own request (W4-4).
+  AIR_AMBULANCE_DOCUMENT: [Role.CUSTOMER],
 };
 
 @Injectable()
