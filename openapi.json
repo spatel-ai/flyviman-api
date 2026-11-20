@@ -13886,7 +13886,8 @@
           },
           "totalMinor": {
             "type": "number",
-            "description": "The booking’s price, paise."
+            "nullable": true,
+            "description": "The booking’s price, paise. Null for a quote request, which has no price yet."
           },
           "currency": {
             "type": "string",
@@ -14032,7 +14033,14 @@
             ]
           },
           "price": {
-            "$ref": "#/components/schemas/BookingPriceDto"
+            "nullable": true,
+            "description": "Null for a quote request (a result priced on request) until the customer accepts the operator’s quote.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
           },
           "tripType": {
             "allOf": [

@@ -68,8 +68,13 @@ export class TripSummaryDto {
   @ApiProperty({ enum: BookingPaymentStatus, enumName: 'BookingPaymentStatus' })
   paymentStatus: BookingPaymentStatus;
 
-  @ApiProperty({ type: BookingPriceDto })
-  price: BookingPriceDto;
+  @ApiProperty({
+    type: BookingPriceDto,
+    nullable: true,
+    description:
+      'Null for a quote request (a result priced on request) until the customer accepts the operator’s quote.',
+  })
+  price: BookingPriceDto | null;
 
   @ApiProperty({ enum: ['ONE_WAY', 'ROUND_TRIP'], enumName: 'SearchTripType' })
   tripType: 'ONE_WAY' | 'ROUND_TRIP';
@@ -125,8 +130,13 @@ export class CancellationQuoteDto {
   })
   priceType: PriceType;
 
-  @ApiProperty({ description: 'The booking’s price, paise.' })
-  totalMinor: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The booking’s price, paise. Null for a quote request, which has no price yet.',
+  })
+  totalMinor: number | null;
 
   @ApiProperty({ example: 'INR' })
   currency: string;

@@ -334,6 +334,7 @@ test.describe('POST /bookings/:reference/cancel', () => {
         include: {
           events: { where: { toStatus: 'CANCELLED' } },
           changeRequests: true,
+          holds: true,
         },
       });
       const audits = await prisma.auditLog.findMany({
@@ -342,6 +343,11 @@ test.describe('POST /bookings/:reference/cancel', () => {
       return { booking, audits };
     });
     expect(stored.booking.cancellationReason).toBe('Plans changed');
+    // The aircraft's time is offered again at once.
+    expect(stored.booking.holds).toHaveLength(1);
+    expect(stored.booking.holds[0].expiresAt!.getTime()).toBeLessThanOrEqual(
+      Date.now(),
+    );
     expect(stored.booking.events).toHaveLength(1);
     expect(stored.booking.events[0].payload).toMatchObject({
       cancellation: {

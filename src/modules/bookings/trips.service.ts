@@ -17,10 +17,12 @@ import {
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AvailabilityService } from '../availability/availability.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { CANCELLABLE } from './booking-transitions.js';
+import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import { evaluateCancellation } from './cancellation.js';
 import {
@@ -79,6 +81,7 @@ export class TripsService {
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
     private readonly operators: OperatorsService,
+    private readonly availability: AvailabilityService,
   ) {}
 
   async list(
@@ -109,12 +112,14 @@ export class TripsService {
           status: row.status,
           paymentStatus: row.paymentStatus,
           // The list carries no validity; the detail does.
-          price: {
-            priceType: row.priceType,
-            amountMinor: minorToNumber(row.totalMinor),
-            currency: row.currency,
-            validUntil: null,
-          },
+          price: isQuoteRequest(row)
+            ? null
+            : {
+                priceType: row.priceType,
+                amountMinor: minorToNumber(row.totalMinor),
+                currency: row.currency,
+                validUntil: null,
+              },
           tripType: itinerary.tripType,
           originName: first.originName,
           destinationName: first.destinationName,
@@ -201,6 +206,8 @@ export class TripsService {
         { kind: 'CUSTOMER', user },
         { event: { cancellation: applied } },
       );
+      // The request has ended: the aircraft's time is offered again at once.
+      await this.availability.releaseBookingHolds(tx, booking.id);
       // The time the transition stamped, so the answer matches the record.
       const { cancelledAt } = await tx.booking.update({
         where: { id: booking.id },
@@ -500,7 +507,9 @@ function quoteFor(
     hoursBeforeDeparture: outcome.hoursBeforeDeparture,
     appliedCharge: outcome.appliedCharge,
     priceType: booking.priceType,
-    totalMinor: minorToNumber(booking.totalMinor),
+    totalMinor: isQuoteRequest(booking)
+      ? null
+      : minorToNumber(booking.totalMinor),
     currency: booking.currency,
     amountKnown: outcome.amountKnown,
     chargeMinor: minorToNumber(outcome.chargeMinor),
