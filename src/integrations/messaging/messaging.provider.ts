@@ -6,6 +6,12 @@ export interface OutboundMessage {
   to: string;
   subject?: string;
   body: string;
+  /**
+   * Email only: the HTML part, built from the plain-text body with every
+   * character escaped (`toEmailHtml`). A provider sends this, never HTML of
+   * its own built from `body` or from template text.
+   */
+  html?: string;
   /** The body holds someone's personal data: never print or log it. */
   personal?: boolean;
 }

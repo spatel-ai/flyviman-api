@@ -12,7 +12,13 @@ import {
 } from '../../integrations/messaging/messaging.provider.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { DEFAULT_TEMPLATES, PERSONAL_TEMPLATES, render } from './templates.js';
+import {
+  DEFAULT_TEMPLATES,
+  oneLine,
+  PERSONAL_TEMPLATES,
+  render,
+  toEmailHtml,
+} from './templates.js';
 
 type Variables = Record<string, string | number>;
 
@@ -337,13 +343,15 @@ export class NotificationsService {
     to: string,
   ) {
     const template = await this.template(templateKey, channel);
+    const body = render(template.body, variables);
     return this.messaging.send({
       channel,
       to,
       subject: template.subject
-        ? render(template.subject, variables)
+        ? oneLine(render(template.subject, variables))
         : undefined,
-      body: render(template.body, variables),
+      body,
+      html: channel === 'EMAIL' ? toEmailHtml(body) : undefined,
       personal: PERSONAL_TEMPLATES.has(templateKey),
     });
   }

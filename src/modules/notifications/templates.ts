@@ -271,3 +271,28 @@ export function placeholdersOf(text: string | null | undefined): Set<string> {
     [...(text ?? '').matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]),
   );
 }
+
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/**
+ * The HTML part of an email, from its rendered plain-text body. Templates
+ * are plain text, so the whole rendered text is escaped: neither a value a
+ * customer or operator supplied nor a staff-edited template can add markup
+ * or script. Line breaks become `<br>`.
+ */
+export function toEmailHtml(text: string): string {
+  return text
+    .replace(/[&<>"']/g, (c) => HTML_ESCAPES[c])
+    .replace(/\r?\n/g, '<br>\n');
+}
+
+/** A subject is one header line: line breaks in values become spaces. */
+export function oneLine(text: string): string {
+  return text.replace(/[\r\n]+/g, ' ');
+}
