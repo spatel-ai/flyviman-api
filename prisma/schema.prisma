@@ -50,14 +50,15 @@ model User {
   createdAt       DateTime          @default(now()) @db.Timestamptz
   updatedAt       DateTime          @updatedAt @db.Timestamptz
 
-  sessions          Session[]
-  consents          Consent[]
-  customerProfile   CustomerProfile?
-  operatorMember    OperatorMember?
-  notifications     Notification[]
-  storedFiles       StoredFile[]
-  bookings          Booking[]
-  emptyLegInterests EmptyLegInterest[]
+  sessions             Session[]
+  consents             Consent[]
+  customerProfile      CustomerProfile?
+  operatorMember       OperatorMember?
+  notifications        Notification[]
+  storedFiles          StoredFile[]
+  bookings             Booking[]
+  emptyLegInterests    EmptyLegInterest[]
+  airAmbulanceRequests AirAmbulanceRequest[]
 
   @@index([role, status])
 }
@@ -280,13 +281,14 @@ model Operator {
   createdAt          DateTime          @default(now()) @db.Timestamptz
   updatedAt          DateTime          @updatedAt @db.Timestamptz
 
-  members     OperatorMember[]
-  documents   OperatorDocument[]
-  aircraft    Aircraft[]
-  quotes      Quote[]
-  bookings    Booking[]
-  settlements Settlement[]
-  emptyLegs   EmptyLeg[]
+  members              OperatorMember[]
+  documents            OperatorDocument[]
+  aircraft             Aircraft[]
+  quotes               Quote[]
+  bookings             Booking[]
+  settlements          Settlement[]
+  emptyLegs            EmptyLeg[]
+  airAmbulanceRequests AirAmbulanceRequest[]
 
   @@index([status, submittedAt])
 }
@@ -365,7 +367,8 @@ model StoredFile {
   createdAt   DateTime    @default(now()) @db.Timestamptz
   updatedAt   DateTime    @updatedAt @db.Timestamptz
 
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  owner                User                  @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  airAmbulanceDocument AirAmbulanceDocument?
 
   @@index([ownerId])
 }
@@ -501,12 +504,14 @@ model Location {
   createdAt    DateTime     @default(now()) @db.Timestamptz
   updatedAt    DateTime     @updatedAt @db.Timestamptz
 
-  homeBasedAircraft     Aircraft[]         @relation("AircraftHomeBase")
-  currentlyHereAircraft Aircraft[]         @relation("AircraftCurrentLocation")
-  departureSlots        AvailabilitySlot[]
-  emptyLegOrigins       EmptyLeg[]         @relation("EmptyLegOrigin")
-  emptyLegDestinations  EmptyLeg[]         @relation("EmptyLegDestination")
-  emptyLegPositions     EmptyLeg[]         @relation("EmptyLegCurrentLocation")
+  homeBasedAircraft        Aircraft[]            @relation("AircraftHomeBase")
+  currentlyHereAircraft    Aircraft[]            @relation("AircraftCurrentLocation")
+  departureSlots           AvailabilitySlot[]
+  emptyLegOrigins          EmptyLeg[]            @relation("EmptyLegOrigin")
+  emptyLegDestinations     EmptyLeg[]            @relation("EmptyLegDestination")
+  emptyLegPositions        EmptyLeg[]            @relation("EmptyLegCurrentLocation")
+  airAmbulanceOrigins      AirAmbulanceRequest[] @relation("AirAmbulanceOrigin")
+  airAmbulanceDestinations AirAmbulanceRequest[] @relation("AirAmbulanceDestination")
 
   @@index([type, isActive])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Location_name_trgm_idx")
@@ -1394,4 +1399,144 @@ model Settlement {
 
   @@index([operatorId, status])
   @@index([status, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// M11. Air ambulance (W3-5). Medical details sit in their own table so they
+// can be restricted separately (docs/architecture/security-rbac.md).
+// ---------------------------------------------------------------------------
+
+/// docs/architecture/state-machines.md, "Air ambulance request".
+enum AirAmbulanceStatus {
+  SUBMITTED
+  ASSIGNED
+  SOURCING
+  FEASIBILITY_CHECK
+  QUOTED
+  ACCEPTED
+  CONFIRMED
+  COMPLETED
+  DECLINED
+  CANCELLED
+}
+
+enum PatientMobility {
+  /// Walks unaided.
+  AMBULATORY
+  /// Walks or sits with help (wheelchair, support).
+  ASSISTED
+  /// Cannot sit up for the flight.
+  NON_AMBULATORY
+}
+
+/// A request for an air ambulance transfer. A request until operations and
+/// the operator verify the mission: never confirmed automatically (rule 7).
+/// Contact details are personal data, never logged or audited.
+model AirAmbulanceRequest {
+  id                    String             @id @default(uuid()) @db.Uuid
+  /// `FLY-AA-7K2M9Q` (common/reference.ts).
+  reference             String             @unique
+  /// The customer who asked (ownership is checked against the session).
+  requesterId           String             @db.Uuid
+  contactName           String
+  /// E.164.
+  contactPhone          String
+  contactEmail          String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  /// The nearest airport or helipad at each end.
+  originLocationId      String             @db.Uuid
+  destinationLocationId String             @db.Uuid
+  /// Where the patient is collected, for example a hospital.
+  pickupAddress         String?
+  /// The receiving hospital or facility.
+  destinationFacility   String?
+  preferredAt           DateTime           @db.Timestamptz
+  patientCount          Int                @default(1)
+  /// People travelling with the patient (family, the requester's own escort).
+  accompanyingPersons   Int                @default(0)
+  status                AirAmbulanceStatus @default(SUBMITTED)
+  /// The operations owner. No foreign key, like Booking.assignedToId.
+  assignedToId          String?            @db.Uuid
+  /// Set when the customer accepts an operator's offer.
+  selectedOperatorId    String?            @db.Uuid
+  confirmedAt           DateTime?          @db.Timestamptz
+  completedAt           DateTime?          @db.Timestamptz
+  /// When it was DECLINED or CANCELLED.
+  closedAt              DateTime?          @db.Timestamptz
+  createdAt             DateTime           @default(now()) @db.Timestamptz
+  updatedAt             DateTime           @updatedAt @db.Timestamptz
+
+  requester           User                       @relation(fields: [requesterId], references: [id], onDelete: Restrict)
+  originLocation      Location                   @relation("AirAmbulanceOrigin", fields: [originLocationId], references: [id], onDelete: Restrict)
+  destinationLocation Location                   @relation("AirAmbulanceDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  selectedOperator    Operator?                  @relation(fields: [selectedOperatorId], references: [id], onDelete: Restrict)
+  medical             AirAmbulanceMedical?
+  events              AirAmbulanceRequestEvent[]
+  documents           AirAmbulanceDocument[]
+
+  @@index([requesterId, createdAt])
+  @@index([status, createdAt])
+  @@index([assignedToId])
+  @@index([selectedOperatorId, status])
+  @@index([originLocationId])
+  @@index([destinationLocationId])
+}
+
+/// The patient's medical details, one to one with the request. Free-text
+/// clinical fields hold FieldCipher ciphertext; the structured fields are
+/// plain but just as restricted. Never logged, listed or audited.
+model AirAmbulanceMedical {
+  id                   String          @id @default(uuid()) @db.Uuid
+  requestId            String          @unique @db.Uuid
+  /// Encrypted. Diagnosis and current condition.
+  patientCondition     String
+  mobility             PatientMobility
+  stretcherRequired    Boolean         @default(false)
+  oxygenRequired       Boolean         @default(false)
+  /// Encrypted. The medical crew needed aboard, for example an ICU doctor.
+  medicalStaffRequired String?
+  /// Encrypted. Equipment beyond a stretcher and oxygen.
+  equipmentRequired    String?
+  /// Encrypted.
+  specialisedCare      String?
+  /// Encrypted.
+  notes                String?
+  createdAt            DateTime        @default(now()) @db.Timestamptz
+  updatedAt            DateTime        @updatedAt @db.Timestamptz
+
+  request AirAmbulanceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+}
+
+/// The request's status timeline. Append-only: a trigger refuses every
+/// update, delete and truncate, so `actorId` is deliberately not a foreign
+/// key. A CONFIRMED entry needs an operations or super administrator actor
+/// (CHECK, rule 7).
+model AirAmbulanceRequestEvent {
+  id         String              @id @default(uuid()) @db.Uuid
+  requestId  String              @db.Uuid
+  fromStatus AirAmbulanceStatus?
+  toStatus   AirAmbulanceStatus
+  actorId    String?             @db.Uuid
+  actorRole  Role?
+  createdAt  DateTime            @default(now()) @db.Timestamptz
+
+  request AirAmbulanceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  @@index([requestId, createdAt])
+}
+
+/// A medical document attached to a request. The file itself is a
+/// StoredFile in private storage; each file belongs to one request at most.
+model AirAmbulanceDocument {
+  id        String   @id @default(uuid()) @db.Uuid
+  requestId String   @db.Uuid
+  fileId    String   @unique @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  request AirAmbulanceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  file    StoredFile          @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@index([requestId, createdAt])
 }

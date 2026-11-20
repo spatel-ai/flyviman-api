@@ -31,6 +31,7 @@ async function refused(sql: string, reason: RegExp) {
 
 /** Append-only tables known today; any later one is found by its trigger. */
 const APPEND_ONLY = [
+  'AirAmbulanceRequestEvent',
   'AuditLog',
   'BookingEvent',
   'Consent',
