@@ -1,0 +1,81 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiHeader,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { PageQueryDto } from '../../common/dto/page-query.dto.js';
+import { Paginated } from '../../common/dto/paginated.js';
+import {
+  Idempotent,
+  IdempotencyClaimParam,
+} from '../../common/idempotency/idempotency.interceptor.js';
+import type { IdempotencyClaim } from '../../common/idempotency/idempotency.store.js';
+import { Role } from '../../generated/prisma/enums.js';
+import type { AuthUser } from '../auth/auth-user.js';
+import { CurrentUser, Roles } from '../auth/auth.decorators.js';
+import {
+  CreateRefundDto,
+  RefundDueItemDto,
+  RefundResponseDto,
+} from './dto/refund.dto.js';
+import { PaymentReferencePipe } from './payment-reference.pipe.js';
+import { RefundsService } from './refunds.service.js';
+
+/** Refunds (M9, W4-1): finance and the super administrator only. */
+@ApiTags('admin-payments')
+@ApiCookieAuth()
+@Roles(Role.FINANCE_ADMIN, Role.SUPER_ADMIN)
+@Controller('admin')
+export class AdminRefundsController {
+  constructor(private readonly refunds: RefundsService) {}
+
+  @Post('payments/:reference/refunds')
+  @Idempotent()
+  @ApiOperation({
+    summary: 'Start a refund of a payment, in full or in part',
+    description:
+      'For a payment whose money arrived (`SUCCEEDED`, `REFUND_PENDING` or `PARTIALLY_REFUNDED`; otherwise 409 `PAYMENT_NOT_REFUNDABLE`), up to what is still refundable: its amount less refunds completed or under way (409 `REFUND_EXCEEDS_REMAINDER`, the remainder in `details`). The refund is recorded `REQUESTED` and the payment and booking `paymentStatus` become `REFUND_PENDING` before the gateway is asked; the answer is the refund as recorded: `PENDING` while the gateway returns the money, `FAILED` if it refused (the amount is refundable again), or still `REQUESTED` if the gateway could not be reached (its notice settles it later; start no second refund for it). The gateway’s notice completes it: the payment becomes `PARTIALLY_REFUNDED` or `REFUNDED`. Audited with the reason. Never changes the booking’s status. A repeat with the same `Idempotency-Key` and body returns the first answer. Another payment’s or an unknown reference is 404.',
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'A UUID, new for each refund and reused on retry.',
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiCreatedResponse({ type: RefundResponseDto })
+  create(
+    @CurrentUser() user: AuthUser,
+    @Param('reference', PaymentReferencePipe) reference: string,
+    @Body() body: CreateRefundDto,
+    @IdempotencyClaimParam() claim: IdempotencyClaim,
+    @Headers('idempotency-key') key: string,
+  ): Promise<RefundResponseDto> {
+    return this.refunds.start(user, reference, body, claim, key);
+  }
+
+  @Get('refunds/due')
+  @ApiOperation({
+    summary: 'Payments to refund (the finance queue)',
+    description:
+      'Oldest first. `CANCELLATION`: a cancelled booking’s refund due (paid less the charge, recorded at cancellation) less refunds made since, spread over its payments; `BOOKING_CLOSED`: a payment that succeeded after the booking expired or was cancelled; `ALREADY_PAID`: a second payment for a paid booking. Each row is one payment with `dueMinor` to refund; a row leaves the queue once refunds completed or under way cover it. Nothing is refunded automatically. Payments flagged `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` are not listed: their extra money is not on a payment this API can refund.',
+  })
+  @ApiOkResponse({ type: [RefundDueItemDto] })
+  async due(
+    @Query() query: PageQueryDto,
+  ): Promise<Paginated<RefundDueItemDto>> {
+    const { items, total } = await this.refunds.due(query.page, query.pageSize);
+    return new Paginated(items, query.page, query.pageSize, total);
+  }
+}

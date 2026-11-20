@@ -11,6 +11,7 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
   MinLength,
   validateSync,
@@ -370,6 +371,30 @@ export class EnvironmentVariables {
    */
   @IsIn(['manual', 'razorpay_route'])
   SETTLEMENT_MODE: string = 'manual';
+
+  /**
+   * Who issues payment receipts (W4-1): the name, and optionally the postal
+   * address, email and phone printed on them. A receipt is not a GST tax
+   * invoice (open decision 13), so no tax registration is asked for here.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  RECEIPT_ISSUER_NAME: string = 'Flyviman';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  RECEIPT_ISSUER_ADDRESS?: string;
+
+  @IsOptional()
+  @IsEmail()
+  RECEIPT_ISSUER_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  RECEIPT_ISSUER_PHONE?: string;
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);

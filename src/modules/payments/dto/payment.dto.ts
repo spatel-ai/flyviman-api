@@ -104,7 +104,8 @@ export class PaymentResponseDto {
   @ApiProperty({
     enum: PaymentPurpose,
     enumName: 'PaymentPurpose',
-    description: '`FULL` (models A and B) or `DEPOSIT` (model C).',
+    description:
+      '`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).',
   })
   purpose: PaymentPurpose;
 
