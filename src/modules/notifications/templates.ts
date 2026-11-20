@@ -237,6 +237,84 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     body: '{{route}} ({{reference}}) was not approved. Reason: {{reason}}',
   },
   {
+    key: 'booking.quote_sent',
+    channel: 'EMAIL',
+    subject: 'The operator has quoted your request {{reference}}',
+    body: 'The operator has sent a quote for your booking request {{reference}}. It is valid until {{validUntil}}. Open it on Flyviman to see the price and its conditions before you accept or decline.',
+  },
+  {
+    key: 'booking.quote_sent',
+    channel: 'IN_APP',
+    subject: 'New quote',
+    body: 'The operator quoted {{reference}}. Review it before {{validUntil}}.',
+  },
+  {
+    key: 'booking.clarification_requested',
+    channel: 'EMAIL',
+    subject: 'A question about your request {{reference}}',
+    body: 'The operator has a question about your booking request {{reference}}. Open it on Flyviman to answer, so the operator can respond.',
+  },
+  {
+    key: 'booking.clarification_requested',
+    channel: 'IN_APP',
+    subject: 'Question from the operator',
+    body: 'The operator asked a question about {{reference}}.',
+  },
+  {
+    key: 'booking.price_confirmed',
+    channel: 'EMAIL',
+    subject: 'Your price is confirmed for {{reference}}',
+    body: 'The price for your booking {{reference}} is confirmed. Open it on Flyviman for the next step. Your booking is not confirmed until Flyviman tells you so.',
+  },
+  {
+    key: 'booking.price_confirmed',
+    channel: 'IN_APP',
+    subject: 'Price confirmed',
+    body: 'The price for {{reference}} is confirmed.',
+  },
+  {
+    key: 'booking.operator_unavailable',
+    channel: 'EMAIL',
+    subject: 'Your request {{reference}} could not be accepted',
+    body: 'The operator cannot take your booking request {{reference}}. Nothing has been charged. Search again on Flyviman to find another aircraft.',
+  },
+  {
+    key: 'booking.operator_unavailable',
+    channel: 'IN_APP',
+    subject: 'Request not accepted',
+    body: 'The operator cannot take {{reference}}. Nothing has been charged.',
+  },
+  {
+    key: 'booking.expired',
+    channel: 'EMAIL',
+    subject: 'Your request {{reference}} has expired',
+    body: 'Your booking request {{reference}} has expired without an answer in time. Nothing has been charged. Search again on Flyviman to request another trip.',
+  },
+  {
+    key: 'booking.expired',
+    channel: 'IN_APP',
+    subject: 'Request expired',
+    body: '{{reference}} has expired. Nothing has been charged.',
+  },
+  {
+    key: 'booking.quote_accepted',
+    channel: 'IN_APP',
+    subject: 'Quote accepted',
+    body: 'The customer accepted your quote for {{reference}}.',
+  },
+  {
+    key: 'booking.quote_declined',
+    channel: 'IN_APP',
+    subject: 'Quote declined',
+    body: 'The customer declined your quote for {{reference}}.',
+  },
+  {
+    key: 'booking.clarification_answered',
+    channel: 'IN_APP',
+    subject: 'Customer answered',
+    body: 'The customer answered your question about {{reference}}.',
+  },
+  {
     // To the operations inbox, not to the customer. The subject carries no
     // personal data; the body does, because staff need it to reply.
     key: 'enquiry.received',

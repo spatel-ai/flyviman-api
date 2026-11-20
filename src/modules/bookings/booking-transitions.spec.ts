@@ -33,14 +33,25 @@ const OPEN: TransitionContext = {
 
 /**
  * The table in state-machines.md (Booking), written out by hand: from, to,
- * who. Cancellation is "any status before COMPLETED" by customer, operator
- * or operations.
+ * who, and the quote condition the move needs, if any. Cancellation is "any
+ * status before COMPLETED" by customer, operator or operations.
  */
-const TABLE: [BookingStatus, BookingStatus, BookingActor[]][] = [
+type Row = [
+  BookingStatus,
+  BookingStatus,
+  BookingActor[],
+  Partial<TransitionContext>?,
+];
+const LIVE: Partial<TransitionContext> = { quote: 'LIVE' };
+const TABLE: Row[] = [
   [S.REQUESTED, S.AWAITING_PAYMENT, ['SYSTEM']],
   [S.OPERATOR_PENDING, S.CLARIFICATION_REQUESTED, ['OPERATOR']],
   [S.CLARIFICATION_REQUESTED, S.OPERATOR_PENDING, ['CUSTOMER', 'OPERATIONS']],
   [S.OPERATOR_PENDING, S.PRICE_CONFIRMED, ['OPERATOR']],
+  [S.OPERATOR_PENDING, S.PRICE_CONFIRMED, ['CUSTOMER'], LIVE],
+  [S.OPERATOR_PENDING, S.QUOTE_DECLINED, ['CUSTOMER'], LIVE],
+  [S.OPERATOR_PENDING, S.EXPIRED, ['SYSTEM'], { quote: 'LAPSED' }],
+  [S.CLARIFICATION_REQUESTED, S.EXPIRED, ['SYSTEM']],
   [S.OPERATOR_PENDING, S.OPERATOR_UNAVAILABLE, ['OPERATOR', 'SYSTEM']],
   [S.PRICE_CONFIRMED, S.AWAITING_PAYMENT, ['SYSTEM']],
   [S.PRICE_CONFIRMED, S.QUOTE_DECLINED, ['CUSTOMER']],
@@ -48,14 +59,11 @@ const TABLE: [BookingStatus, BookingStatus, BookingActor[]][] = [
   [S.AWAITING_PAYMENT, S.EXPIRED, ['SYSTEM']],
   [S.CONFIRMED, S.SCHEDULED, ['OPERATOR', 'OPERATIONS']],
   [S.SCHEDULED, S.COMPLETED, ['OPERATOR', 'OPERATIONS']],
-  ...CANCELLABLE.map(
-    (from) =>
-      [from, S.CANCELLED, ['CUSTOMER', 'OPERATOR', 'OPERATIONS']] as [
-        BookingStatus,
-        BookingStatus,
-        BookingActor[],
-      ],
-  ),
+  ...CANCELLABLE.map((from): Row => [
+    from,
+    S.CANCELLED,
+    ['CUSTOMER', 'OPERATOR', 'OPERATIONS'],
+  ]),
 ];
 
 describe('checkTransition: the full table', () => {
@@ -63,7 +71,9 @@ describe('checkTransition: the full table', () => {
   for (const from of STATUSES) {
     for (const to of STATUSES) {
       for (const actor of ACTORS) {
-        const row = TABLE.find(([f, t]) => f === from && t === to);
+        const rows = TABLE.filter(([f, t]) => f === from && t === to);
+        const row = rows.find(([, , by]) => by.includes(actor)) ?? rows[0];
+        const context = { ...OPEN, ...row?.[3] };
         // REQUESTED -> OPERATOR_PENDING is allowed only when the booking is
         // not instant with a confirmed price; OPEN is, so it is tested below.
         const expected =
@@ -71,7 +81,9 @@ describe('checkTransition: the full table', () => {
             ? false
             : Boolean(row?.[2].includes(actor));
         it(`${from} -> ${to} by ${actor}: ${expected ? 'allowed' : 'refused'}`, () => {
-          expect(checkTransition(from, to, actor, OPEN).allowed).toBe(expected);
+          expect(checkTransition(from, to, actor, context).allowed).toBe(
+            expected,
+          );
         });
       }
     }
@@ -170,6 +182,54 @@ describe('checkTransition: conditions', () => {
         paymentConditionMet: false,
       }),
     ).toEqual({ allowed: false, reason: 'the payment condition is not met' });
+  });
+
+  it('lets the customer accept or decline only a live quote', () => {
+    for (const to of [S.PRICE_CONFIRMED, S.QUOTE_DECLINED]) {
+      for (const quote of ['NONE', 'LAPSED', undefined] as const) {
+        expect(
+          checkTransition(S.OPERATOR_PENDING, to, 'CUSTOMER', {
+            ...OPEN,
+            quote,
+          }).allowed,
+        ).toBe(false);
+      }
+      expect(
+        checkTransition(S.OPERATOR_PENDING, to, 'CUSTOMER', {
+          ...OPEN,
+          quote: 'LIVE',
+        }).allowed,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses the operator’s plain accept while a quote waits, or with no price', () => {
+    const accept = (context: Partial<TransitionContext>) =>
+      checkTransition(S.OPERATOR_PENDING, S.PRICE_CONFIRMED, 'OPERATOR', {
+        ...OPEN,
+        ...context,
+      });
+    expect(accept({ quote: 'LIVE' })).toEqual({
+      allowed: false,
+      reason: 'a quote is waiting for the customer',
+    });
+    expect(accept({ priceOnRequest: true })).toEqual({
+      allowed: false,
+      reason: 'the request has no price to accept: send a quote',
+    });
+    // A lapsed quote no longer stands in the way of the proposed price.
+    expect(accept({ quote: 'LAPSED' }).allowed).toBe(true);
+  });
+
+  it('expires a pending request only when its quote lapsed', () => {
+    const expire = (quote: TransitionContext['quote']) =>
+      checkTransition(S.OPERATOR_PENDING, S.EXPIRED, 'SYSTEM', {
+        ...OPEN,
+        quote,
+      }).allowed;
+    expect(expire('LAPSED')).toBe(true);
+    expect(expire('LIVE')).toBe(false);
+    expect(expire('NONE')).toBe(false);
   });
 
   it('completes only after departure', () => {

@@ -213,6 +213,18 @@ export class EnvironmentVariables {
   BOOKING_MAX_OPEN_PER_CUSTOMER: number = 5;
 
   /**
+   * How long the operator has to answer a booking request, in hours: the
+   * soft hold on the aircraft lasts this long (never past the trip's end),
+   * and so does an operator's quote unless it sets its own `validUntil`
+   * (product owner, 2026-11-20).
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  BOOKING_HOLD_HOURS: number = 48;
+
+  /**
    * Payment gateway notifications (`POST /webhooks/payments/:provider`) per
    * minute, per address. Generous: the gateway retries and bursts.
    */

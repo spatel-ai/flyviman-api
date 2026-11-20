@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PassengerRecord } from '../customers/customers.service.js';
 import type { Revalidation } from '../search/search.service.js';
 import {
-  BOOKING_HOLD_HOURS,
   holdExpiry,
   itineraryFrom,
   lastFour,
@@ -70,10 +69,25 @@ describe('revalidationOutcome (rule 3)', () => {
     });
   });
 
-  it('refuses a result priced on request', () => {
-    expect(
-      revalidationOutcome({ operatorId: 'op', priced: false }, expected),
-    ).toEqual({ kind: 'priceOnRequest' });
+  it('takes a result priced on request as a quote request, with no amount', () => {
+    const onRequest = {
+      operatorId: 'op',
+      priced: false as const,
+      hold: PRICED.hold,
+    };
+    expect(revalidationOutcome(onRequest, { currency: 'INR' })).toEqual({
+      kind: 'quoteRequest',
+    });
+    // An amount agreed for a result now on request is a change to show.
+    expect(revalidationOutcome(onRequest, expected)).toEqual({
+      kind: 'nowOnRequest',
+    });
+  });
+
+  it('refuses a request without an amount for a result now priced', () => {
+    expect(revalidationOutcome(PRICED, { currency: 'INR' }).kind).toBe(
+      'priceChanged',
+    );
   });
 
   it('refuses a changed price and carries the new estimate', () => {
@@ -187,14 +201,18 @@ describe('passengerSnapshot', () => {
 describe('holdExpiry', () => {
   const now = new Date('2026-11-19T10:00:00.000Z');
 
-  it(`lapses ${BOOKING_HOLD_HOURS} hours after the request`, () => {
-    expect(holdExpiry(now, new Date('2026-12-01T00:00:00.000Z'))).toEqual(
+  it('lapses the configured number of hours after the request', () => {
+    const endsAt = new Date('2026-12-01T00:00:00.000Z');
+    expect(holdExpiry(now, endsAt, 48)).toEqual(
+      new Date('2026-11-21T10:00:00.000Z'),
+    );
+    expect(holdExpiry(now, endsAt, 24)).toEqual(
       new Date('2026-11-20T10:00:00.000Z'),
     );
   });
 
   it('never outlasts the trip it holds', () => {
     const endsAt = new Date('2026-11-19T15:00:00.000Z');
-    expect(holdExpiry(now, endsAt)).toEqual(endsAt);
+    expect(holdExpiry(now, endsAt, 48)).toEqual(endsAt);
   });
 });

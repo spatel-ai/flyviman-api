@@ -1,4 +1,4 @@
-import { ValidateBy } from 'class-validator';
+import { ValidateBy, type ValidationOptions } from 'class-validator';
 
 /**
  * Control characters and text-direction overrides, which can make text read
@@ -27,14 +27,17 @@ export function hasHiddenCharacter(
 }
 
 /** Plain text: line breaks allowed, other hidden characters refused. */
-export const IsPlainText = () =>
-  ValidateBy({
-    name: 'isPlainText',
-    validator: {
-      validate: (value: unknown) =>
-        typeof value !== 'string' ||
-        !hasHiddenCharacter(value, { lineBreaks: true }),
-      defaultMessage: () =>
-        '$property must not contain control or text-direction characters',
+export const IsPlainText = (options?: ValidationOptions) =>
+  ValidateBy(
+    {
+      name: 'isPlainText',
+      validator: {
+        validate: (value: unknown) =>
+          typeof value !== 'string' ||
+          !hasHiddenCharacter(value, { lineBreaks: true }),
+        defaultMessage: () =>
+          '$property must not contain control or text-direction characters',
+      },
     },
-  });
+    options,
+  );

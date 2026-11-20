@@ -1,3 +1,4 @@
+import { PriceType } from '../../generated/prisma/enums.js';
 import type { PassengerRecord } from '../customers/customers.service.js';
 import type { Revalidation } from '../search/search.service.js';
 import {
@@ -12,18 +13,35 @@ import {
  * were shown and their passengers. Pure, so each is unit tested.
  */
 
-/** How long a new booking holds the aircraft while the operator answers. */
-export const BOOKING_HOLD_HOURS = 24;
-
-/** The hold's lapse: a day from now, or when the trip ends if sooner. */
-export function holdExpiry(now: Date, endsAt: Date): Date {
-  const lapse = now.getTime() + BOOKING_HOLD_HOURS * 3_600_000;
+/**
+ * When a hold lapses: `hours` from now (`BOOKING_HOLD_HOURS`, 48 by
+ * default), or when the trip ends if sooner.
+ */
+export function holdExpiry(now: Date, endsAt: Date, hours: number): Date {
+  const lapse = now.getTime() + hours * 3_600_000;
   return new Date(Math.min(lapse, endsAt.getTime()));
+}
+
+/**
+ * A request made from a result priced on request: it has no price (and no
+ * calculation) until the customer accepts the operator's quote. Its stored
+ * amount of 0 is never shown: every reader returns `price: null`.
+ */
+export function isQuoteRequest(booking: {
+  priceType: PriceType;
+  calculationId: string | null;
+}): boolean {
+  return (
+    booking.priceType === PriceType.ESTIMATE && booking.calculationId === null
+  );
 }
 
 export type RevalidationOutcome =
   | { kind: 'unavailable' }
-  | { kind: 'priceOnRequest' }
+  /** Priced on request, and the customer asked for a quote. */
+  | { kind: 'quoteRequest' }
+  /** Priced on request now, but the customer agreed to an amount. */
+  | { kind: 'nowOnRequest' }
   | {
       kind: 'priceChanged';
       totalMinor: number;
@@ -34,15 +52,22 @@ export type RevalidationOutcome =
 
 /**
  * Whether a booking may be made from a result checked again (rule 3): the
- * aircraft can still fly the trip, it is priced, and the price is the one
- * the customer agreed to.
+ * aircraft can still fly the trip, and the price is the one the customer
+ * agreed to. A result priced on request is requested without an amount
+ * (`totalMinor` left out): the operator quotes it. An amount sent for a
+ * result now on request, or none for a result now priced, is a change the
+ * customer must see first.
  */
 export function revalidationOutcome(
   current: Revalidation['current'],
-  expected: { totalMinor: number; currency: string },
+  expected: { totalMinor?: number; currency: string },
 ): RevalidationOutcome {
   if (!current) return { kind: 'unavailable' };
-  if (!current.priced) return { kind: 'priceOnRequest' };
+  if (!current.priced) {
+    return expected.totalMinor === undefined
+      ? { kind: 'quoteRequest' }
+      : { kind: 'nowOnRequest' };
+  }
   if (
     current.totalMinor !== expected.totalMinor ||
     current.currency !== expected.currency

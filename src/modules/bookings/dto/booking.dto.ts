@@ -41,14 +41,15 @@ export class CreateBookingDto {
   @IsUUID()
   resultId: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'Paise: the estimate the customer saw and agrees to. The price is worked out again; if it differs, 409 `BOOKING_PRICE_CHANGED` carries the new estimate, and the customer can agree to it by sending it here with a new `Idempotency-Key`.',
+      'Paise: the estimate the customer saw and agrees to. The price is worked out again; if it differs, 409 `BOOKING_PRICE_CHANGED` carries the new estimate, and the customer can agree to it by sending it here with a new `Idempotency-Key`. Left out for a result priced on request (`price: null`): the request then asks the operator for a quote.',
   })
+  @OptionalNotNull()
   @IsInt()
   @Min(0)
   @Max(MAX_TOTAL_MINOR)
-  expectedTotalMinor: number;
+  expectedTotalMinor?: number;
 
   @ApiProperty({ enum: ['INR'], example: 'INR' })
   @IsIn(['INR'])
@@ -107,8 +108,13 @@ export class BookingCreatedDto {
   @ApiProperty({ enum: BookingPaymentStatus, enumName: 'BookingPaymentStatus' })
   paymentStatus: BookingPaymentStatus;
 
-  @ApiProperty({ type: BookingPriceDto })
-  price: BookingPriceDto;
+  @ApiProperty({
+    type: BookingPriceDto,
+    nullable: true,
+    description:
+      'Null for a quote request (a result priced on request) until the customer accepts the operator’s quote.',
+  })
+  price: BookingPriceDto | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
@@ -290,8 +296,13 @@ export class BookingResponseDto {
   })
   paymentModel: PaymentModel;
 
-  @ApiProperty({ type: BookingPriceDto })
-  price: BookingPriceDto;
+  @ApiProperty({
+    type: BookingPriceDto,
+    nullable: true,
+    description:
+      'Null for a quote request (a result priced on request) until the customer accepts the operator’s quote.',
+  })
+  price: BookingPriceDto | null;
 
   @ApiProperty({ type: ItineraryDto })
   itinerary: ItineraryDto;
