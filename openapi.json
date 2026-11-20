@@ -4640,7 +4640,7 @@
     },
     "/api/v1/admin/category-config": {
       "get": {
-        "description": "Platform booking mode and payment model per category and region, by region then category. Read only until M10.",
+        "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.",
         "operationId": "AdminCategoryConfigController_list",
         "parameters": [],
         "responses": {
@@ -5371,9 +5371,113 @@
         ]
       }
     },
+    "/api/v1/bookings/{reference}/payments": {
+      "post": {
+        "description": "Only for a booking `AWAITING_PAYMENT` with a `CONFIRMED` price and nothing paid: model A and B take the full total (B once the operator has accepted), model C the deposit (the category’s percent, rounded up to the next paisa). 409 `PAYMENT_NOT_DUE` otherwise (`details` says why), 409 `PAYMENT_ALREADY_PAID`, 409 `PAYMENT_AMOUNT_MISMATCH` when `expectedAmountMinor` is not the amount due (the amount due, currency and purpose are in `details`), 502 `PAYMENT_PROVIDER_ERROR`. While a payment for the same amount is `INITIATED` or `PENDING` it is returned again instead of a second order. Open the gateway’s checkout with `checkout`. Never changes the booking’s status. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "operationId": "PaymentsController_create",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "required": true,
+            "in": "header",
+            "description": "A UUID, new for each payment attempt and reused on retry.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Create a gateway order for what the booking owes now",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/{reference}/verify": {
+      "post": {
+        "description": "The signature is checked through the gateway (400 `PAYMENT_SIGNATURE_INVALID`, also for another order’s result). Not final: a valid result makes the payment `PENDING` at most; only the gateway’s verified notice makes it `SUCCEEDED` or `FAILED`, so poll the booking’s `paymentStatus`. Repeating it changes nothing.",
+        "operationId": "PaymentsController_verify",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Report the checkout result",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
     "/api/v1/webhooks/payments/{provider}": {
       "post": {
-        "description": "For the payment gateway only. The signature over the exact body is verified before anything else; `:provider` is the configured gateway (`mock` in this build). Records nothing yet. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).",
+        "description": "For the payment gateway only. The signature over the exact body is verified before anything else, and a refused call is stored nowhere; `:provider` is the configured gateway (`mock` in this build). A verified event is stored once (unique per provider event ID) and applied in the same transaction before the 200: a repeated delivery is acknowledged and changes nothing. Outcomes only move a payment forward (a failure after a success is ignored); a success never changes the booking’s status, only its `paymentStatus`; a success for a closed or already-paid booking is recorded and flagged for operations. An event for an unknown order is stored and acknowledged. Limited per address (120 a minute by default, `RATE_LIMIT_WEBHOOK_PER_MINUTE`; 429 `RATE_LIMITED`).",
         "operationId": "PaymentWebhooksController_receive",
         "parameters": [
           {
@@ -11278,6 +11382,13 @@
               }
             ]
           },
+          "depositPercent": {
+            "type": "number",
+            "example": 25,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "The deposit taken under payment model C, in whole percent of the confirmed total, rounded up to the next paisa."
+          },
           "updatedAt": {
             "type": "string",
             "format": "date-time"
@@ -11289,6 +11400,7 @@
           "isEnabled",
           "bookingMode",
           "paymentModel",
+          "depositPercent",
           "updatedAt"
         ]
       },
@@ -12721,6 +12833,173 @@
           "passengers",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "CreatePaymentDto": {
+        "type": "object",
+        "properties": {
+          "expectedAmountMinor": {
+            "type": "number",
+            "description": "Paise: the amount due that the customer was shown and agrees to pay. If it is not what is due now, 409 `PAYMENT_AMOUNT_MISMATCH` carries the amount due."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          }
+        },
+        "required": [
+          "expectedAmountMinor",
+          "currency"
+        ]
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "INITIATED",
+          "PENDING",
+          "SUCCEEDED",
+          "FAILED",
+          "REFUND_PENDING",
+          "PARTIALLY_REFUNDED",
+          "REFUNDED"
+        ],
+        "description": "Only a verified gateway notice makes it `SUCCEEDED` or `FAILED`; the checkout result makes it `PENDING` at most."
+      },
+      "PaymentPurpose": {
+        "type": "string",
+        "enum": [
+          "FULL",
+          "DEPOSIT",
+          "BALANCE"
+        ],
+        "description": "`FULL` (models A and B) or `DEPOSIT` (model C)."
+      },
+      "PaymentPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "description": "Only a confirmed price is ever charged (rule 1).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency"
+        ]
+      },
+      "PaymentCheckoutDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "example": "mock",
+            "description": "The gateway the checkout is opened with."
+          },
+          "keyId": {
+            "type": "string",
+            "description": "The public key ID. Never a secret."
+          },
+          "orderId": {
+            "type": "string",
+            "example": "order_mock_000001"
+          }
+        },
+        "required": [
+          "provider",
+          "keyId",
+          "orderId"
+        ]
+      },
+      "PaymentResponseDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-PY-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "description": "Only a verified gateway notice makes it `SUCCEEDED` or `FAILED`; the checkout result makes it `PENDING` at most.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "purpose": {
+            "description": "`FULL` (models A and B) or `DEPOSIT` (model C).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentPurpose"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "#/components/schemas/PaymentPriceDto"
+          },
+          "checkout": {
+            "$ref": "#/components/schemas/PaymentCheckoutDto"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "purpose",
+          "price",
+          "checkout",
+          "paidAt",
+          "createdAt"
+        ]
+      },
+      "VerifyPaymentDto": {
+        "type": "object",
+        "properties": {
+          "providerOrderId": {
+            "type": "string",
+            "example": "order_mock_000001"
+          },
+          "providerPaymentId": {
+            "type": "string",
+            "example": "pay_mock_000002"
+          },
+          "signature": {
+            "type": "string",
+            "description": "The checkout signature (hex HMAC-SHA256)."
+          }
+        },
+        "required": [
+          "providerOrderId",
+          "providerPaymentId",
+          "signature"
         ]
       },
       "WebhookAckResponseDto": {

@@ -238,7 +238,8 @@ export class PaymentsService {
         where: { id: payment.id },
         data: {
           status: next,
-          providerPaymentId: payment.providerPaymentId ?? input.providerPaymentId,
+          providerPaymentId:
+            payment.providerPaymentId ?? input.providerPaymentId,
         },
         select: PAYMENT_FIELDS,
       });
@@ -248,7 +249,11 @@ export class PaymentsService {
           entityType: 'Payment',
           entityId: payment.id,
           before: { reference: payment.reference, status: payment.status },
-          after: { reference: payment.reference, status: next, source: 'checkout' },
+          after: {
+            reference: payment.reference,
+            status: next,
+            source: 'checkout',
+          },
         },
         tx,
       );

@@ -2,7 +2,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import {
   DEV_PAYMENT_KEY_SECRET,
   DEV_PAYMENT_WEBHOOK_SECRET,
-} from '../../config/env.validation.js';
+} from '../../config/payment-defaults.js';
 import {
   CheckoutResult,
   CreateOrderInput,

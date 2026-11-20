@@ -89,7 +89,9 @@ describe('MockPaymentGatewayProvider', () => {
         reason: 'signature',
       });
       expect(
-        new MockPaymentGatewayProvider().verifyCheckoutSignature(paid.checkout!),
+        new MockPaymentGatewayProvider().verifyCheckoutSignature(
+          paid.checkout!,
+        ),
       ).toBe(false);
     });
 

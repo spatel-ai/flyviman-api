@@ -15,13 +15,12 @@ import {
   MinLength,
   validateSync,
 } from 'class-validator';
+import {
+  DEV_PAYMENT_KEY_SECRET,
+  DEV_PAYMENT_WEBHOOK_SECRET,
+} from './payment-defaults.js';
 
-/**
- * The payment secrets outside production. Public (they are in the
- * repository): the mock gateway protects nothing and moves no money.
- */
-export const DEV_PAYMENT_KEY_SECRET = 'mock-payment-key-secret';
-export const DEV_PAYMENT_WEBHOOK_SECRET = 'mock-payment-webhook-secret';
+export { DEV_PAYMENT_KEY_SECRET, DEV_PAYMENT_WEBHOOK_SECRET };
 
 export enum NodeEnv {
   Development = 'development',
@@ -441,7 +440,10 @@ export function validateEnv(
   // A deployed server signs with its own secrets: the development values
   // are in the repository, so anyone could forge a payment with them.
   if (validated.NODE_ENV === NodeEnv.Production) {
-    for (const name of ['PAYMENT_KEY_SECRET', 'PAYMENT_WEBHOOK_SECRET'] as const) {
+    for (const name of [
+      'PAYMENT_KEY_SECRET',
+      'PAYMENT_WEBHOOK_SECRET',
+    ] as const) {
       const value = validated[name];
       if (
         !value ||

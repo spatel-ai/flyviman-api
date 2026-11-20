@@ -26,7 +26,11 @@ export interface PayableBooking {
 
 export type AmountDue =
   | { due: true; purpose: PaymentPurpose; amountMinor: bigint }
-  | { due: false; code: 'PAYMENT_ALREADY_PAID' | 'PAYMENT_NOT_DUE'; reason: string };
+  | {
+      due: false;
+      code: 'PAYMENT_ALREADY_PAID' | 'PAYMENT_NOT_DUE';
+      reason: string;
+    };
 
 /**
  * The Model C deposit: `percent` (a whole number, 1 to 100) of the total,
@@ -35,7 +39,9 @@ export type AmountDue =
  */
 export function depositMinor(totalMinor: bigint, percent: number): bigint {
   if (!Number.isInteger(percent) || percent < 1 || percent > 100) {
-    throw new RangeError('The deposit percent must be a whole number from 1 to 100.');
+    throw new RangeError(
+      'The deposit percent must be a whole number from 1 to 100.',
+    );
   }
   if (totalMinor <= 0n) throw new RangeError('The total must be positive.');
   return (totalMinor * BigInt(percent) + 99n) / 100n;
@@ -75,11 +81,23 @@ export function amountDue(
   }
   switch (booking.paymentModel) {
     case PaymentModel.A_INSTANT:
-      return { due: true, purpose: PaymentPurpose.FULL, amountMinor: booking.totalMinor };
+      return {
+        due: true,
+        purpose: PaymentPurpose.FULL,
+        amountMinor: booking.totalMinor,
+      };
     case PaymentModel.B_OPERATOR_CONFIRMED:
       return booking.operatorAccepted
-        ? { due: true, purpose: PaymentPurpose.FULL, amountMinor: booking.totalMinor }
-        : { due: false, code: 'PAYMENT_NOT_DUE', reason: 'the operator has not accepted' };
+        ? {
+            due: true,
+            purpose: PaymentPurpose.FULL,
+            amountMinor: booking.totalMinor,
+          }
+        : {
+            due: false,
+            code: 'PAYMENT_NOT_DUE',
+            reason: 'the operator has not accepted',
+          };
     case PaymentModel.C_DEPOSIT:
       return {
         due: true,
@@ -156,7 +174,8 @@ export function reviewOnSuccess(booking: {
   status: BookingStatus;
   paymentStatus: BookingPaymentStatus;
 }): PaymentReviewReason | null {
-  if (CLOSED.includes(booking.status)) return PaymentReviewReason.BOOKING_CLOSED;
+  if (CLOSED.includes(booking.status))
+    return PaymentReviewReason.BOOKING_CLOSED;
   if (booking.paymentStatus !== BookingPaymentStatus.UNPAID) {
     return PaymentReviewReason.ALREADY_PAID;
   }

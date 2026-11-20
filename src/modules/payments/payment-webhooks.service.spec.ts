@@ -23,9 +23,9 @@ function setup() {
   const warn = vi.fn();
   (service as unknown as { logger: Pick<Logger, 'warn'> }).logger = { warn };
   const refuse = () =>
-    expect(service.receive('mock', Buffer.from('{}'), {})).rejects.toMatchObject(
-      { code: 'WEBHOOK_SIGNATURE_INVALID' },
-    );
+    expect(
+      service.receive('mock', Buffer.from('{}'), {}),
+    ).rejects.toMatchObject({ code: 'WEBHOOK_SIGNATURE_INVALID' });
   return { refuse, warn, transaction };
 }
 
@@ -72,7 +72,9 @@ describe('PaymentWebhooksService refusals', () => {
       service.receive('mock', { event: 'payment.captured' }, {}),
     ).rejects.toMatchObject({ code: 'WEBHOOK_SIGNATURE_INVALID' });
     expect(gateway.parseWebhook).toHaveBeenCalledTimes(1);
-    await expect(service.receive('razorpay', Buffer.from('{}'), {})).rejects.toThrow();
+    await expect(
+      service.receive('razorpay', Buffer.from('{}'), {}),
+    ).rejects.toThrow();
     expect(transaction).not.toHaveBeenCalled();
   });
 });

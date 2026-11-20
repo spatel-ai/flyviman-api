@@ -189,7 +189,8 @@ export class PaymentWebhooksService {
         where: { id: payment.id },
         data: {
           status: next,
-          providerPaymentId: payment.providerPaymentId ?? event.providerPaymentId,
+          providerPaymentId:
+            payment.providerPaymentId ?? event.providerPaymentId,
         },
       });
       await this.audit.record(

@@ -502,8 +502,15 @@ export class BookingsService {
         action: 'booking.payment_status',
         entityType: 'Booking',
         entityId: booking.id,
-        before: { reference: booking.reference, paymentStatus: booking.paymentStatus },
-        after: { reference: booking.reference, paymentStatus: to, paymentReference: payment.reference },
+        before: {
+          reference: booking.reference,
+          paymentStatus: booking.paymentStatus,
+        },
+        after: {
+          reference: booking.reference,
+          paymentStatus: to,
+          paymentReference: payment.reference,
+        },
         actor: null,
       },
       tx,

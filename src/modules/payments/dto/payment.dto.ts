@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsInt, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import {
   PaymentPurpose,
   PaymentStatus,
@@ -64,7 +72,10 @@ export class PaymentPriceDto {
 }
 
 export class PaymentCheckoutDto {
-  @ApiProperty({ example: 'mock', description: 'The gateway the checkout is opened with.' })
+  @ApiProperty({
+    example: 'mock',
+    description: 'The gateway the checkout is opened with.',
+  })
   provider: string;
 
   @ApiProperty({ description: 'The public key ID. Never a secret.' })
