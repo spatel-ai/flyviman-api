@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiCookieAuth,
@@ -12,9 +14,12 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Paginated } from '../../common/dto/paginated.js';
 import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
+import { ChangeRequestListsService } from './change-request-lists.service.js';
+import { ChangeRequestQueryDto } from './dto/admin-booking.dto.js';
 import { ChangeRequestResponseDto } from './dto/booking.dto.js';
 import { DecideChangeRequestDto } from './dto/trips.dto.js';
 import { TripsService } from './trips.service.js';
@@ -25,7 +30,23 @@ import { TripsService } from './trips.service.js';
 @Roles(Role.OPS, Role.SUPER_ADMIN)
 @Controller('admin/change-requests')
 export class AdminChangeRequestsController {
-  constructor(private readonly trips: TripsService) {}
+  constructor(
+    private readonly trips: TripsService,
+    private readonly lists: ChangeRequestListsService,
+  ) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'Change and cancellation requests',
+    description:
+      'Every booking’s requests, newest first; by default those waiting for an answer (`status` `REQUESTED`). Filter by `status`. Paged.',
+  })
+  @ApiOkResponse({ type: [ChangeRequestResponseDto] })
+  list(
+    @Query() query: ChangeRequestQueryDto,
+  ): Promise<Paginated<ChangeRequestResponseDto>> {
+    return this.lists.forOperations(query);
+  }
 
   @Post(':id/decide')
   @HttpCode(200)

@@ -1,6 +1,8 @@
 import {
   BookingMode,
+  BookingPaymentStatus,
   BookingStatus,
+  PaymentModel,
   PriceType,
   Role,
   ServiceCategory,
@@ -204,6 +206,12 @@ export const EDGES: readonly Edge[] = [
     by: ['OPERATOR', 'SYSTEM'],
   },
   {
+    from: S.CLARIFICATION_REQUESTED,
+    to: S.OPERATOR_UNAVAILABLE,
+    // The operator may still turn the request down while its question waits.
+    by: ['OPERATOR'],
+  },
+  {
     from: S.PRICE_CONFIRMED,
     to: S.AWAITING_PAYMENT,
     // Every payment model (A, B, C) asks for payment once the price is set.
@@ -308,4 +316,60 @@ export function statusTimestamps(
   if (to === S.CONFIRMED) return { confirmedAt: now };
   if (to === S.CANCELLED) return { cancelledAt: now };
   return {};
+}
+
+/**
+ * Condition 3 of the confirmation rule, read from the booking's payment
+ * summary: Models A and B need the full payment (`PAID`; B's order is only
+ * offered after the operator accepted), Model C the deposit
+ * (`PARTIALLY_PAID`) or more.
+ */
+export function paymentConditionMet(
+  model: PaymentModel,
+  paymentStatus: BookingPaymentStatus,
+): boolean {
+  if (model === PaymentModel.C_DEPOSIT) {
+    return (
+      paymentStatus === BookingPaymentStatus.PARTIALLY_PAID ||
+      paymentStatus === BookingPaymentStatus.PAID
+    );
+  }
+  return paymentStatus === BookingPaymentStatus.PAID;
+}
+
+/** What `evaluateConfirmation` decides on, read with the booking. */
+export interface ConfirmationInput {
+  status: BookingStatus;
+  category: ServiceCategory;
+  bookingMode: BookingMode;
+  priceType: PriceType;
+  paymentModel: PaymentModel;
+  paymentStatus: BookingPaymentStatus;
+  operatorAccepted: boolean;
+}
+
+/**
+ * Whether a booking now meets the confirmation rule (state-machines.md):
+ * only from `AWAITING_PAYMENT`, with operator acceptance (or instant
+ * inventory), a `CONFIRMED` price and the payment condition of its model.
+ * Air ambulance never confirms here: its feasibility checklist is recorded
+ * by operations (rule 7). A payment alone never confirms (rule 2).
+ */
+export function confirmationCheck(input: ConfirmationInput): TransitionCheck {
+  if (input.status !== S.AWAITING_PAYMENT) {
+    return { allowed: false, reason: `the booking is ${input.status}` };
+  }
+  return checkTransition(S.AWAITING_PAYMENT, S.CONFIRMED, 'SYSTEM', {
+    category: input.category,
+    bookingMode: input.bookingMode,
+    priceType: input.priceType,
+    operatorAccepted: input.operatorAccepted,
+    paymentConditionMet: paymentConditionMet(
+      input.paymentModel,
+      input.paymentStatus,
+    ),
+    liveFareRevalidated: false,
+    feasibilityComplete: false,
+    departed: false,
+  });
 }
