@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BookingMode,
+  BookingPaymentStatus,
   BookingStatus,
+  PaymentModel,
   PriceType,
   Role,
   ServiceCategory,
@@ -12,6 +14,9 @@ import {
   type BookingActor,
   CANCELLABLE,
   checkTransition,
+  type ConfirmationInput,
+  confirmationCheck,
+  paymentConditionMet,
   statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
@@ -54,6 +59,7 @@ const TABLE: Row[] = [
   [S.OPERATOR_PENDING, S.EXPIRED, ['SYSTEM'], { quote: 'LAPSED' }],
   [S.CLARIFICATION_REQUESTED, S.EXPIRED, ['SYSTEM']],
   [S.OPERATOR_PENDING, S.OPERATOR_UNAVAILABLE, ['OPERATOR', 'SYSTEM']],
+  [S.CLARIFICATION_REQUESTED, S.OPERATOR_UNAVAILABLE, ['OPERATOR']],
   [S.PRICE_CONFIRMED, S.AWAITING_PAYMENT, ['SYSTEM']],
   [S.PRICE_CONFIRMED, S.QUOTE_DECLINED, ['CUSTOMER']],
   [S.AWAITING_PAYMENT, S.CONFIRMED, ['SYSTEM']],
@@ -256,6 +262,14 @@ describe('checkTransition: manual override', () => {
     }
   });
 
+  it('refuses an override to the same status', () => {
+    expect(
+      checkTransition(S.CONFIRMED, S.CONFIRMED, 'OPERATIONS', OPEN, {
+        reason: 'Agreed',
+      }),
+    ).toEqual({ allowed: false, reason: 'the status is unchanged' });
+  });
+
   it('needs a reason, and only operations may use it', () => {
     expect(
       checkTransition(S.REQUESTED, S.CONFIRMED, 'OPERATIONS', OPEN, {
@@ -269,6 +283,125 @@ describe('checkTransition: manual override', () => {
         }).allowed,
       ).toBe(false);
     }
+  });
+});
+
+describe('paymentConditionMet', () => {
+  const P = BookingPaymentStatus;
+  it('needs the full payment for models A and B', () => {
+    for (const model of [
+      PaymentModel.A_INSTANT,
+      PaymentModel.B_OPERATOR_CONFIRMED,
+    ]) {
+      expect(paymentConditionMet(model, P.PAID)).toBe(true);
+      for (const status of [
+        P.UNPAID,
+        P.PARTIALLY_PAID,
+        P.REFUND_PENDING,
+        P.REFUNDED,
+      ]) {
+        expect(paymentConditionMet(model, status)).toBe(false);
+      }
+    }
+  });
+
+  it('needs the deposit or more for model C', () => {
+    const model = PaymentModel.C_DEPOSIT;
+    expect(paymentConditionMet(model, P.PARTIALLY_PAID)).toBe(true);
+    expect(paymentConditionMet(model, P.PAID)).toBe(true);
+    for (const status of [P.UNPAID, P.REFUND_PENDING, P.REFUNDED]) {
+      expect(paymentConditionMet(model, status)).toBe(false);
+    }
+  });
+});
+
+describe('confirmationCheck: the confirmation rule', () => {
+  /** A request-mode charter accepted, priced and paid in full. */
+  const READY: ConfirmationInput = {
+    status: S.AWAITING_PAYMENT,
+    category: ServiceCategory.PRIVATE_CHARTER,
+    bookingMode: BookingMode.REQUEST,
+    priceType: PriceType.CONFIRMED,
+    paymentModel: PaymentModel.B_OPERATOR_CONFIRMED,
+    paymentStatus: BookingPaymentStatus.PAID,
+    operatorAccepted: true,
+  };
+
+  it('confirms when every condition holds', () => {
+    expect(confirmationCheck(READY)).toEqual({ allowed: true });
+    expect(
+      confirmationCheck({
+        ...READY,
+        paymentModel: PaymentModel.C_DEPOSIT,
+        paymentStatus: BookingPaymentStatus.PARTIALLY_PAID,
+      }),
+    ).toEqual({ allowed: true });
+  });
+
+  it('never confirms on payment alone, without the operator’s acceptance (rule 2)', () => {
+    for (const paymentModel of Object.values(PaymentModel)) {
+      expect(
+        confirmationCheck({ ...READY, paymentModel, operatorAccepted: false }),
+      ).toEqual({ allowed: false, reason: 'the operator has not accepted' });
+    }
+  });
+
+  it('confirms instant inventory without a separate acceptance', () => {
+    expect(
+      confirmationCheck({
+        ...READY,
+        bookingMode: BookingMode.INSTANT,
+        paymentModel: PaymentModel.A_INSTANT,
+        operatorAccepted: false,
+      }),
+    ).toEqual({ allowed: true });
+  });
+
+  it('needs a confirmed price', () => {
+    for (const priceType of [
+      PriceType.ESTIMATE,
+      PriceType.QUOTE,
+      PriceType.LIVE_FARE,
+    ]) {
+      expect(confirmationCheck({ ...READY, priceType })).toEqual({
+        allowed: false,
+        reason: 'the price is not confirmed',
+      });
+    }
+  });
+
+  it('needs the payment condition of the model', () => {
+    expect(
+      confirmationCheck({
+        ...READY,
+        paymentStatus: BookingPaymentStatus.UNPAID,
+      }),
+    ).toEqual({ allowed: false, reason: 'the payment condition is not met' });
+    expect(
+      confirmationCheck({
+        ...READY,
+        paymentStatus: BookingPaymentStatus.PARTIALLY_PAID,
+      }),
+    ).toEqual({ allowed: false, reason: 'the payment condition is not met' });
+  });
+
+  it('confirms only from AWAITING_PAYMENT', () => {
+    for (const status of STATUSES) {
+      if (status === S.AWAITING_PAYMENT) continue;
+      expect(confirmationCheck({ ...READY, status }).allowed).toBe(false);
+    }
+  });
+
+  it('never confirms air ambulance (rule 7: operations record feasibility)', () => {
+    expect(
+      confirmationCheck({
+        ...READY,
+        category: ServiceCategory.AIR_AMBULANCE,
+      }),
+    ).toEqual({
+      allowed: false,
+      reason: 'the feasibility checklist is not complete',
+    });
   });
 });
 

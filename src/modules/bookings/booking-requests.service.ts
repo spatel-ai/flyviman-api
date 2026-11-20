@@ -17,6 +17,7 @@ import {
   AircraftListingStatus,
   AvailabilityBlockReason,
   BookingEventType,
+  BookingPaymentStatus,
   BookingStatus,
   NotificationChannel,
   OperatorStatus,
@@ -259,6 +260,7 @@ export class BookingRequestsService {
       await this.event(tx, row.id, BookingEventType.OPERATOR_RESPONSE, user, {
         decision: 'ACCEPT',
       });
+      await this.bookings.afterPriceConfirmed(tx, row.id);
       return this.notifyCustomer(tx, row, 'booking.price_confirmed', {});
     });
     return this.operatorDetail(user, reference);
@@ -534,6 +536,7 @@ export class BookingRequestsService {
         },
         tx,
       );
+      await this.bookings.afterPriceConfirmed(tx, row.id);
       return this.notifyOperator(tx, row, 'booking.quote_accepted');
     });
     return this.customerQuote(user, quoteReference);
@@ -620,6 +623,9 @@ export class BookingRequestsService {
    * 2. a request waiting for the operator whose hold lapsed with no quote
    *    sent becomes `OPERATOR_UNAVAILABLE` (no answer in time);
    * 3. a question the customer left unanswered until the hold lapsed
+   *    becomes `EXPIRED`;
+   * 4. a booking `AWAITING_PAYMENT` with nothing paid whose hold (the
+   *    payment window, renewed when the price was confirmed) lapsed
    *    becomes `EXPIRED`.
    * Holds are released and the customer told. Each change is guarded by
    * the status read, so a second run (or a run racing an answer) changes
@@ -664,7 +670,15 @@ export class BookingRequestsService {
         const due = await this.prisma.booking.findMany({
           where: {
             id: { notIn: seenBookings },
-            status: { in: WAITING },
+            // Waiting on the operator or the customer's answer, or a payment
+            // window that lapsed with nothing paid.
+            OR: [
+              { status: { in: WAITING } },
+              {
+                status: BookingStatus.AWAITING_PAYMENT,
+                paymentStatus: BookingPaymentStatus.UNPAID,
+              },
+            ],
             // Only requests that held the aircraft and whose hold lapsed;
             // a booking without a hold (another source) is left alone.
             AND: [
@@ -753,9 +767,30 @@ export class BookingRequestsService {
       const live = holds.some(
         (hold) => hold.expiresAt === null || hold.expiresAt > now,
       );
-      if (holds.length === 0 || live || !WAITING.includes(row.status)) {
-        return [];
+      if (holds.length === 0 || live) return [];
+      if (row.status === BookingStatus.AWAITING_PAYMENT) {
+        // The payment window lapsed. Payment notices lock the booking row,
+        // not this request's lock: take it and read the payment summary
+        // again, so a booking paid meanwhile is never expired.
+        await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${row.id}::uuid FOR UPDATE`;
+        const current = await tx.booking.findUniqueOrThrow({
+          where: { id: row.id },
+          select: { status: true, paymentStatus: true },
+        });
+        if (
+          current.status !== BookingStatus.AWAITING_PAYMENT ||
+          current.paymentStatus !== BookingPaymentStatus.UNPAID
+        ) {
+          return [];
+        }
+        await this.bookings.transition(tx, row, BookingStatus.EXPIRED, {
+          kind: 'SYSTEM',
+        });
+        await this.availability.releaseBookingHolds(tx, row.id);
+        closed = true;
+        return this.notifyCustomer(tx, row, 'booking.expired', {});
       }
+      if (!WAITING.includes(row.status)) return [];
       const newest = await this.quotes.newest(tx, row.id);
       const standing = quoteStanding(newest, now);
       // A live quote keeps the request open until it lapses (step 1).
@@ -899,9 +934,22 @@ export class BookingRequestsService {
     return new Date(now.getTime() + this.holdHours() * 3_600_000);
   }
 
+  /**
+   * The caller's reach, for staff with `MANAGE_BOOKINGS` (403 otherwise).
+   * An operator that is not approved (suspended, under review) neither
+   * reads nor answers requests: 409 `OPERATOR_NOT_APPROVED`, as accept and
+   * quote already answered.
+   */
   private async access(user: AuthUser): Promise<OperatorAccess> {
-    const { access } = await this.operators.accessFor(user);
+    const { operator, access } = await this.operators.accessFor(user);
     assertCan(access, 'MANAGE_BOOKINGS');
+    if (operator.status !== OperatorStatus.APPROVED) {
+      throw new AppException(
+        'OPERATOR_NOT_APPROVED',
+        'Your company is not approved to take bookings at the moment.',
+        HttpStatus.CONFLICT,
+      );
+    }
     return access;
   }
 

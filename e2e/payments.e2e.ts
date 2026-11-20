@@ -401,7 +401,7 @@ test.describe('POST /payments/:reference/verify', () => {
 });
 
 test.describe('POST /webhooks/payments/:provider applies verified notices', () => {
-  test('a capture pays the booking without confirming it; a duplicate and a late failure change nothing', async ({
+  test('a capture pays an accepted booking and confirms it, once; a duplicate and a late failure change nothing', async ({
     request,
     playwright,
     baseURL,
@@ -431,10 +431,21 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
     const payment = await paymentRow(order.reference);
     expect(payment).toMatchObject({ status: 'SUCCEEDED', reviewReason: null });
     expect(payment.paidAt).not.toBeNull();
-    // Paid, and still not confirmed: the payment never moves the booking (rule 2).
+    // The operator's acceptance was recorded and the price is confirmed, so
+    // the confirmation rule holds once the payment is in.
     expect(await bookingOf(customer, reference)).toMatchObject({
-      status: 'AWAITING_PAYMENT',
+      status: 'CONFIRMED',
       paymentStatus: 'PAID',
+    });
+    const confirmations = await withPrisma((prisma) =>
+      prisma.bookingEvent.findMany({
+        where: { booking: { reference }, toStatus: 'CONFIRMED' },
+      }),
+    );
+    expect(confirmations).toHaveLength(1);
+    expect(confirmations[0]).toMatchObject({
+      fromStatus: 'AWAITING_PAYMENT',
+      actorId: null,
     });
 
     const { events, updates } = await withPrisma(async (prisma) => ({
@@ -474,6 +485,255 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
     const paidAgain = await pay(customer, reference, totalMinor);
     expect(paidAgain.status()).toBe(409);
     expect((await paidAgain.json()).error.code).toBe('PAYMENT_ALREADY_PAID');
+  });
+
+  test('a payment before the operator accepted leaves the booking unconfirmed (rule 2)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    // Model A takes payment without waiting for the operator; a request-mode
+    // booking still needs the operator's acceptance to be confirmed.
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment(
+      { request, playwright, baseURL },
+      'A_INSTANT',
+    );
+    await setBooking(reference, {
+      bookingMode: 'REQUEST',
+      operatorAcceptedAt: null,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const response = await deliver(
+      request,
+      notice('payment.captured', {
+        orderId: order.checkout.orderId,
+        amountMinor: totalMinor,
+      }),
+    );
+    expect(response.status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'PAID',
+    });
+  });
+
+  test('a Model C deposit confirms an accepted booking', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment(
+      { request, playwright, baseURL },
+      'C_DEPOSIT',
+    );
+    const deposit = Math.ceil((totalMinor * 25) / 100);
+    const order = await created(customer, reference, deposit);
+    const response = await deliver(
+      request,
+      notice('payment.captured', {
+        orderId: order.checkout.orderId,
+        amountMinor: deposit,
+      }),
+    );
+    expect(response.status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CONFIRMED',
+      paymentStatus: 'PARTIALLY_PAID',
+    });
+  });
+
+  test('a booking whose held time was taken stays unconfirmed when paid, and operations are told (rule 3)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    // Another booking's confirmed block now covers the held time.
+    const bookingId = await withPrisma(async (prisma) => {
+      const booking = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+        include: { holds: true },
+      });
+      const hold = booking.holds[0];
+      await prisma.availabilityBlock.create({
+        data: {
+          aircraftId: hold.aircraftId,
+          startsAt: hold.startsAt,
+          endsAt: hold.endsAt,
+          reason: 'MAINTENANCE',
+        },
+      });
+      return booking.id;
+    });
+    const response = await deliver(
+      request,
+      notice('payment.captured', {
+        orderId: order.checkout.orderId,
+        amountMinor: totalMinor,
+      }),
+    );
+    // The payment is recorded all the same.
+    expect(response.status()).toBe(200);
+    expect((await paymentRow(order.reference)).status).toBe('SUCCEEDED');
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'PAID',
+    });
+    const blocked = await withPrisma((prisma) =>
+      prisma.auditLog.findMany({
+        where: { entityId: bookingId, action: 'booking.confirmation_blocked' },
+      }),
+    );
+    expect(blocked).toHaveLength(1);
+  });
+
+  test('a booking whose aircraft was grounded after acceptance stays unconfirmed when paid (rule 4)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const bookingId = await withPrisma(async (prisma) => {
+      const booking = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+      });
+      await prisma.aircraft.update({
+        where: { id: booking.aircraftId! },
+        data: { availabilityStatus: 'MAINTENANCE' },
+      });
+      return booking.id;
+    });
+    const response = await deliver(
+      request,
+      notice('payment.captured', {
+        orderId: order.checkout.orderId,
+        amountMinor: totalMinor,
+      }),
+    );
+    expect(response.status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'PAID',
+    });
+    const blocked = await withPrisma((prisma) =>
+      prisma.auditLog.findFirstOrThrow({
+        where: { entityId: bookingId, action: 'booking.confirmation_blocked' },
+      }),
+    );
+    expect(blocked.after).toMatchObject({
+      reason: 'the aircraft is not approved or not in service',
+    });
+  });
+
+  test('the whole flow: request, operator accepts, customer pays, booking CONFIRMED', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const trip = await listedJet({ request, playwright, baseURL });
+    const rate = await request.put(
+      `operator/aircraft/${trip.aircraftId}/pricing`,
+      {
+        headers: await csrfHeaders(request),
+        data: {
+          hourlyRateMinor: 18_000_000,
+          taxInclusive: false,
+          commissionInclusive: false,
+          minBillableHours: null,
+        },
+      },
+    );
+    expect(rate.status()).toBe(200);
+    const searched = await searchFor(request, trip);
+    const customer = await playwright.request.newContext({ baseURL });
+    await registerCustomer(customer);
+    const booked = await customer.post('bookings', {
+      headers: {
+        ...(await csrfHeaders(customer)),
+        'Idempotency-Key': randomUUID(),
+      },
+      data: {
+        searchId: searched.searchId,
+        resultId: searched.result.resultId,
+        expectedTotalMinor: searched.result.price.amountMinor,
+        currency: 'INR',
+      },
+    });
+    expect(booked.status()).toBe(201);
+    const reference = (await booked.json()).data.reference as string;
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'OPERATOR_PENDING',
+    });
+
+    const accepted = await request.post(
+      `operator/booking-requests/${reference}/accept`,
+      {
+        headers: {
+          ...(await csrfHeaders(request)),
+          'Idempotency-Key': randomUUID(),
+        },
+      },
+    );
+    expect(accepted.status()).toBe(200);
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
+    });
+
+    // Whatever the category's payment model, pay what is due.
+    const due = await withPrisma((prisma) =>
+      prisma.booking.findUniqueOrThrow({ where: { reference } }),
+    );
+    const amount =
+      due.paymentModel === 'C_DEPOSIT'
+        ? Number((due.totalMinor * 25n + 99n) / 100n)
+        : Number(due.totalMinor);
+    const order = await created(customer, reference, amount);
+    const captured = await deliver(
+      request,
+      notice('payment.captured', {
+        orderId: order.checkout.orderId,
+        amountMinor: amount,
+      }),
+    );
+    expect(captured.status()).toBe(200);
+    const confirmed = await customer.get(`bookings/${reference}`);
+    expect((await confirmed.json()).data).toMatchObject({
+      status: 'CONFIRMED',
+      price: { priceType: 'CONFIRMED' },
+    });
+    const row = await withPrisma((prisma) =>
+      prisma.booking.findUniqueOrThrow({
+        where: { reference },
+        include: { holds: true, events: { orderBy: { createdAt: 'asc' } } },
+      }),
+    );
+    expect(row.confirmedAt).not.toBeNull();
+    // The held time is kept until the trip ends.
+    expect(row.holds[0].expiresAt!.getTime()).toBe(
+      row.holds[0].endsAt.getTime(),
+    );
+    expect(
+      row.events
+        .filter((event) => event.type === 'STATUS_CHANGED')
+        .map((event) => event.toStatus),
+    ).toEqual([
+      'REQUESTED',
+      'OPERATOR_PENDING',
+      'PRICE_CONFIRMED',
+      'AWAITING_PAYMENT',
+      'CONFIRMED',
+    ]);
   });
 
   test('a bad signature is refused and stored nowhere', async ({
