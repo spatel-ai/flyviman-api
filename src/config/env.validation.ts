@@ -367,6 +367,16 @@ export class EnvironmentVariables {
   PAYMENT_PROVIDER: string = 'mock';
 
   /**
+   * The Hard gate (docs/open-decisions.md): with PAYMENT_PROVIDER=razorpay,
+   * start-up refuses a key ID that is not a test key (`rzp_test_…`) unless
+   * this is true. Set it only after open decisions 6, 7, 8 and 13 are
+   * settled.
+   */
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  ALLOW_LIVE_PAYMENTS: boolean = false;
+
+  /**
    * Razorpay's API key (Dashboard, API keys): the key ID is public (the
    * browser's checkout opens with it), the secret signs API calls and the
    * checkout result. Required with PAYMENT_PROVIDER=razorpay, ignored with
@@ -539,6 +549,16 @@ export function validateEnv(
   ) {
     throw new Error(
       'Invalid environment configuration: PAYMENT_PROVIDER=razorpay needs RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+    );
+  }
+  // The Hard gate: a live key moves real money.
+  if (
+    validated.PAYMENT_PROVIDER === 'razorpay' &&
+    !validated.RAZORPAY_KEY_ID?.startsWith('rzp_test_') &&
+    !validated.ALLOW_LIVE_PAYMENTS
+  ) {
+    throw new Error(
+      'Invalid environment configuration: RAZORPAY_KEY_ID is a live key. Live payments need ALLOW_LIVE_PAYMENTS=true, set only after open decisions 6, 7, 8 and 13 are settled (docs/open-decisions.md, Hard gate).',
     );
   }
 

@@ -328,6 +328,33 @@ describe('validateEnv', () => {
       expect(() => validateEnv(production)).toThrow(/RAZORPAY_KEY_ID/);
     });
 
+    it('refuses a live key unless ALLOW_LIVE_PAYMENTS=true (Hard gate)', () => {
+      const live = {
+        ...valid,
+        PAYMENT_PROVIDER: 'razorpay',
+        ...keys,
+        RAZORPAY_KEY_ID: 'rzp_live_AbC123xyz',
+      };
+      expect(validateEnv(valid).ALLOW_LIVE_PAYMENTS).toBe(false);
+      for (const flag of [undefined, 'false', '1', 'yes']) {
+        expect(() =>
+          validateEnv({ ...live, ALLOW_LIVE_PAYMENTS: flag }),
+        ).toThrow(/live key.*ALLOW_LIVE_PAYMENTS=true.*Hard gate/);
+      }
+      expect(
+        validateEnv({ ...live, ALLOW_LIVE_PAYMENTS: 'true' }).RAZORPAY_KEY_ID,
+      ).toBe('rzp_live_AbC123xyz');
+      // A test key needs no flag; the mock ignores a live key it never uses.
+      expect(
+        validateEnv({ ...valid, PAYMENT_PROVIDER: 'razorpay', ...keys })
+          .PAYMENT_PROVIDER,
+      ).toBe('razorpay');
+      expect(
+        validateEnv({ ...valid, RAZORPAY_KEY_ID: 'rzp_live_AbC123xyz' })
+          .PAYMENT_PROVIDER,
+      ).toBe('mock');
+    });
+
     it('ignores blank Razorpay values while the mock is in use', () => {
       const env = validateEnv({
         ...valid,

@@ -23,6 +23,17 @@ import { RazorpayPaymentGatewayProvider } from './razorpay-payment-gateway.provi
         const provider = config.get<string>('PAYMENT_PROVIDER');
         // Secrets from the validated configuration; never logged.
         if (provider === 'razorpay') {
+          const keyId = config.getOrThrow<string>('RAZORPAY_KEY_ID');
+          // Configuration validation refuses a live key without the flag;
+          // checked again here so a gap there cannot move real money.
+          if (
+            !keyId.startsWith('rzp_test_') &&
+            config.get<boolean>('ALLOW_LIVE_PAYMENTS') !== true
+          ) {
+            throw new Error(
+              'A live Razorpay key needs ALLOW_LIVE_PAYMENTS=true (docs/open-decisions.md, Hard gate).',
+            );
+          }
           const webhookSecret = config.get<string>('RAZORPAY_WEBHOOK_SECRET');
           if (!webhookSecret) {
             new Logger('PaymentModule').warn(
@@ -30,7 +41,7 @@ import { RazorpayPaymentGatewayProvider } from './razorpay-payment-gateway.provi
             );
           }
           return new RazorpayPaymentGatewayProvider({
-            keyId: config.getOrThrow<string>('RAZORPAY_KEY_ID'),
+            keyId,
             keySecret: config.getOrThrow<string>('RAZORPAY_KEY_SECRET'),
             webhookSecret,
           });
