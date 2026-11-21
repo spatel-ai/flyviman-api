@@ -57,6 +57,7 @@ function setup(
     ...row,
   };
   const events: Record<string, unknown>[] = [];
+  const revisions: Record<string, unknown>[] = [];
   const tx = {
     $queryRaw: vi.fn(async () => [{ id: current.id }]),
     airAmbulanceRequest: {
@@ -79,6 +80,12 @@ function setup(
     airAmbulanceRequestEvent: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         events.push(data);
+        return data;
+      }),
+    },
+    airAmbulanceQuoteRevision: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        revisions.push(data);
         return data;
       }),
     },
@@ -110,7 +117,7 @@ function setup(
     } as unknown as AircraftService,
     cipher(),
   );
-  return { service, events, audit, current: () => current };
+  return { service, events, revisions, audit, current: () => current };
 }
 
 describe('AirAmbulanceWorkflowService.move to CONFIRMED', () => {
@@ -223,17 +230,28 @@ describe('AirAmbulanceWorkflowService.quote', () => {
     expect(events).toEqual([]);
   });
 
-  it('keeps the revision reason encrypted in the timeline, and out of the audit record', async () => {
-    const { service, events, audit } = setup({ status: 'QUOTED' });
+  it('keeps the revision reason encrypted in an erasable row, out of the append-only timeline and the audit record', async () => {
+    const { service, events, revisions, audit } = setup({ status: 'QUOTED' });
     await service.quote(OWNER, 'FLY-AA-7K2M9Q', {
       ...QUOTE,
       revisionReason: 'Operator repriced fuel',
     });
-    const payload = events[0].payload as { revisionReason: string };
-    expect(isEncrypted(payload.revisionReason)).toBe(true);
-    expect(cipher().decrypt(payload.revisionReason)).toBe(
-      'Operator repriced fuel',
-    );
+    expect(events[0].payload).toEqual({
+      kind: 'QUOTE',
+      operatorId: QUOTE.operatorId,
+      amountMinor: QUOTE.amountMinor,
+      currency: QUOTE.currency,
+      revised: true,
+    });
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]).toMatchObject({
+      requestId: 'aa-1',
+      eventId: events[0].id,
+    });
+    expect(typeof events[0].id).toBe('string');
+    const reason = revisions[0].reason as string;
+    expect(isEncrypted(reason)).toBe(true);
+    expect(cipher().decrypt(reason)).toBe('Operator repriced fuel');
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain('repriced');
     expect(audit.record.mock.calls[0][0]).toMatchObject({
       after: { revised: true },

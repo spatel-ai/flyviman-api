@@ -39,11 +39,13 @@ export class AirAmbulanceErasureService {
    * Erases the patient and contact data of the requester's requests, in the
    * caller's transaction, once the caller has found them all closed. Kept:
    * the operational record (reference, route, preferred time, counts,
-   * status, quotation, operator, feasibility checklist and the timeline,
-   * which holds no free text or medical data). Gone: contact and emergency
-   * contact details, pickup address and receiving facility, the medical
-   * details row and the medical document links. Returns the documents' file
-   * ids, whose files the caller deletes with the documents module.
+   * status, quotation and its conditions, operator, feasibility checklist
+   * and the append-only timeline, whose payloads hold no free text or
+   * medical data). Gone: contact and emergency contact details, pickup
+   * address and receiving facility, the medical details row, the medical
+   * document links and the reasons for replaced quotations (free text that
+   * can describe the patient; the timeline keeps only `revised: true`). The
+   * caller deletes the documents' files with the documents module.
    */
   async erase(
     requesterId: string,
@@ -60,6 +62,7 @@ export class AirAmbulanceErasureService {
     const documents = await tx.airAmbulanceDocument.deleteMany({
       where: ofRequester,
     });
+    await tx.airAmbulanceQuoteRevision.deleteMany({ where: ofRequester });
     return {
       requests: requests.count,
       medical: medical.count,

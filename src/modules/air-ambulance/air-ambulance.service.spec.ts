@@ -72,6 +72,7 @@ function setup(
   } = {};
   const events: Record<string, unknown>[] = [];
   const findMany = vi.fn(async (_query: unknown) => [] as unknown[]);
+  const eventRows = vi.fn(async (_query: unknown) => [] as unknown[]);
   const tx = {
     idempotencyKey: { updateMany: vi.fn(async () => ({ count: 1 })) },
     airAmbulanceRequest: {
@@ -117,6 +118,7 @@ function setup(
       findMany,
       count: vi.fn(async () => 0),
     },
+    airAmbulanceRequestEvent: { findMany: eventRows },
     airAmbulanceMedical: {
       findUnique: vi.fn(async () =>
         stored.medical
@@ -167,7 +169,17 @@ function setup(
     users as unknown as UsersService,
     categories as unknown as CategoryConfigService,
   );
-  return { service, stored, events, audit, tx, locations, findMany, operators };
+  return {
+    service,
+    stored,
+    events,
+    audit,
+    tx,
+    locations,
+    findMany,
+    eventRows,
+    operators,
+  };
 }
 
 const customer: AirAmbulanceActor = { id: REQUESTER, role: Role.CUSTOMER };
@@ -555,6 +567,32 @@ describe('AirAmbulanceService.eligibleOperators', () => {
       'op-a',
       'op-draft',
     ]);
+  });
+});
+
+describe('AirAmbulanceService.timeline', () => {
+  it('gives a revising quote entry its reason from the erasable row, and null once erased', async () => {
+    const { service, eventRows } = setup();
+    const base = {
+      fromStatus: AirAmbulanceStatus.QUOTED,
+      toStatus: AirAmbulanceStatus.QUOTED,
+      actorId: OPS_OWNER,
+      actorRole: Role.OPS,
+      createdAt: NOW,
+    };
+    const quote = { kind: 'QUOTE', amountMinor: 1, revised: true };
+    eventRows.mockResolvedValueOnce([
+      { ...base, payload: quote, quoteRevision: { reason: 'cipher' } },
+      { ...base, payload: quote, quoteRevision: null },
+      { ...base, payload: { kind: 'ASSIGNMENT' }, quoteRevision: null },
+    ]);
+    const events = await service.timeline('aa-1');
+    expect(events.map((event) => event.payload)).toEqual([
+      { ...quote, revisionReason: 'cipher' },
+      { ...quote, revisionReason: null },
+      { kind: 'ASSIGNMENT' },
+    ]);
+    expect(events[0]).not.toHaveProperty('quoteRevision');
   });
 });
 
