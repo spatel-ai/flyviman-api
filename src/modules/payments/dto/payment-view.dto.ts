@@ -148,7 +148,7 @@ export class AdminPaymentDto extends PaymentDetailDto {
     type: String,
     format: 'date-time',
     description:
-      'When finance resolved an `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` flag (`POST /admin/payments/:reference/resolve-flag`). `reviewReason` stays as it was.',
+      'When finance resolved an `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` flag (`POST /admin/payments/:reference/resolve-flag`). `reviewReason` stays as it was. Back to null when a new flag is recorded on the payment (the flag is open again).',
   })
   reviewResolvedAt: string | null;
 }

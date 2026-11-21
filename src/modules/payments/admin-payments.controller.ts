@@ -76,7 +76,7 @@ export class AdminPaymentsController {
   @ApiOperation({
     summary: 'Resolve a payment flagged AMOUNT_MISMATCH or DUPLICATE_CAPTURE',
     description:
-      'Records that finance settled the flag: the amount was checked at the gateway, and any money owed back was refunded through `POST /admin/payments/:reference/refunds`. Moves no money and changes no status; `reviewReason` stays and `reviewResolvedAt` is set. A resolved flag no longer blocks the customer’s erasure (`PAYMENT_UNDER_REVIEW`). Needs a reason; audited as `payment.flag_resolve`. 409 `PAYMENT_FLAG_NOT_OPEN` when the payment has no such flag or it is already resolved. An unknown reference is 404.',
+      'Records that finance settled the flag: the amount was checked at the gateway, and any money owed back was refunded through `POST /admin/payments/:reference/refunds`. Moves no money and changes no status; `reviewReason` stays and `reviewResolvedAt` is set. A resolved flag no longer blocks the customer’s erasure (`PAYMENT_UNDER_REVIEW`); a new flag recorded on the payment later clears `reviewResolvedAt` and reopens it. Needs a reason; audited as `payment.flag_resolve`. 409 `PAYMENT_FLAG_NOT_OPEN` when the payment has no such flag or it is already resolved. An unknown reference is 404.',
   })
   @ApiOkResponse({ type: AdminPaymentDto })
   resolveFlag(
