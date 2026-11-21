@@ -98,9 +98,10 @@ export const CUSTOMER_ASSUMPTIONS: Record<
   // The routing factor only.
   ROUTING: AS_STORED,
   REPOSITIONING: "Includes the aircraft's positioning flights",
-  // The base is the destination here: not said.
+  // The base is the destination here: worded as waiting, so the sentence
+  // does not tell the customer where the aircraft is based.
   ROUND_TRIP_AT_BASE:
-    'Round trip: the aircraft stays at your destination between the flights',
+    'Round trip: the aircraft waits at your destination until the return flight',
   ROUND_TRIP_WAIT:
     'Round trip: the aircraft waits at your destination until the return flight',
   ROUND_TRIP_RETURN_TO_BASE:

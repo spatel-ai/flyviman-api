@@ -343,7 +343,7 @@ function strategyAssumption(
   ferryFits: boolean,
   names: { base: string | null; destination: string; nights: number },
 ): PriceAssumption {
-  const { base, destination, nights } = names;
+  const { base, destination } = names;
   if (strategy === 'RETURN_TO_BASE') {
     if (outcome === 'ONLY') {
       return {

@@ -304,6 +304,10 @@ describe('customer lines from real engine output', () => {
         "Includes the aircraft's positioning flights",
       ]);
       expect(customerAssumptions(stored.override)).toEqual([]);
+      // Based at the destination reads the same as waiting there.
+      expect(customerAssumptions(stored.atBase)).toEqual(
+        customerAssumptions(cases.nightsWaiting.assumptions),
+      );
       expect(customerAssumptions(stored.discountCapped)).toContain(
         'Launch applied up to its limit for this trip',
       );
