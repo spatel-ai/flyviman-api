@@ -221,6 +221,14 @@ describe('validateEnv', () => {
         OPERATIONS_INBOX_EMAIL: 'ops@flyviman.com',
       }),
     ).not.toThrow();
+    // Never every customer's email into one inbox in production.
+    expect(() =>
+      validateEnv({
+        ...production,
+        OPERATIONS_INBOX_EMAIL: 'ops@flyviman.com',
+        EMAIL_REDIRECT_TO: 'owner@gmail.com',
+      }),
+    ).toThrow(/EMAIL_REDIRECT_TO must not be set in production/);
   });
 
   it('gives enquiries their own limit, not the sign-in one', () => {

@@ -9,6 +9,7 @@ import {
 import {
   type MessageChannel,
   MessagingProvider,
+  type OutboundMessage,
 } from '../../integrations/messaging/messaging.provider.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -92,7 +93,8 @@ export class NotificationsService {
    * not thrown: the action that triggered the message has already happened.
    * Call it after the triggering transaction commits. A message without a
    * code or link that fails is kept QUEUED and retried by the outbox (D-072);
-   * one with a code or link is never stored, so it cannot be retried.
+   * one with a code or link is never stored, so it cannot be retried, and
+   * the provider is not awaited for it (the promise settles before delivery).
    */
   async send(input: SendNotification): Promise<void> {
     const userId = input.userId;
@@ -134,12 +136,35 @@ export class NotificationsService {
         return;
       }
       if (!input.to) throw new Error('No recipient address');
-      const sent = await this.dispatchMessage(
+      const message = await this.compose(
         input.channel as MessageChannel,
         input.templateKey,
         variables,
         input.to,
       );
+      if (input.secret) {
+        // A code or link is handed to the provider without waiting for it:
+        // SMTP takes seconds, and the registration, code and recovery routes
+        // must answer as fast for an address with an account as for one
+        // without. It is never retried (it is not stored); a failure is
+        // logged and recorded, and the person asks for a new code or link.
+        void this.messaging.send(message).then(
+          async (sent) => {
+            await log({
+              status: NotificationStatus.SENT,
+              providerMessageId: sent.providerMessageId,
+            }).catch(() => undefined);
+          },
+          async (error: unknown) => {
+            this.logFailure(input.templateKey, input.channel, error);
+            await log({ status: NotificationStatus.FAILED }).catch(
+              () => undefined,
+            );
+          },
+        );
+        return;
+      }
+      const sent = await this.messaging.send(message);
       await log({
         status: NotificationStatus.SENT,
         providerMessageId: sent.providerMessageId,
@@ -365,9 +390,20 @@ export class NotificationsService {
     variables: Variables,
     to: string,
   ) {
+    return this.messaging.send(
+      await this.compose(channel, templateKey, variables, to),
+    );
+  }
+
+  private async compose(
+    channel: MessageChannel,
+    templateKey: string,
+    variables: Variables,
+    to: string,
+  ): Promise<OutboundMessage> {
     const template = await this.template(templateKey, channel);
     const body = render(template.body, variables);
-    return this.messaging.send({
+    return {
       channel,
       to,
       subject: template.subject
@@ -376,7 +412,7 @@ export class NotificationsService {
       body,
       html: channel === 'EMAIL' ? toEmailHtml(body) : undefined,
       personal: PERSONAL_TEMPLATES.has(templateKey),
-    });
+    };
   }
 
   private logFailure(

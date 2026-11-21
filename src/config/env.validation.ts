@@ -521,6 +521,15 @@ export function validateEnv(
       'Invalid environment configuration: MESSAGING_PROVIDER=smtp needs USER_EMAIL and USER_EMAIL_PASSWORD.',
     );
   }
+  // Redirecting would send every customer's codes and links to one inbox.
+  if (
+    validated.EMAIL_REDIRECT_TO &&
+    validated.NODE_ENV === NodeEnv.Production
+  ) {
+    throw new Error(
+      'Invalid environment configuration: EMAIL_REDIRECT_TO must not be set in production.',
+    );
+  }
 
   // Refused rather than quietly settled by hand: an operator expecting an
   // automatic split would never be paid.

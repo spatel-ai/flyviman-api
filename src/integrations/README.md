@@ -55,7 +55,7 @@ A shared server with no real providers yet can start without development tools:
 - **Reserved domains:** an email whose final recipient is on `.test`, `.example`, `.invalid`, `.localhost` or `example.com`/`.net`/`.org` is never sent. The send counts as done (the row is recorded as sent) and only a debug count is logged.
 - **SMS and WhatsApp** have no provider yet: with `ENABLE_DEV_TOOLS` they go to the development outbox as with the mock; without it they are discarded as with the sink.
 - **Development outbox:** with `ENABLE_DEV_TOOLS`, each email is also kept in the outbox under its original recipient, so tests still read one-time codes there.
-- **Failures** throw `SmtpDeliveryError` with only nodemailer's code (`EAUTH`, `ETIMEDOUT`, …): the notification outbox logs its name and retries. Messages with a code or link are not stored, so a failed one is lost (as with any provider). Nothing about a message is logged but counts.
+- **Failures** throw `SmtpDeliveryError` with only nodemailer's code (`EAUTH`, `ETIMEDOUT`, …): the notification outbox logs its name and retries. Messages with a code or link are not stored and not awaited (so known and unknown addresses answer in the same time); a failed one is logged, recorded `FAILED` and lost, and the person asks for a new one. `EMAIL_REDIRECT_TO` is refused in production. Nothing about a message is logged but counts.
 
 When adding a real provider: bind it in the integration's module by configuration, keep the mock for development and tests, and move any check the mock does at upload time (content type by leading bytes, size) to where a real bucket can enforce it.
 
