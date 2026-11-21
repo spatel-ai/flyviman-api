@@ -37,7 +37,7 @@ import { RazorpayPaymentGatewayProvider } from './razorpay-payment-gateway.provi
           const webhookSecret = config.get<string>('RAZORPAY_WEBHOOK_SECRET');
           if (!webhookSecret) {
             new Logger('PaymentModule').warn(
-              'RAZORPAY_WEBHOOK_SECRET is not set: Razorpay webhooks are refused; payments settle through the status sweep and refunds wait for their notices.',
+              'RAZORPAY_WEBHOOK_SECRET is not set: Razorpay webhooks are refused; payments settle when their checkout result is verified or through the status sweep, and refunds wait for their notices.',
             );
           }
           return new RazorpayPaymentGatewayProvider({
