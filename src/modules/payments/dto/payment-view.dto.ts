@@ -1,7 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, Matches } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
 import { BOOKING_REFERENCE } from '../../../common/reference.js';
+import { IsPlainText } from '../../../common/validation/text.js';
 import {
   PaymentPurpose,
   PaymentReviewReason,
@@ -134,6 +142,30 @@ export class AdminPaymentDto extends PaymentDetailDto {
       'Set when a verified event needs a person: `BOOKING_CLOSED`, `ALREADY_PAID`, `AMOUNT_MISMATCH`, `DUPLICATE_CAPTURE`.',
   })
   reviewReason: PaymentReviewReason | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description:
+      'When finance resolved an `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` flag (`POST /admin/payments/:reference/resolve-flag`). `reviewReason` stays as it was.',
+  })
+  reviewResolvedAt: string | null;
+}
+
+/** Finance's resolution of a gateway flag. */
+export class ResolvePaymentFlagDto {
+  @ApiProperty({
+    minLength: 3,
+    maxLength: 500,
+    description:
+      'How the flag was settled (checked at the gateway, refunded through the refund flow), for the audit trail (rule 6). No personal or card details.',
+  })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  @IsPlainText()
+  reason: string;
 }
 
 export class AdminPaymentsQueryDto extends PageQueryDto {

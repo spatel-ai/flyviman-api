@@ -16,6 +16,7 @@ import {
   bookingPaymentSummary,
   confirmationKeptMinor,
   depositMinor,
+  hasOpenGatewayFlag,
   isDuplicateCapture,
   nextPaymentStatus,
   outcomeOfGatewayStatus,
@@ -658,4 +659,31 @@ describe('confirmationKeptMinor', () => {
     ]);
     expect(keptAfterDuplicate >= required).toBe(true);
   });
+});
+
+describe('hasOpenGatewayFlag', () => {
+  it.each([
+    PaymentReviewReason.AMOUNT_MISMATCH,
+    PaymentReviewReason.DUPLICATE_CAPTURE,
+  ])('%s is open until resolved', (reviewReason) => {
+    expect(hasOpenGatewayFlag({ reviewReason, reviewResolvedAt: null })).toBe(
+      true,
+    );
+    expect(
+      hasOpenGatewayFlag({ reviewReason, reviewResolvedAt: new Date() }),
+    ).toBe(false);
+  });
+
+  it.each([
+    PaymentReviewReason.BOOKING_CLOSED,
+    PaymentReviewReason.ALREADY_PAID,
+    null,
+  ])(
+    '%s is not resolved here (the refund queue, or no flag)',
+    (reviewReason) => {
+      expect(hasOpenGatewayFlag({ reviewReason, reviewResolvedAt: null })).toBe(
+        false,
+      );
+    },
+  );
 });

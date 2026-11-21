@@ -9,6 +9,7 @@ import { NotificationEventsModule } from '../notifications/events/notification-e
 import { OperatorsModule } from '../operators/operators.module.js';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { OperatorSettlementsController } from './operator-settlements.controller.js';
+import { PaymentFlagsService } from './payment-flags.service.js';
 import { PaymentWebhooksController } from './payment-webhooks.controller.js';
 import { PaymentWebhooksService } from './payment-webhooks.service.js';
 import { PaymentsController } from './payments.controller.js';
@@ -43,6 +44,7 @@ import { SettlementsService } from './settlements.service.js';
   providers: [
     PaymentsService,
     PaymentWebhooksService,
+    PaymentFlagsService,
     RefundsService,
     ReceiptsService,
     PaymentReportsService,

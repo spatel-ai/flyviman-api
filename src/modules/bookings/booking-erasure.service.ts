@@ -55,14 +55,16 @@ export class BookingErasureService {
       select: {
         status: true,
         reviewReason: true,
+        reviewResolvedAt: true,
         refunds: { select: { status: true } },
       },
     });
     return {
       bookings,
-      payments: payments.map(({ status, reviewReason }) => ({
+      payments: payments.map(({ status, reviewReason, reviewResolvedAt }) => ({
         status,
         reviewReason,
+        reviewResolvedAt,
       })),
       refunds: payments.flatMap((payment) => payment.refunds),
     };
