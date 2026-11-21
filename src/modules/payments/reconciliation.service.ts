@@ -27,7 +27,10 @@ import {
   REFUNDABLE,
   refundableRemainderMinor,
 } from './payment-rules.js';
-import { unusableCalculation } from './settlement-rules.js';
+import {
+  REFUND_EXCEEDS_PAYABLE,
+  unusableCalculation,
+} from './settlement-rules.js';
 
 const MAX_PERIOD_DAYS = 92;
 /** A payment or refund without a final answer after this long is stuck. */
@@ -377,7 +380,9 @@ export class ReconciliationService {
       if (sum !== kept) {
         flag(
           'SETTLEMENT_AMOUNT_MISMATCH',
-          `The ${settlement.status} settlement adds up to ${sum} paise; ${kept} paise are kept now.`,
+          sum > kept && settlement.payableMinor === 0n
+            ? `${REFUND_EXCEEDS_PAYABLE} The ${settlement.status} settlement’s commission and tax (${sum} paise) are more than the ${kept} paise kept now.`
+            : `The ${settlement.status} settlement adds up to ${sum} paise; ${kept} paise are kept now.`,
           {
             ...ref,
             settlementId: settlement.id,

@@ -25,7 +25,7 @@ export class OperatorSettlementsController {
   @ApiOperation({
     summary: 'Own settlement records, newest first',
     description:
-      'What Flyviman owes the caller’s organisation per completed booking, its status and, once paid, the bank reference of the payout.',
+      'What Flyviman owes the caller’s organisation per completed booking: the money kept, the commission and tax deducted, the payable, its status and, once paid, the bank reference of the payout.',
   })
   @ApiOkResponse({ type: [OperatorSettlementDto] })
   async list(

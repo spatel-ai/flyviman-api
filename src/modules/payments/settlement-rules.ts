@@ -23,10 +23,13 @@ import {
  *   never passed to the operator as a smaller payout), no refund is on its
  *   way and the three figures add up to the money kept; otherwise `NOT_DUE`.
  *   So a refund after the trip (goodwill) comes out of the operator's
- *   payable, and a refund larger than the payable leaves the record
- *   `NOT_DUE` for finance (the reconciliation report flags it).
+ *   payable (assumed, lead 2026-11-21), and a refund larger than the
+ *   payable leaves the record `NOT_DUE` with the reason
+ *   `REFUND_EXCEEDS_PAYABLE` for finance (the reconciliation report flags
+ *   it too).
  * - `ON_HOLD` and `PAID` are a person's decisions: the system never moves a
- *   record into or out of them. A `PAID` record is never changed again.
+ *   record into or out of them. Releasing a hold returns the record to what
+ *   the rules give now. A `PAID` record is never changed again.
  */
 
 /** The stored price a settlement is worked out from. */
@@ -102,25 +105,49 @@ export function sameFigures(
   );
 }
 
-/** What the system says the record is: `DUE` or `NOT_DUE`. */
-export function derivedSettlementStatus(input: {
+export interface SettlementState {
   bookingStatus: BookingStatus;
   keptMinor: bigint;
   /** Whether the money credited towards the booking reached its price. */
   fullyPaid: boolean;
   refundOpen: boolean;
   figures: SettlementFigures;
-}): typeof SettlementStatus.DUE | typeof SettlementStatus.NOT_DUE {
-  const due =
-    input.bookingStatus === BookingStatus.COMPLETED &&
-    input.fullyPaid &&
-    input.keptMinor > 0n &&
-    !input.refundOpen &&
-    figuresTotal(input.figures) === input.keptMinor;
-  return due ? SettlementStatus.DUE : SettlementStatus.NOT_DUE;
 }
 
-/** Where finance may move a record (`PATCH /admin/settlements/:id`). */
+/** Shown for a refund after the trip larger than the payable (lead, W4-2). */
+export const REFUND_EXCEEDS_PAYABLE =
+  'Refund exceeds payable — finance to resolve.';
+
+/** Why a record is not due, for finance; null when it is due. */
+export function notDueReason(state: SettlementState): string | null {
+  if (state.bookingStatus !== BookingStatus.COMPLETED) {
+    return 'The trip is not completed.';
+  }
+  if (!state.fullyPaid) return 'The price was not paid in full.';
+  if (state.keptMinor <= 0n) return 'No money is kept on the booking.';
+  if (state.refundOpen) return 'A refund is on its way.';
+  const total = figuresTotal(state.figures);
+  if (total > state.keptMinor) return REFUND_EXCEEDS_PAYABLE;
+  if (total < state.keptMinor) {
+    return 'More money is kept than the price — finance to resolve.';
+  }
+  return null;
+}
+
+/** What the system says the record is: `DUE` or `NOT_DUE`. */
+export function derivedSettlementStatus(
+  state: SettlementState,
+): typeof SettlementStatus.DUE | typeof SettlementStatus.NOT_DUE {
+  return notDueReason(state) === null
+    ? SettlementStatus.DUE
+    : SettlementStatus.NOT_DUE;
+}
+
+/**
+ * Where finance may move a record (`PATCH /admin/settlements/:id`). `DUE`
+ * from `ON_HOLD` releases the hold: the record then takes whatever the rules
+ * give now, `DUE` or `NOT_DUE`.
+ */
 const MOVES: Record<SettlementStatus, readonly SettlementStatus[]> = {
   NOT_DUE: [SettlementStatus.ON_HOLD],
   DUE: [SettlementStatus.ON_HOLD, SettlementStatus.PAID],

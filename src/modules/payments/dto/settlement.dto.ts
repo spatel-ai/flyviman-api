@@ -61,6 +61,12 @@ export class AdminSettlementDto {
   @ApiProperty({ description: 'Paise of tax collected on the price.' })
   taxMinor: number;
 
+  @ApiProperty({
+    description:
+      'Paise kept towards the booking now (credited less refunds). Payable + commission + tax equals it when the record is consistent.',
+  })
+  keptMinor: number;
+
   @ApiProperty({ example: 'INR' })
   currency: string;
 
@@ -71,6 +77,15 @@ export class AdminSettlementDto {
       '`NOT_DUE` (the trip is not flown or not paid in full, a refund is on its way or the money kept does not cover the figures), `DUE`, `ON_HOLD` (held by finance) or `PAID` (paid out by hand; never changes again).',
   })
   status: SettlementStatus;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'Refund exceeds payable — finance to resolve.',
+    description:
+      'For `NOT_DUE` and `ON_HOLD`: why it is not due by the rules now (the trip not completed, the price not paid in full, a refund on its way, a refund larger than the payable, more kept than the price); null when due, and for `DUE` and `PAID`.',
+  })
+  notDueReason: string | null;
 
   @ApiProperty({ format: 'date-time', nullable: true, type: String })
   paidAt: string | null;
@@ -89,13 +104,31 @@ export class AdminSettlementDto {
   updatedAt: string;
 }
 
-/** A settlement as its operator sees it: what it is owed, not the split. */
+/**
+ * A settlement as its operator sees it: the money kept and what was
+ * deducted, so the payout can be explained. Never the platform's rule
+ * configuration.
+ */
 export class OperatorSettlementDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
   @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
   bookingReference: string;
+
+  @ApiProperty({
+    description:
+      'Paise Flyviman kept from the customer for the booking now (paid less refunds).',
+  })
+  keptMinor: number;
+
+  @ApiProperty({ description: 'Paise of Flyviman’s commission deducted.' })
+  commissionMinor: number;
+
+  @ApiProperty({
+    description: 'Paise of tax deducted (collected by Flyviman).',
+  })
+  taxMinor: number;
 
   @ApiProperty({ description: 'Paise owed to the operator.' })
   payableMinor: number;
@@ -124,7 +157,7 @@ export class UpdateSettlementDto {
       SettlementStatus.ON_HOLD,
     ],
     description:
-      '`ON_HOLD` from `NOT_DUE` or `DUE`; `DUE` from `ON_HOLD` (releases a hold, only when the booking is due); `PAID` from `DUE`.',
+      '`ON_HOLD` from `NOT_DUE` or `DUE`; `DUE` from `ON_HOLD` releases the hold (the record becomes what the rules give now: `DUE` or `NOT_DUE`); `PAID` from `DUE`.',
   })
   @IsIn([SettlementStatus.DUE, SettlementStatus.PAID, SettlementStatus.ON_HOLD])
   status: 'DUE' | 'PAID' | 'ON_HOLD';

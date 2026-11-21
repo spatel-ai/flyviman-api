@@ -35,8 +35,10 @@ import type {
 import {
   canMoveSettlement,
   derivedSettlementStatus,
+  notDueReason,
   type SettlementCalculation,
   type SettlementFigures,
+  type SettlementState,
   sameFigures,
   settlementFigures,
   unusableCalculation,
@@ -79,8 +81,24 @@ export interface SettlementBasis {
   unusable: string | null;
 }
 
+/** The booking's payments, to show what is kept and why a record waits. */
+const BOOKING_MONEY = {
+  reference: true,
+  status: true,
+  totalMinor: true,
+  payments: {
+    where: { status: { in: [...MONEY_IN] } },
+    select: {
+      status: true,
+      reviewReason: true,
+      amountMinor: true,
+      refunds: { select: { status: true, amountMinor: true } },
+    },
+  },
+} as const satisfies Prisma.BookingSelect;
+
 const ADMIN_INCLUDE = {
-  booking: { select: { reference: true, status: true } },
+  booking: { select: BOOKING_MONEY },
   operator: { select: { legalName: true, tradingName: true } },
 } as const satisfies Prisma.SettlementInclude;
 
@@ -379,10 +397,12 @@ export class SettlementsService {
    * Finance's decision on a record (`PATCH /admin/settlements/:id`), under
    * the booking's lock:
    * - `ON_HOLD` from `NOT_DUE` or `DUE`;
-   * - `DUE` from `ON_HOLD`, only when the booking is due now (409
-   *   `SETTLEMENT_NOT_DUE`), with the figures brought up to date;
+   * - `DUE` from `ON_HOLD` releases the hold: the record takes what the
+   *   rules give now (`DUE` or `NOT_DUE`), with the figures brought up to
+   *   date;
    * - `PAID` from `DUE`, with the payout's bank reference, only when the
-   *   booking is still due and the figures, and the payable finance saw
+   *   booking is still due (409 `SETTLEMENT_NOT_DUE`, the reason in
+   *   `details`) and the figures, and the payable finance saw
    *   (`expectedPayableMinor`), are unchanged (409 `SETTLEMENT_CHANGED`).
    *   Marking it paid again with the same reference returns the record;
    *   another reference is 409 `SETTLEMENT_ALREADY_PAID`.
@@ -426,41 +446,39 @@ export class SettlementsService {
         );
       }
 
+      const fresh =
+        basis?.calculation && !basis.unusable
+          ? settlementFigures(basis.keptMinor, basis.calculation)
+          : null;
+      const why =
+        basis && fresh
+          ? notDueReason({
+              bookingStatus: basis.booking.status,
+              keptMinor: basis.keptMinor,
+              fullyPaid: basis.fullyPaid,
+              refundOpen: basis.refundOpen,
+              figures: fresh,
+            })
+          : 'The booking has no usable price calculation.';
+
+      let status: SettlementStatus = to;
       let figures: SettlementFigures = row;
-      if (to === SettlementStatus.DUE || to === SettlementStatus.PAID) {
-        const fresh =
-          basis?.calculation && !basis.unusable
-            ? settlementFigures(basis.keptMinor, basis.calculation)
-            : null;
-        const due =
-          basis &&
-          fresh &&
-          derivedSettlementStatus({
-            bookingStatus: basis.booking.status,
-            keptMinor: basis.keptMinor,
-            fullyPaid: basis.fullyPaid,
-            refundOpen: basis.refundOpen,
-            figures: fresh,
-          }) === SettlementStatus.DUE;
-        if (!basis || !fresh || !due) {
+      if (to === SettlementStatus.DUE) {
+        // Releasing a hold: back to what the rules give now.
+        if (fresh) figures = fresh;
+        status = why === null ? SettlementStatus.DUE : SettlementStatus.NOT_DUE;
+      } else if (to === SettlementStatus.PAID) {
+        if (!fresh || why !== null) {
           throw new AppException(
             'SETTLEMENT_NOT_DUE',
-            'This settlement is not due: the trip is not completed or not fully paid, a refund is on its way, or the money kept does not cover it.',
+            `This settlement is not due: ${why ?? ''}`,
             HttpStatus.CONFLICT,
-            basis
-              ? [
-                  { field: 'bookingStatus', issue: basis.booking.status },
-                  { field: 'keptMinor', issue: String(basis.keptMinor) },
-                  { field: 'fullyPaid', issue: String(basis.fullyPaid) },
-                  { field: 'refundOpen', issue: String(basis.refundOpen) },
-                ]
-              : [],
+            [{ field: 'reason', issue: why ?? '' }],
           );
         }
         if (
-          to === SettlementStatus.PAID &&
-          (!sameFigures(fresh, row) ||
-            BigInt(input.expectedPayableMinor ?? -1) !== row.payableMinor)
+          !sameFigures(fresh, row) ||
+          BigInt(input.expectedPayableMinor ?? -1) !== row.payableMinor
         ) {
           throw new AppException(
             'SETTLEMENT_CHANGED',
@@ -469,14 +487,13 @@ export class SettlementsService {
             [{ field: 'payableMinor', issue: String(fresh.payableMinor) }],
           );
         }
-        figures = fresh;
       }
 
       const paid = to === SettlementStatus.PAID;
       const updated = await tx.settlement.update({
         where: { id },
         data: {
-          status: to,
+          status,
           payableMinor: figures.payableMinor,
           commissionMinor: figures.commissionMinor,
           taxMinor: figures.taxMinor,
@@ -504,6 +521,7 @@ export class SettlementsService {
             status: updated.status,
             paymentReference: updated.paymentReference,
             paidAt: updated.paidAt?.toISOString() ?? null,
+            ...(to === SettlementStatus.DUE ? { released: true } : {}),
           },
           reason: input.reason,
         },
@@ -532,7 +550,7 @@ export class SettlementsService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.settlement.findMany({
         where,
-        include: { booking: { select: { reference: true } } },
+        include: { booking: { select: BOOKING_MONEY } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -543,6 +561,9 @@ export class SettlementsService {
       items: rows.map((row) => ({
         id: row.id,
         bookingReference: row.booking.reference,
+        keptMinor: minorToNumber(liveState(row).keptMinor),
+        commissionMinor: minorToNumber(row.commissionMinor),
+        taxMinor: minorToNumber(row.taxMinor),
         payableMinor: minorToNumber(row.payableMinor),
         currency: row.currency,
         status: row.status,
@@ -555,7 +576,29 @@ export class SettlementsService {
   }
 }
 
+type MoneyRow = SettlementFigures & {
+  booking: Prisma.BookingGetPayload<{ select: typeof BOOKING_MONEY }>;
+};
+
+/** The booking's state now, read with the record (no lock: for display). */
+function liveState(row: MoneyRow): SettlementState {
+  const payments = row.booking.payments;
+  return {
+    bookingStatus: row.booking.status,
+    keptMinor: netPaidMinor(payments),
+    fullyPaid: creditedMinor(payments) >= row.booking.totalMinor,
+    refundOpen: payments.some((payment) =>
+      payment.refunds.some((refund) => OPEN_REFUND.includes(refund.status)),
+    ),
+    figures: row,
+  };
+}
+
 function toAdminDto(row: AdminRow): AdminSettlementDto {
+  const state = liveState(row);
+  const waiting =
+    row.status === SettlementStatus.NOT_DUE ||
+    row.status === SettlementStatus.ON_HOLD;
   return {
     id: row.id,
     bookingReference: row.booking.reference,
@@ -565,8 +608,10 @@ function toAdminDto(row: AdminRow): AdminSettlementDto {
     payableMinor: minorToNumber(row.payableMinor),
     commissionMinor: minorToNumber(row.commissionMinor),
     taxMinor: minorToNumber(row.taxMinor),
+    keptMinor: minorToNumber(state.keptMinor),
     currency: row.currency,
     status: row.status,
+    notDueReason: waiting ? notDueReason(state) : null,
     paidAt: row.paidAt?.toISOString() ?? null,
     paymentReference: row.paymentReference,
     createdAt: row.createdAt.toISOString(),

@@ -53,7 +53,7 @@ export class AdminSettlementsController {
   @ApiOperation({
     summary: 'Operator settlements, newest first',
     description:
-      'One per completed booking with money kept, created by a job every 5 minutes: `payableMinor` = money kept − `commissionMinor` − `taxMinor`, from the price calculation of the price booked. `DUE` once the booking is `COMPLETED` and its price was paid in full, no refund is on its way and the figures add up to the money kept; otherwise `NOT_DUE`. Filter by `status`.',
+      'One per completed booking with money kept, created by a job every 5 minutes: `payableMinor` = money kept − `commissionMinor` − `taxMinor`, from the price calculation of the price booked. `DUE` once the booking is `COMPLETED` and its price was paid in full, no refund is on its way and the figures add up to the money kept; otherwise `NOT_DUE`, with `notDueReason`. A refund after the trip comes out of the payable; one larger than the payable leaves it `NOT_DUE` (“Refund exceeds payable — finance to resolve.”). Filter by `status`.',
   })
   @ApiOkResponse({ type: [AdminSettlementDto] })
   async list(
@@ -68,7 +68,7 @@ export class AdminSettlementsController {
   @ApiOperation({
     summary: 'Hold, release or mark a settlement paid',
     description:
-      '`ON_HOLD` from `NOT_DUE` or `DUE`; `DUE` from `ON_HOLD`, only when the booking is due now (409 `SETTLEMENT_NOT_DUE`); `PAID` from `DUE` with the payout’s bank `paymentReference` and the `expectedPayableMinor` shown, only while still due (409 `SETTLEMENT_NOT_DUE`) and unchanged (409 `SETTLEMENT_CHANGED`, the current payable in `details`). A `PAID` record never changes again: marking it paid with the same reference returns it, another reference is 409 `SETTLEMENT_ALREADY_PAID`; any other move is 409 `SETTLEMENT_INVALID_TRANSITION`. Audited with the reason. A repeat with the same `Idempotency-Key` and body returns the first answer.',
+      '`ON_HOLD` from `NOT_DUE` or `DUE`; `DUE` from `ON_HOLD` releases the hold: the record becomes what the rules give now (`DUE` or `NOT_DUE`, see `notDueReason`); `PAID` from `DUE` with the payout’s bank `paymentReference` and the `expectedPayableMinor` shown, only while still due (409 `SETTLEMENT_NOT_DUE`, the reason in `details`) and unchanged (409 `SETTLEMENT_CHANGED`, the current payable in `details`). A `PAID` record never changes again: marking it paid with the same reference returns it, another reference is 409 `SETTLEMENT_ALREADY_PAID`; any other move is 409 `SETTLEMENT_INVALID_TRANSITION`. Audited with the reason. A repeat with the same `Idempotency-Key` and body returns the first answer.',
   })
   @ApiHeader({
     name: 'Idempotency-Key',
