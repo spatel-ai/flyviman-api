@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { APIRequestContext, expect, test } from '@playwright/test';
+import { Redis } from 'ioredis';
 import {
   MOCK_EVENT_ID_HEADER,
   MOCK_PAYMENT_WEBHOOK_SECRET,
@@ -215,6 +216,38 @@ async function runSync(request: APIRequestContext) {
   return request.post('dev/jobs/settlement-sync', {
     headers: await csrfHeaders(request),
   });
+}
+
+/** The settlement job's Redis lock (`SYNC_LOCK_KEY` in settlements.service.ts). */
+const SYNC_LOCK_KEY = 'payments:settlements:lock';
+const RELEASE_LOCK = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
+
+/**
+ * Runs `steps` while holding the settlement job's lock, so no sync started by
+ * another test (they run in parallel, and each sync covers every booking) or
+ * by the 5-minute schedule moves a record in between. Waits for a sync in
+ * flight to finish first, and proves the lock holds (the job answers
+ * `skipped`).
+ */
+async function withSyncPaused<T>(
+  request: APIRequestContext,
+  steps: () => Promise<T>,
+): Promise<T> {
+  const redis = new Redis(process.env.REDIS_URL!);
+  const token = randomUUID();
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      if (await redis.set(SYNC_LOCK_KEY, token, 'EX', 60, 'NX')) break;
+      if (attempt >= 100) throw new Error('The settlement job never ended.');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    const ran = await runSync(request);
+    expect((await ran.json()).data).toMatchObject({ skipped: true });
+    return await steps();
+  } finally {
+    await redis.eval(RELEASE_LOCK, 1, SYNC_LOCK_KEY, token);
+    redis.disconnect();
+  }
 }
 
 /**
@@ -507,31 +540,35 @@ test.describe('PATCH /admin/settlements/:id', () => {
     const reason = 'Goodwill refund checked.';
     const part = Math.floor(booking.totalMinor / 20);
 
-    const started = await finance.post(
-      `admin/payments/${booking.payment.reference}/refunds`,
-      {
-        headers: {
-          ...(await csrfHeaders(finance)),
-          'Idempotency-Key': randomUUID(),
-        },
-        data: { amountMinor: part, currency: 'INR', reason },
-      },
-    );
-    expect(started.status()).toBe(201);
-    const refundReference = (await started.json()).data.reference as string;
-
     // Not yet synced, but marking it paid rechecks the booking under its lock.
-    const notDue = await change(finance, row.id, {
-      status: 'PAID',
-      reason,
-      paymentReference: `R-${randomUUID().slice(0, 8)}`,
-      expectedPayableMinor: Number(row.payableMinor),
-    });
-    expect(notDue.status()).toBe(409);
-    expect(await errorCode(notDue)).toBe('SETTLEMENT_NOT_DUE');
-    expect((await notDue.json()).error.details).toContainEqual({
-      field: 'reason',
-      issue: 'A refund is on its way.',
+    // The job is paused so the record is still DUE when it is marked paid.
+    const refundReference = await withSyncPaused(request, async () => {
+      expect((await adminView(finance, row.id))!.status).toBe('DUE');
+      const started = await finance.post(
+        `admin/payments/${booking.payment.reference}/refunds`,
+        {
+          headers: {
+            ...(await csrfHeaders(finance)),
+            'Idempotency-Key': randomUUID(),
+          },
+          data: { amountMinor: part, currency: 'INR', reason },
+        },
+      );
+      expect(started.status()).toBe(201);
+
+      const notDue = await change(finance, row.id, {
+        status: 'PAID',
+        reason,
+        paymentReference: `R-${randomUUID().slice(0, 8)}`,
+        expectedPayableMinor: Number(row.payableMinor),
+      });
+      expect(notDue.status()).toBe(409);
+      expect(await errorCode(notDue)).toBe('SETTLEMENT_NOT_DUE');
+      expect((await notDue.json()).error.details).toContainEqual({
+        field: 'reason',
+        issue: 'A refund is on its way.',
+      });
+      return (await started.json()).data.reference as string;
     });
 
     // The sync marks it NOT_DUE with the reason.
