@@ -4,8 +4,6 @@ import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   MOCK_EVENT_ID_HEADER,
   MOCK_PAYMENT_KEY_SECRET,
-  MOCK_PAYMENT_WEBHOOK_SECRET,
-  MOCK_SIGNATURE_HEADER,
 } from '../src/integrations/payment/mock-payment-gateway.provider.js';
 import { hmacSha256Hex } from '../src/integrations/payment/payment-signature.js';
 import { STORED_EVENT_FIELDS } from '../src/modules/payments/payment-rules.js';
