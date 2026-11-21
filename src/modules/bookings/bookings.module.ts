@@ -19,7 +19,11 @@ import { AdminPriceOverrideController } from './admin-price-override.controller.
 import { BookingDocumentsController } from './booking-documents.controller.js';
 import { BookingDocumentsService } from './booking-documents.service.js';
 import { BookingEscalationService } from './booking-escalation.service.js';
+import { BookingPassengersService } from './booking-passengers.service.js';
 import { BookingRequestsService } from './booking-requests.service.js';
+import { BookingRevalidationService } from './booking-revalidation.service.js';
+import { BookingSelfServiceController } from './booking-self-service.controller.js';
+import { BookingTimelineService } from './booking-timeline.service.js';
 import { BookingsController } from './bookings.controller.js';
 import { BookingsService } from './bookings.service.js';
 import { ChangeRequestListsService } from './change-request-lists.service.js';
@@ -32,13 +36,17 @@ import { EmptyLegBookingsController } from './empty-leg-bookings.controller.js';
 import { EmptyLegBookingsService } from './empty-leg-bookings.service.js';
 import { MeBookingsController } from './me-bookings.controller.js';
 import { OperatorBookingRequestsController } from './operator-booking-requests.controller.js';
+import { OperatorBookingsController } from './operator-bookings.controller.js';
+import { OperatorBookingsService } from './operator-bookings.service.js';
 import { OperatorChangeRequestsController } from './operator-change-requests.controller.js';
 import { TripsService } from './trips.service.js';
+import { BookingReportsService } from './booking-reports.service.js';
 
 /**
  * Bookings (M8): creation from a search result and the customer's reads;
  * the customer's trips, cancellation and change requests; the operator's
  * request inbox, quotes and answers, and the hold-expiry job; the
+ * operator's bookings (scheduled, completed, cancelled); the
  * confirmation rule; bookings and change requests for Flyviman staff.
  */
 @Module({
@@ -66,22 +74,29 @@ import { TripsService } from './trips.service.js';
     BookingConversationController,
     CustomerQuotesController,
     OperatorBookingRequestsController,
+    OperatorBookingsController,
     DevBookingJobsController,
     EmptyLegBookingsController,
     BookingDocumentsController,
     AdminBookingEscalationController,
+    BookingSelfServiceController,
   ],
   providers: [
     BookingsService,
     TripsService,
     BookingRequestsService,
     AdminBookingsService,
+    OperatorBookingsService,
     ChangeRequestListsService,
+    BookingReportsService,
     FieldCipher,
     EmptyLegBookingsService,
     BookingDocumentsService,
     BookingEscalationService,
+    BookingTimelineService,
+    BookingPassengersService,
+    BookingRevalidationService,
   ],
-  exports: [BookingsService],
+  exports: [BookingsService, BookingReportsService],
 })
 export class BookingsModule {}

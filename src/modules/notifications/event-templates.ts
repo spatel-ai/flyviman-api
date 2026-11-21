@@ -4,7 +4,8 @@ import { NOTIFICATION_MATRIX } from './matrix.js';
 /**
  * The wording of the matrix events (M10), kept as one short copy per event
  * and turned into a template for each channel the event uses. Variables are
- * system-derived only: `reference`, `link`, `validUntil`, `decision`. No
+ * system-derived only: `reference`, `link`, `validUntil`, `decision`,
+ * `passengerCount`. No
  * amount, passenger, medical or free-text value ever appears, so a message
  * is safe on a lock screen (rule 8) and an estimate is never read as a
  * final price (rule 1).
@@ -51,6 +52,10 @@ const COPY: Record<string, Copy> = {
     title: 'Change requested for {{reference}}',
     text: 'The customer asked for a change to {{reference}}. Open it in the operator portal to approve or decline.',
   },
+  'booking.passengers_changed': {
+    title: 'Passengers changed for {{reference}}',
+    text: 'The customer changed who is flying on {{reference}}: {{passengerCount}} passengers now. Open it in the operator portal for the passenger details.',
+  },
   'booking.confirmed_operator': {
     title: 'Booking {{reference}} is confirmed',
     text: 'Booking {{reference}} is confirmed. Open it in the operator portal for the trip details.',
@@ -81,6 +86,24 @@ const COPY: Record<string, Copy> = {
     title: 'Your booking {{reference}} is confirmed',
     text: 'Your booking {{reference}} is confirmed. Open it on Flyviman for the details and the cancellation terms.',
     short: 'your booking is confirmed. Details are on Flyviman.',
+  },
+  'booking.scheduled': {
+    title: 'Your trip {{reference}} is scheduled',
+    text: 'The operator has finalised the arrangements for your trip {{reference}}. Open it on Flyviman for the details.',
+  },
+  'booking.completed': {
+    title: 'Your trip {{reference}} is completed',
+    text: 'Your trip {{reference}} has been marked as flown. Thank you for flying with Flyviman.',
+  },
+  'booking.cancelled_by_operator': {
+    title: 'Your booking {{reference}} has been cancelled by the operator',
+    text: 'The operator can no longer fly your booking {{reference}}, so it has been cancelled. No cancellation charge applies: anything you paid will be refunded by Flyviman. Open it on Flyviman for the details.',
+    short:
+      'the operator cancelled your booking. No charge applies; anything you paid will be refunded by Flyviman.',
+  },
+  'booking.cancelled_by_operator_ops': {
+    title: 'Operator cancelled booking {{reference}}',
+    text: 'The operator cancelled booking {{reference}}. No charge applies to the customer; any refund due is listed for finance in refunds due. Follow up with the customer and the operator as needed.',
   },
   'payment.succeeded': {
     title: 'Payment received for {{reference}}',
@@ -121,6 +144,7 @@ export const EVENT_VARIABLES: ReadonlySet<string> = new Set([
   'link',
   'validUntil',
   'decision',
+  'passengerCount',
 ]);
 
 /**

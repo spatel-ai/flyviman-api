@@ -8,7 +8,9 @@ import { Role } from '../../generated/prisma/enums.js';
  * hold every capability on every aircraft. "Manage empty legs" (M7) covers
  * offers on the aircraft in reach. "Manage bookings" (M8) covers booking
  * requests on the aircraft in reach: reading them, accepting, rejecting,
- * asking the customer, quoting and internal notes.
+ * asking the customer, quoting and internal notes; and the bookings on them
+ * (M8-B): reading them with passenger names, marking them scheduled or
+ * completed, and cancelling them.
  */
 export const CAPABILITIES = [
   'MANAGE_AIRCRAFT',
@@ -27,7 +29,7 @@ export const CAPABILITY_DESCRIPTIONS: Record<Capability, string> = {
   MANAGE_EMPTY_LEGS:
     'List, create, change, publish and withdraw empty-leg offers on the aircraft in reach.',
   MANAGE_BOOKINGS:
-    'See and answer booking requests on the aircraft in reach: accept, reject, ask the customer, quote and add notes.',
+    'See and answer booking requests on the aircraft in reach: accept, reject, ask the customer, quote and add notes; see the bookings on them with passenger names, mark trips scheduled or completed, and cancel a booking.',
 };
 
 /** The shape of `OperatorMember.permissions` for a staff member. */

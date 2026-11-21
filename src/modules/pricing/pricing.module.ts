@@ -15,6 +15,7 @@ import { OperatorPricingController } from './operator-pricing.controller.js';
 import { OperatorPricingService } from './operator-pricing.service.js';
 import { PricingService } from './pricing.service.js';
 import { PromotionsService } from './promotions.service.js';
+import { PricingReportsService } from './pricing-reports.service.js';
 
 @Module({
   imports: [OperatorsModule, AircraftModule, AuditModule],
@@ -32,7 +33,13 @@ import { PromotionsService } from './promotions.service.js';
     AdminPricingService,
     CancellationTermsService,
     PromotionsService,
+    PricingReportsService,
   ],
-  exports: [PricingService, CancellationTermsService, PromotionsService],
+  exports: [
+    PricingService,
+    CancellationTermsService,
+    PromotionsService,
+    PricingReportsService,
+  ],
 })
 export class PricingModule {}

@@ -56,6 +56,9 @@ const CANCELLED_BY_CUSTOMER = 'Cancelled by the customer.';
 /** What a cancellation by operations (status override) records. */
 const CANCELLED_BY_OPERATIONS = 'Cancelled by Flyviman operations.';
 
+/** What an operator's cancellation records (its reason is kept apart). */
+const CANCELLED_BY_OPERATOR = 'Cancelled by the operator.';
+
 function notFound(what = 'Booking'): AppException {
   return new AppException(
     'NOT_FOUND',
@@ -244,7 +247,8 @@ export class TripsService {
    * and any open quote closed `EXPIRED`, a completed CANCELLATION request
    * holding the charge and the refund due (refunds pick it up, M9), open
    * change requests closed, and the audit record. The customer's own
-   * cancellation and the override to CANCELLED both come here. Returns the
+   * cancellation, the operator's and the override to CANCELLED all come
+   * here (the caller decides the charge in `quote`). Returns the
    * time the transition stamped.
    */
   async applyCancellation(
@@ -253,7 +257,7 @@ export class TripsService {
     quote: CancellationQuoteDto,
     now: Date,
     by:
-      | { kind: 'CUSTOMER'; user: AuthUser; reason?: string }
+      | { kind: 'CUSTOMER' | 'OPERATOR'; user: AuthUser; reason?: string }
       | { kind: 'OPERATIONS'; user: AuthUser; overrideReason: string },
   ): Promise<Date> {
     await assertNoPaymentPending(tx, booking.id);
@@ -285,7 +289,7 @@ export class TripsService {
     // The request has ended: the aircraft's time is offered again at once,
     // and a quote still open closes.
     await this.bookings.endRequest(tx, booking.id, now);
-    const reason = by.kind === 'CUSTOMER' ? by.reason : undefined;
+    const reason = by.kind === 'OPERATIONS' ? undefined : by.reason;
     // The time the transition stamped, so the answer matches the record.
     const { cancelledAt } = await tx.booking.update({
       where: { id: booking.id },
@@ -336,7 +340,9 @@ export class TripsService {
         details: this.cipher.encrypt(
           by.kind === 'CUSTOMER'
             ? CANCELLED_BY_CUSTOMER
-            : CANCELLED_BY_OPERATIONS,
+            : by.kind === 'OPERATOR'
+              ? CANCELLED_BY_OPERATOR
+              : CANCELLED_BY_OPERATIONS,
         ),
         chargeMinor: BigInt(quote.chargeMinor),
         refundMinor: BigInt(quote.refundMinor),
