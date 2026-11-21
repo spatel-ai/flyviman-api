@@ -30,6 +30,7 @@ export const MISMATCH_KINDS = [
   'SETTLEMENT_MISSING',
   'SETTLEMENT_AMOUNT_MISMATCH',
   'SETTLEMENT_BOOKING_NOT_COMPLETED',
+  'SETTLEMENT_REFERENCE_REUSED',
 ] as const;
 export type MismatchKind = (typeof MISMATCH_KINDS)[number];
 
@@ -99,7 +100,7 @@ export class ReconciliationMismatchDto {
     enum: MISMATCH_KINDS,
     enumName: 'ReconciliationMismatchKind',
     description:
-      '`PAYMENT_SUMMARY_MISMATCH` (the booking’s payment status is not what its payments say); `PAYMENT_FLAGGED` (another amount or a second capture at the gateway: check its dashboard); `EXTRA_MONEY_UNREFUNDED` (money paid after closing or twice, not yet refunded); `PAYMENT_STUCK` and `REFUND_STUCK` (no final answer after 24 hours); `KEPT_EXCEEDS_TOTAL`; `SETTLEMENT_MISSING` (a completed booking with money kept and no settlement); `SETTLEMENT_AMOUNT_MISMATCH` (the settlement’s figures do not add up to the money kept now); `SETTLEMENT_BOOKING_NOT_COMPLETED` (a due or paid settlement whose booking is no longer `COMPLETED`).',
+      '`PAYMENT_SUMMARY_MISMATCH` (the booking’s payment status is not what its payments say); `PAYMENT_FLAGGED` (another amount or a second capture at the gateway: check its dashboard); `EXTRA_MONEY_UNREFUNDED` (money paid after closing or twice, not yet refunded); `PAYMENT_STUCK` and `REFUND_STUCK` (no final answer after 24 hours); `KEPT_EXCEEDS_TOTAL`; `SETTLEMENT_MISSING` (a completed booking with money kept and no settlement); `SETTLEMENT_AMOUNT_MISMATCH` (the settlement’s figures do not add up to the money kept now); `SETTLEMENT_BOOKING_NOT_COMPLETED` (a due or paid settlement whose booking is no longer `COMPLETED`); `SETTLEMENT_REFERENCE_REUSED` (a payout reference, ignoring case, on more than one paid settlement, one of them paid in the period; one row per settlement, the reference in `detail`).',
   })
   kind: MismatchKind;
 

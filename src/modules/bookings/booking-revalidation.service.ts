@@ -10,11 +10,14 @@ import type {
   UnavailableReason,
 } from './dto/customer-booking.dto.js';
 
-/** `BookingsService.unbookable`'s reasons, in the customer's terms. */
+/**
+ * `BookingsService.unbookable`'s reasons, in the customer's terms. An
+ * operator or aircraft losing its approval (suspended, withdrawn) is
+ * Flyviman's business with the operator, not the customer's: it falls
+ * through to the generic `UNAVAILABLE`, as does any reason not listed.
+ */
 const REASONS: Record<string, UnavailableReason> = {
   'the trip has departed': 'DEPARTED',
-  'the operator is not approved': 'OPERATOR_NOT_APPROVED',
-  'the aircraft is not approved or not in service': 'AIRCRAFT_NOT_AVAILABLE',
   'the aircraft time is no longer free': 'TIME_TAKEN',
 };
 

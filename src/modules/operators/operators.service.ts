@@ -45,6 +45,7 @@ import {
   staffAccess,
 } from './operator-access.js';
 import type { ExpiryCandidate } from '../compliance/expiry.js';
+import type { DashboardSettlementsDto } from './dto/operator-dashboard.dto.js';
 import { nextOperatorStatus, OperatorAction } from './operator-transitions.js';
 
 export type OperatorRecord = Prisma.OperatorGetPayload<object>;
@@ -270,6 +271,30 @@ export class OperatorsService implements OnModuleInit {
 
   unknownAircraft(operatorId: string, ids: string[]): Promise<string[]> {
     return this.aircraftCheck(operatorId, ids);
+  }
+
+  /**
+   * The dashboard's settlements section is read from `payments`, which
+   * depends on this module, so it registers its reader here (as aircraft
+   * does above). Until registered there is no section (null).
+   */
+  private settlementsSummary:
+    | ((operatorId: string, now: Date) => Promise<DashboardSettlementsDto>)
+    | null = null;
+
+  registerSettlementsSummary(
+    read: (operatorId: string, now: Date) => Promise<DashboardSettlementsDto>,
+  ): void {
+    this.settlementsSummary = read;
+  }
+
+  settlementsSummaryFor(
+    operatorId: string,
+    now: Date,
+  ): Promise<DashboardSettlementsDto | null> {
+    return this.settlementsSummary
+      ? this.settlementsSummary(operatorId, now)
+      : Promise.resolve(null);
   }
 
   /**

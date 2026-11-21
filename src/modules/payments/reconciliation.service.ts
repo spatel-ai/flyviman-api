@@ -131,7 +131,7 @@ export class ReconciliationService {
       }),
       this.prisma.settlement.findMany({
         where: { paidAt: period },
-        select: { payableMinor: true, currency: true },
+        select: { payableMinor: true, currency: true, paymentReference: true },
       }),
     ]);
     for (const payment of paid) {
@@ -401,6 +401,53 @@ export class ReconciliationService {
           `The settlement is ${settlement.status} but the booking is ${booking.status}.`,
           { ...ref, settlementId: settlement.id },
         );
+      }
+    }
+
+    // A payout reference names one bank transfer to one settlement: any
+    // paid in the period that shares its reference with another paid record
+    // (at any time, ignoring case).
+    const references = [
+      ...new Set(
+        paidOut.flatMap((settlement) =>
+          settlement.paymentReference ? [settlement.paymentReference] : [],
+        ),
+      ),
+    ];
+    if (references.length > 0) {
+      const sharing = await this.prisma.settlement.findMany({
+        where: {
+          status: SettlementStatus.PAID,
+          paymentReference: { in: references, mode: 'insensitive' },
+        },
+        select: {
+          id: true,
+          paymentReference: true,
+          payableMinor: true,
+          currency: true,
+          booking: { select: { reference: true } },
+        },
+        orderBy: [{ paymentReference: 'asc' }, { id: 'asc' }],
+      });
+      const byReference = new Map<string, typeof sharing>();
+      for (const row of sharing) {
+        const key = (row.paymentReference ?? '').toUpperCase();
+        byReference.set(key, [...(byReference.get(key) ?? []), row]);
+      }
+      for (const rows of byReference.values()) {
+        if (rows.length < 2) continue;
+        for (const row of rows) {
+          flag(
+            'SETTLEMENT_REFERENCE_REUSED',
+            `Payout reference ${row.paymentReference ?? ''} is on ${rows.length} paid settlements.`,
+            {
+              bookingReference: row.booking.reference,
+              settlementId: row.id,
+              amountMinor: row.payableMinor,
+              currency: row.currency,
+            },
+          );
+        }
       }
     }
 

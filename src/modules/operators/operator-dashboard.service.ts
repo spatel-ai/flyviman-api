@@ -6,6 +6,7 @@ import {
   DocumentVerificationStatus,
   EmptyLegStatus,
   QuoteStatus,
+  Role,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
@@ -27,7 +28,7 @@ const DAY = 24 * HOUR;
 const TRIP_SCAN = 200;
 
 /**
- * The operator portal's dashboard: counts only, each section limited to the
+ * The operator portal's dashboard: counts (and settlement sums), each section limited to the
  * capability that opens its list and to the aircraft in the caller's reach
  * (D-049). Read-only, so a suspended operator still sees it.
  */
@@ -44,15 +45,18 @@ export class OperatorDashboardService {
     const bookings = can(access, 'MANAGE_BOOKINGS');
     const fleet = can(access, 'MANAGE_AIRCRAFT', 'MANAGE_AVAILABILITY');
     const legs = can(access, 'MANAGE_EMPTY_LEGS');
-    const [requests, quotes, trips, fleetCounts, emptyLegs] = await Promise.all(
-      [
+    // Settlements are the organisation's money: administrators only, as
+    // `/operator/settlements` is.
+    const money = user.role === Role.OPERATOR_ADMIN;
+    const [requests, quotes, trips, fleetCounts, emptyLegs, settlements] =
+      await Promise.all([
         bookings ? this.requests(access) : null,
         bookings ? this.quotes(access, now) : null,
         bookings ? this.trips(access, now) : null,
         fleet ? this.fleet(access, now) : null,
         legs ? this.emptyLegs(access, now) : null,
-      ],
-    );
+        money ? this.operators.settlementsSummaryFor(operator.id, now) : null,
+      ]);
     return {
       status: operator.status,
       requests,
@@ -60,6 +64,7 @@ export class OperatorDashboardService {
       trips,
       fleet: fleetCounts,
       emptyLegs,
+      settlements,
     };
   }
 

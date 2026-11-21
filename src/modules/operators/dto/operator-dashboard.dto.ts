@@ -73,6 +73,34 @@ export class DashboardEmptyLegsDto {
   expiringSoon: number;
 }
 
+export class DashboardSettlementAmountDto {
+  @ApiProperty({ example: 'INR' })
+  currency: string;
+
+  @ApiProperty({ description: 'Paise payable on `DUE` settlements.' })
+  dueMinor: number;
+
+  @ApiProperty({
+    description: 'Paise paid out on settlements paid in the last 30 days.',
+  })
+  paidMinor: number;
+}
+
+export class DashboardSettlementsDto {
+  @ApiProperty({ description: 'Settlements `DUE`: waiting for the payout.' })
+  dueCount: number;
+
+  @ApiProperty({ description: 'Settlements `PAID` in the last 30 days.' })
+  paidCount: number;
+
+  @ApiProperty({
+    type: [DashboardSettlementAmountDto],
+    description:
+      'The sums, one row per currency (never added across currencies), by currency code; empty when both counts are 0.',
+  })
+  amounts: DashboardSettlementAmountDto[];
+}
+
 /**
  * Each section is `null` when the caller's capabilities do not cover it
  * (staff see only what they may open); counts cover the aircraft in reach.
@@ -95,4 +123,12 @@ export class OperatorDashboardResponseDto {
 
   @ApiProperty({ type: DashboardEmptyLegsDto, nullable: true })
   emptyLegs: DashboardEmptyLegsDto | null;
+
+  @ApiProperty({
+    type: DashboardSettlementsDto,
+    nullable: true,
+    description:
+      'Operator administrators only, as `/operator/settlements` is; `null` for staff.',
+  })
+  settlements: DashboardSettlementsDto | null;
 }

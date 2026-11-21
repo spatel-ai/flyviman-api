@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { Redis } from 'ioredis';
 import { AppException } from '../../common/errors/app.exception.js';
@@ -24,6 +30,7 @@ import {
   MONEY_IN,
   netPaidMinor,
 } from '../bookings/paid-amount.js';
+import type { DashboardSettlementsDto } from '../operators/dto/operator-dashboard.dto.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import type {
@@ -133,7 +140,7 @@ function figuresOf(row: SettlementFigures): Record<string, number> {
  * from money that is moving, and every change is audited (rule 6).
  */
 @Injectable()
-export class SettlementsService {
+export class SettlementsService implements OnModuleInit {
   private readonly logger = new Logger(SettlementsService.name);
 
   constructor(
@@ -144,6 +151,13 @@ export class SettlementsService {
     private readonly operators: OperatorsService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
+
+  onModuleInit(): void {
+    // The operator dashboard reads its settlements section through here.
+    this.operators.registerSettlementsSummary((operatorId, now) =>
+      this.operatorSummary(operatorId, now),
+    );
+  }
 
   // --- The job ---------------------------------------------------------------
 
@@ -405,7 +419,9 @@ export class SettlementsService {
    *   `details`) and the figures, and the payable finance saw
    *   (`expectedPayableMinor`), are unchanged (409 `SETTLEMENT_CHANGED`).
    *   Marking it paid again with the same reference returns the record;
-   *   another reference is 409 `SETTLEMENT_ALREADY_PAID`.
+   *   another reference is 409 `SETTLEMENT_ALREADY_PAID`. A reference
+   *   already on another settlement (ignoring case) is 409
+   *   `SETTLEMENT_REFERENCE_USED`, checked under a lock on the reference.
    * Any other move is 409 `SETTLEMENT_INVALID_TRANSITION`. Audited with the
    * reason.
    */
@@ -487,6 +503,7 @@ export class SettlementsService {
             [{ field: 'payableMinor', issue: String(fresh.payableMinor) }],
           );
         }
+        await this.refuseUsedReference(tx, id, input.paymentReference ?? '');
       }
 
       const paid = to === SettlementStatus.PAID;
@@ -537,7 +554,101 @@ export class SettlementsService {
     );
   }
 
+  /**
+   * One payout reference names one settlement. Two marks with the same
+   * reference on different bookings hold different booking locks, so the
+   * reference takes its own lock (always after the booking's) before the
+   * look-up. There is no unique index behind it (no schema change); the
+   * reconciliation report lists any reference on two paid records.
+   */
+  private async refuseUsedReference(
+    tx: Prisma.TransactionClient,
+    id: string,
+    reference: string,
+  ): Promise<void> {
+    const key = `settlement_reference:${reference.toUpperCase()}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    const other = await tx.settlement.findFirst({
+      where: {
+        id: { not: id },
+        paymentReference: { equals: reference, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (other) {
+      throw new AppException(
+        'SETTLEMENT_REFERENCE_USED',
+        'This bank transfer reference is already recorded on another settlement.',
+        HttpStatus.CONFLICT,
+        [{ field: 'paymentReference', issue: 'already used' }],
+      );
+    }
+  }
+
   // --- Operators -------------------------------------------------------------
+
+  /**
+   * One operator's settlements `DUE`, and `PAID` in the 30 days before
+   * `now`: counts, and payable sums per currency (never added across
+   * currencies). For its administrators' dashboard; the operator id comes
+   * from the caller's session.
+   */
+  async operatorSummary(
+    operatorId: string,
+    now: Date,
+  ): Promise<DashboardSettlementsDto> {
+    const since = new Date(now.getTime() - 30 * 86_400_000);
+    const [due, paid] = await this.prisma.$transaction([
+      this.prisma.settlement.groupBy({
+        by: ['currency'],
+        where: { operatorId, status: SettlementStatus.DUE },
+        _count: { _all: true },
+        _sum: { payableMinor: true },
+        orderBy: { currency: 'asc' },
+      }),
+      this.prisma.settlement.groupBy({
+        by: ['currency'],
+        where: {
+          operatorId,
+          status: SettlementStatus.PAID,
+          paidAt: { gte: since, lte: now },
+        },
+        _count: { _all: true },
+        _sum: { payableMinor: true },
+        orderBy: { currency: 'asc' },
+      }),
+    ]);
+    const amounts = new Map<string, { dueMinor: bigint; paidMinor: bigint }>();
+    const row = (currency: string) => {
+      let found = amounts.get(currency);
+      if (!found) {
+        found = { dueMinor: 0n, paidMinor: 0n };
+        amounts.set(currency, found);
+      }
+      return found;
+    };
+    let dueCount = 0;
+    let paidCount = 0;
+    for (const group of due) {
+      dueCount += group._count._all;
+      row(group.currency).dueMinor += group._sum.payableMinor ?? 0n;
+    }
+    for (const group of paid) {
+      paidCount += group._count._all;
+      row(group.currency).paidMinor += group._sum.payableMinor ?? 0n;
+    }
+    return {
+      dueCount,
+      paidCount,
+      amounts: [...amounts.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([currency, sums]) => ({
+          currency,
+          dueMinor: minorToNumber(sums.dueMinor),
+          paidMinor: minorToNumber(sums.paidMinor),
+        })),
+    };
+  }
 
   /** The caller's organisation's settlements, newest first. */
   async operatorList(
