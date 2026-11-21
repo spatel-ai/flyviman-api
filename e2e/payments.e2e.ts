@@ -4,12 +4,22 @@ import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   MOCK_EVENT_ID_HEADER,
   MOCK_PAYMENT_KEY_SECRET,
-  MOCK_PAYMENT_WEBHOOK_SECRET,
-  MOCK_SIGNATURE_HEADER,
 } from '../src/integrations/payment/mock-payment-gateway.provider.js';
 import { hmacSha256Hex } from '../src/integrations/payment/payment-signature.js';
+import { STORED_EVENT_FIELDS } from '../src/modules/payments/payment-rules.js';
 import { registerCustomer } from './support/data.js';
 import { withPrisma } from './support/db.js';
+import {
+  bookingAwaitingPayment,
+  bookingOf,
+  type Contexts,
+  created,
+  deliver,
+  notice,
+  pay,
+  paymentRow,
+  setBooking,
+} from './support/payments.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
@@ -19,158 +29,6 @@ import { csrfHeaders, signIn } from './support/session.js';
  * from here, so the test signs the checkout result and the notices itself
  * with the development secrets the test server runs with.
  */
-
-type Contexts = Parameters<typeof listedJet>[0];
-type Model = 'A_INSTANT' | 'B_OPERATOR_CONFIRMED' | 'C_DEPOSIT';
-
-/**
- * A booking request from a real search, moved by hand to where quotes
- * (W3-1) will bring it: `AWAITING_PAYMENT` with a `CONFIRMED` price.
- */
-async function bookingAwaitingPayment(
-  contexts: Contexts,
-  model: Model = 'B_OPERATOR_CONFIRMED',
-) {
-  const { request } = contexts;
-  const trip = await listedJet(contexts);
-  const rate = await request.put(
-    `operator/aircraft/${trip.aircraftId}/pricing`,
-    {
-      headers: await csrfHeaders(request),
-      data: {
-        hourlyRateMinor: 18_000_000,
-        taxInclusive: false,
-        commissionInclusive: false,
-        minBillableHours: null,
-      },
-    },
-  );
-  expect(rate.status()).toBe(200);
-  const searched = await searchFor(request, trip);
-  const customer = await contexts.playwright.request.newContext({
-    baseURL: contexts.baseURL,
-  });
-  await registerCustomer(customer);
-  const booked = await customer.post('bookings', {
-    headers: {
-      ...(await csrfHeaders(customer)),
-      'Idempotency-Key': randomUUID(),
-    },
-    data: {
-      searchId: searched.searchId,
-      resultId: searched.result.resultId,
-      cancellationTermsVersion: searched.termsVersion,
-      expectedTotalMinor: searched.result.price.amountMinor,
-      currency: 'INR',
-    },
-  });
-  expect(booked.status()).toBe(201);
-  const reference = (await booked.json()).data.reference as string;
-  await setBooking(reference, {
-    status: 'AWAITING_PAYMENT',
-    priceType: 'CONFIRMED',
-    operatorAcceptedAt: new Date(),
-    paymentModel: model,
-  });
-  return {
-    customer,
-    reference,
-    totalMinor: searched.result.price.amountMinor as number,
-    trip,
-    searched,
-  };
-}
-
-function setBooking(
-  reference: string,
-  data: Record<string, unknown>,
-): Promise<unknown> {
-  return withPrisma((prisma) =>
-    prisma.booking.update({ where: { reference }, data }),
-  );
-}
-
-async function pay(
-  customer: APIRequestContext,
-  reference: string,
-  expectedAmountMinor: number,
-  key: string = randomUUID(),
-) {
-  return customer.post(`bookings/${reference}/payments`, {
-    headers: { ...(await csrfHeaders(customer)), 'Idempotency-Key': key },
-    data: { expectedAmountMinor, currency: 'INR' },
-  });
-}
-
-async function created(
-  customer: APIRequestContext,
-  reference: string,
-  amountMinor: number,
-) {
-  const response = await pay(customer, reference, amountMinor);
-  expect(response.status()).toBe(201);
-  return (await response.json()).data as {
-    reference: string;
-    status: string;
-    purpose: string;
-    price: { priceType: string; amountMinor: number; currency: string };
-    checkout: { provider: string; keyId: string; orderId: string };
-  };
-}
-
-/** A signed payment notice in Razorpay's shape, as the gateway posts it. */
-function notice(
-  event: 'payment.captured' | 'payment.failed',
-  order: { orderId: string; amountMinor: number },
-  options: { paymentId?: string; eventId?: string } = {},
-) {
-  const body = JSON.stringify({
-    entity: 'event',
-    event,
-    payload: {
-      payment: {
-        entity: {
-          id: options.paymentId ?? `pay_e2e_${randomUUID()}`,
-          order_id: order.orderId,
-          amount: order.amountMinor,
-          currency: 'INR',
-          status: event === 'payment.captured' ? 'captured' : 'failed',
-          // Sent by the gateway, never stored (rule 10).
-          email: 'payer@example.com',
-          card: { last4: '4242', network: 'Visa' },
-        },
-      },
-    },
-  });
-  return {
-    body,
-    eventId: options.eventId ?? `evt_e2e_${randomUUID()}`,
-  };
-}
-
-function deliver(
-  request: APIRequestContext,
-  webhook: { body: string; eventId: string },
-  secret = MOCK_PAYMENT_WEBHOOK_SECRET,
-) {
-  return request.post('webhooks/payments/mock', {
-    data: webhook.body,
-    headers: {
-      'Content-Type': 'application/json',
-      [MOCK_SIGNATURE_HEADER]: hmacSha256Hex(secret, webhook.body),
-      [MOCK_EVENT_ID_HEADER]: webhook.eventId,
-    },
-  });
-}
-
-async function bookingOf(customer: APIRequestContext, reference: string) {
-  const response = await customer.get(`bookings/${reference}`);
-  expect(response.status()).toBe(200);
-  return (await response.json()).data as {
-    status: string;
-    paymentStatus: string;
-  };
-}
 
 /** Runs the sweep, waiting out a run another test holds the lock for. */
 async function runSweep(request: APIRequestContext) {
@@ -188,12 +46,6 @@ async function runSweep(request: APIRequestContext) {
 function setOrderId(reference: string, providerOrderId: string) {
   return withPrisma((prisma) =>
     prisma.payment.update({ where: { reference }, data: { providerOrderId } }),
-  );
-}
-
-function paymentRow(reference: string) {
-  return withPrisma((prisma) =>
-    prisma.payment.findUniqueOrThrow({ where: { reference } }),
   );
 }
 
@@ -564,6 +416,93 @@ test.describe('POST /payments/:reference/verify', () => {
       status: 'SUCCEEDED',
       source: 'checkout-fetch',
     });
+  });
+  test('a browser claim with a bad signature settles nothing even when the gateway has the payment; a verified one settles, and a duplicate notice adds nothing (rules 2 and 5)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const simulated = await request.post(
+      `dev/payments/orders/${order.checkout.orderId}/simulate`,
+      { headers: await csrfHeaders(request), data: { outcome: 'success' } },
+    );
+    expect(simulated.status()).toBe(200);
+    const { checkout, webhook } = (await simulated.json()).data as {
+      checkout: Record<string, string>;
+      webhook: { body: string; headers: Record<string, string> };
+    };
+    const verify = async (data: Record<string, string>) =>
+      customer.post(`payments/${order.reference}/verify`, {
+        headers: await csrfHeaders(customer),
+        data,
+      });
+
+    // The gateway holds a captured payment, but the claim is forged.
+    const forged = await verify({ ...checkout, signature: 'f'.repeat(64) });
+    expect(forged.status()).toBe(400);
+    expect((await forged.json()).error.code).toBe('PAYMENT_SIGNATURE_INVALID');
+    expect((await paymentRow(order.reference)).status).toBe('INITIATED');
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'AWAITING_PAYMENT',
+      paymentStatus: 'UNPAID',
+    });
+
+    // The genuine claim settles from the gateway's answer.
+    const settled = await verify(checkout);
+    expect(settled.status()).toBe(200);
+    expect((await settled.json()).data.status).toBe('SUCCEEDED');
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CONFIRMED',
+      paymentStatus: 'PAID',
+    });
+
+    // The gateway's own notice afterwards, delivered twice: still one.
+    for (let delivery = 0; delivery < 2; delivery += 1) {
+      const response = await request.post('webhooks/payments/mock', {
+        data: webhook.body,
+        headers: webhook.headers,
+      });
+      expect(response.status()).toBe(200);
+    }
+    const payment = await paymentRow(order.reference);
+    const { events, succeeded, payments } = await withPrisma(
+      async (prisma) => ({
+        events: await prisma.paymentEvent.findMany({
+          where: { paymentId: payment.id },
+        }),
+        succeeded: await prisma.auditLog.count({
+          where: {
+            entityId: payment.id,
+            action: 'payment.status',
+            after: { path: ['status'], equals: 'SUCCEEDED' },
+          },
+        }),
+        payments: await prisma.payment.count({
+          where: { booking: { reference } },
+        }),
+      }),
+    );
+    expect(payments).toBe(1);
+    expect(succeeded).toBe(1);
+    const noticeEvents = events.filter(
+      (e) => e.providerEventId === webhook.headers[MOCK_EVENT_ID_HEADER],
+    );
+    expect(noticeEvents).toHaveLength(1);
+    // The stored payload is the allowlist: no email, contact or VPA.
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      const keys = Object.keys(event.payload as Record<string, unknown>);
+      for (const key of keys) {
+        expect(STORED_EVENT_FIELDS as readonly string[]).toContain(key);
+      }
+      expect(JSON.stringify(event.payload)).not.toMatch(/email|contact|vpa|@/i);
+    }
   });
 });
 

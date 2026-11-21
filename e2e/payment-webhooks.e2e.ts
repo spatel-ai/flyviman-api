@@ -7,6 +7,15 @@ import {
 } from '../src/integrations/payment/mock-payment-gateway.provider.js';
 import { hmacSha256Hex } from '../src/integrations/payment/payment-signature.js';
 import { STRICT_BASE_URL } from './support/accounts.js';
+import { withPrisma } from './support/db.js';
+import {
+  bookingAwaitingPayment,
+  bookingOf,
+  created,
+  deliver,
+  notice,
+  paymentRow,
+} from './support/payments.js';
 import { asVisitor, visitorAddress } from './support/visitor.js';
 
 const PATH = 'webhooks/payments/mock';
@@ -152,6 +161,42 @@ test.describe('POST /webhooks/payments/:provider', () => {
 
     expect(response.status()).toBe(404);
     expect((await response.json()).error.code).toBe('NOT_FOUND');
+  });
+});
+
+test.describe('POST /webhooks/payments/:provider, a real order', () => {
+  test('a notice settles the payment once however often it is delivered, and the stored event holds no payer data (rules 2, 5, 10)', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const captured = notice('payment.captured', {
+      orderId: order.checkout.orderId,
+      amountMinor: totalMinor,
+    });
+    for (let delivery = 0; delivery < 3; delivery += 1) {
+      expect((await deliver(request, captured)).status()).toBe(200);
+    }
+    const payment = await paymentRow(order.reference);
+    expect(payment.status).toBe('SUCCEEDED');
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CONFIRMED',
+      paymentStatus: 'PAID',
+    });
+    const events = await withPrisma((prisma) =>
+      prisma.paymentEvent.findMany({ where: { paymentId: payment.id } }),
+    );
+    expect(events).toHaveLength(1);
+    // The notice carried an email and card data; none of it is stored.
+    expect(JSON.stringify(events[0].payload)).not.toMatch(
+      /email|contact|vpa|card|payer|4242/i,
+    );
   });
 });
 

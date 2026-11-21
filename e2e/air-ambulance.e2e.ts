@@ -123,6 +123,7 @@ async function medicalReads(reference: string) {
     return prisma.auditLog.findMany({
       where: { entityId: row.id, action: 'air_ambulance_request.medical_read' },
       select: { actorRole: true, before: true, after: true, reason: true },
+      orderBy: { createdAt: 'asc' },
     });
   });
 }
@@ -741,6 +742,32 @@ test.describe('operations queue', () => {
     expect(
       (await quote(operatorId, 48_000_000, 'Fuel surcharge revised')).status(),
     ).toBe(200);
+    // D-207: the missing reason is a VALIDATION_ERROR naming the field.
+    const noReason = await quote(operatorId, 49_000_000);
+    expect((await noReason.json()).error).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: [{ field: 'revisionReason' }],
+    });
+    // D-210: the reason is read by the assigned owner only, and the
+    // other OPS user gets null.
+    const reasonOf = async (context: APIRequestContext) =>
+      (
+        (await (await context.get(path)).json()).data.events as {
+          payload: { revisionReason?: string | null } | null;
+        }[]
+      )
+        .map((e) => e.payload)
+        .filter((p) => p !== null && 'revisionReason' in p);
+    expect((await reasonOf(ops)).map((p) => p?.revisionReason)).toEqual([
+      'Fuel surcharge revised',
+    ]);
+    const otherOps = await newStaff(playwright, baseURL, 'OPS');
+    const otherView = await otherOps.get(path);
+    expect(otherView.status()).toBe(200);
+    expect((await reasonOf(otherOps)).map((p) => p?.revisionReason)).toEqual([
+      null,
+    ]);
+    await otherOps.dispose();
 
     // The customer sees a labelled quotation with its conditions.
     const seen = (
