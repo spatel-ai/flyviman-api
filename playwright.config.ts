@@ -41,6 +41,8 @@ export default defineConfig({
       env: {
         NODE_ENV: 'test',
         ENABLE_DEV_TOOLS: 'true',
+        // Tests always use the mock, whatever a developer's .env says.
+        MESSAGING_PROVIDER: 'mock',
         PORT: String(PORT),
         RATE_LIMIT_AUTH_PER_MINUTE: '100000',
         RATE_LIMIT_BOOKING_PER_WINDOW: '100000',
@@ -66,6 +68,7 @@ export default defineConfig({
       env: {
         NODE_ENV: 'test',
         ENABLE_DEV_TOOLS: 'true',
+        MESSAGING_PROVIDER: 'mock',
         PORT: String(PORT + 1),
         WEB_PROXY_SECRET,
       },

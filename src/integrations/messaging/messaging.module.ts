@@ -48,7 +48,7 @@ import {
         }
         if (!config.get<boolean>('ENABLE_DEV_TOOLS')) {
           throw new Error(
-            'No messaging provider is configured for this environment. Set MESSAGING_PROVIDER=sink to run without one (messages are discarded), or ENABLE_DEV_TOOLS=true on a developer machine. See src/integrations/README.md.',
+            'No messaging provider is configured for this environment. Set MESSAGING_PROVIDER=smtp to send email by SMTP, MESSAGING_PROVIDER=sink to run without one (messages are discarded), or ENABLE_DEV_TOOLS=true on a developer machine. See src/integrations/README.md.',
           );
         }
         return mock;

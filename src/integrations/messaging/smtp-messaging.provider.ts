@@ -70,10 +70,11 @@ export function createSmtpTransport(config: ConfigService): MailTransport {
       user: config.get<string>('USER_EMAIL'),
       pass: config.get<string>('USER_EMAIL_PASSWORD'),
     },
-    // Short, so a batch of the outbox (20 rows) stays inside its lease.
+    // Short, so a batch of the outbox (20 rows) normally stays inside its
+    // 300 s lease; a server stalling every row at every stage would not.
     connectionTimeout: 5_000,
     greetingTimeout: 5_000,
-    socketTimeout: 10_000,
+    socketTimeout: 5_000,
     logger: false,
     debug: false,
   });
