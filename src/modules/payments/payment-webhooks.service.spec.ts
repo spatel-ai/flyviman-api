@@ -655,6 +655,28 @@ describe('PaymentWebhooksService status sweep of failed payments', () => {
     expect(world.bookings.recordPaymentStatus).toHaveBeenCalledTimes(1);
   });
 
+  it('flags a retry captured and then refunded at the gateway, and keeps the payment FAILED', async () => {
+    const world = failedWorld();
+    world.gateway.fetchOrderPayments.mockResolvedValue([
+      attempt({}),
+      attempt({
+        providerPaymentId: 'pay_ok',
+        status: 'refunded',
+        amountRefundedMinor: 10_000,
+      }),
+    ]);
+
+    await world.service.runSweep(NOW);
+    expect(world.payment).toMatchObject({
+      status: 'FAILED',
+      reviewReason: 'AMOUNT_MISMATCH',
+    });
+    expect(world.bookings.recordPaymentStatus).not.toHaveBeenCalled();
+    expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
+      gatewayStatus: 'refunded',
+    });
+  });
+
   it('leaves a payment whose order has only failed attempts, or that the gateway cannot list', async () => {
     const world = failedWorld();
     world.gateway.fetchOrderPayments.mockResolvedValue([attempt({})]);
