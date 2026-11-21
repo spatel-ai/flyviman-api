@@ -9,7 +9,6 @@ import { paymentReference } from '../../common/reference.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
   PaymentModel,
-  PaymentProvider,
   PaymentStatus,
   PriceType,
 } from '../../generated/prisma/enums.js';
@@ -32,7 +31,8 @@ import type {
   PaymentResponseDto,
   VerifyPaymentDto,
 } from './dto/payment.dto.js';
-import { amountDue, nextPaymentStatus } from './payment-rules.js';
+import { PaymentWebhooksService } from './payment-webhooks.service.js';
+import { amountDue, nextPaymentStatus, providerOf } from './payment-rules.js';
 
 /** Attempts at a fresh reference before giving up (31^6 codes). */
 const REFERENCE_ATTEMPTS = 5;
@@ -55,13 +55,6 @@ const PAYMENT_FIELDS = {
 } as const;
 
 type PaymentRow = Prisma.PaymentGetPayload<{ select: typeof PAYMENT_FIELDS }>;
-
-/** The stored provider of a configured gateway. */
-export function providerOf(gateway: PaymentGatewayProvider): PaymentProvider {
-  return gateway.name === 'mock'
-    ? PaymentProvider.MOCK
-    : PaymentProvider.RAZORPAY;
-}
 
 function notFound(what: 'Booking' | 'Payment'): AppException {
   return new AppException(
@@ -94,6 +87,7 @@ export class PaymentsService {
     private readonly bookings: BookingsService,
     private readonly categories: CategoryConfigService,
     private readonly gateway: PaymentGatewayProvider,
+    private readonly webhooks: PaymentWebhooksService,
   ) {}
 
   /**
@@ -199,18 +193,51 @@ export class PaymentsService {
 
   /**
    * The checkout result the browser reports. Its signature is checked
-   * through the gateway, and it is still not final: a valid one makes the
-   * payment `PENDING` at most, never `SUCCEEDED` (state-machines.md,
-   * Payment). While it waits, the booking's hold on the aircraft is kept,
-   * for 48 hours from the order at most (`keepHoldForPayment`, W5-9d).
-   * Someone else's payment is 404; a result for another order or with a
-   * bad signature is 400 `PAYMENT_SIGNATURE_INVALID`.
+   * through the gateway, and the browser's word is still not final: a valid
+   * one makes the payment `PENDING` at most (state-machines.md, Payment).
+   * Then the server asks the gateway for the payment itself and applies what
+   * the gateway reports, as the sweep does
+   * (`PaymentWebhooksService.settleFromGateway`): `SUCCEEDED` or `FAILED`
+   * at once, without waiting for the notice; otherwise (`authorized`, the
+   * gateway unreachable) it stays `PENDING` for the notice or the sweep.
+   * While it waits, the booking's hold on the aircraft is kept, for 48 hours
+   * from the order at most (`keepHoldForPayment`, W5-9d). Someone else's
+   * payment is 404; a result for another order or with a bad signature is
+   * 400 `PAYMENT_SIGNATURE_INVALID`.
    */
   async verify(
     user: AuthUser,
     reference: string,
     input: VerifyPaymentDto,
   ): Promise<PaymentResponseDto> {
+    const recorded = await this.recordCheckout(user, reference, input);
+    // FAILED too: after a failed attempt the customer can pay again in the
+    // same order, and only the gateway says whether that payment went through.
+    const open =
+      recorded.payment.status === PaymentStatus.PENDING ||
+      recorded.payment.status === PaymentStatus.FAILED;
+    if (
+      !open ||
+      !(await this.webhooks.settleFromGateway(
+        recorded.payment.id,
+        input.providerPaymentId,
+      ))
+    ) {
+      return this.toResponse(recorded.payment, recorded.bookingReference);
+    }
+    const settled = await this.prisma.payment.findUniqueOrThrow({
+      where: { id: recorded.payment.id },
+      select: PAYMENT_FIELDS,
+    });
+    return this.toResponse(settled, recorded.bookingReference);
+  }
+
+  /** The signed checkout result recorded: the payment `PENDING` at most. */
+  private async recordCheckout(
+    user: AuthUser,
+    reference: string,
+    input: VerifyPaymentDto,
+  ): Promise<{ payment: PaymentRow; bookingReference: string }> {
     const found = await this.prisma.payment.findFirst({
       where: { reference, booking: { customerId: user.id } },
       select: { id: true, bookingId: true, providerOrderId: true },
@@ -237,7 +264,7 @@ export class PaymentsService {
         select: PAYMENT_FIELDS,
       });
       const next = nextPaymentStatus(payment.status, PaymentStatus.PENDING);
-      if (!next) return this.toResponse(payment, booking.reference);
+      if (!next) return { payment, bookingReference: booking.reference };
       const updated = await tx.payment.update({
         where: { id: payment.id },
         data: {
@@ -262,7 +289,7 @@ export class PaymentsService {
         tx,
       );
       await this.bookings.keepHoldForPayment(tx, booking, payment.createdAt);
-      return this.toResponse(updated, booking.reference);
+      return { payment: updated, bookingReference: booking.reference };
     });
   }
 

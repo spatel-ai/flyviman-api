@@ -2,6 +2,7 @@ import {
   BookingPaymentStatus,
   BookingStatus,
   PaymentModel,
+  PaymentProvider,
   PaymentPurpose,
   PaymentReviewReason,
   PaymentStatus,
@@ -10,6 +11,7 @@ import {
 } from '../../generated/prisma/enums.js';
 import type {
   GatewayPaymentStatus,
+  PaymentGatewayProvider,
   WebhookEvent,
 } from '../../integrations/payment/payment-gateway.provider.js';
 import { EXTRA_MONEY } from '../bookings/paid-amount.js';
@@ -19,6 +21,13 @@ import { EXTRA_MONEY } from '../bookings/paid-amount.js';
  * owes now, and how a gateway outcome moves a payment and the booking's
  * payment summary. Never a booking's own status (rule 2).
  */
+
+/** The stored provider of a configured gateway. */
+export function providerOf(gateway: PaymentGatewayProvider): PaymentProvider {
+  return gateway.name === 'mock'
+    ? PaymentProvider.MOCK
+    : PaymentProvider.RAZORPAY;
+}
 
 /** What the amount due is decided on, read with the booking. */
 export interface PayableBooking {

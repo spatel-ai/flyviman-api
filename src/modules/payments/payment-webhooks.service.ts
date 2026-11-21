@@ -37,10 +37,10 @@ import {
   isDuplicateCapture,
   nextPaymentStatus,
   outcomeOfGatewayStatus,
+  providerOf,
   reviewOnSuccess,
   storedEventPayload,
 } from './payment-rules.js';
-import { providerOf } from './payments.service.js';
 import { RefundsService } from './refunds.service.js';
 
 /** Refusals are logged at most once per this window. */
@@ -61,8 +61,12 @@ const SWEEP_LOCK_SECONDS = 5 * 60;
 const SWEEP_BATCH = 100;
 const RELEASE_LOCK = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
 
-/** What applied an outcome, kept in its audit record. */
-type OutcomeSource = 'webhook' | 'webhook-redelivery' | 'sweep';
+/**
+ * What applied an outcome, kept in its audit record. `checkout-fetch`: the
+ * gateway's own status, asked right after a verified checkout result.
+ */
+type OutcomeSource =
+  'webhook' | 'webhook-redelivery' | 'sweep' | 'checkout-fetch';
 
 /** Events that move a payment; the others are stored only. */
 const OUTCOME = {
@@ -318,8 +322,12 @@ export class PaymentWebhooksService {
     ) {
       // Never a success for an amount other than the order's. Recorded once
       // per payment (rule 6, `flag`); the sweep, which asks again every
-      // run, records nothing more once the payment is flagged.
-      if (payment.reviewReason !== null && origin.source === 'sweep') {
+      // run, and the check after each repeated checkout result record
+      // nothing more once the payment is flagged.
+      if (
+        payment.reviewReason !== null &&
+        (origin.source === 'sweep' || origin.source === 'checkout-fetch')
+      ) {
         return false;
       }
       await this.flag(tx, payment, PaymentReviewReason.AMOUNT_MISMATCH, {
@@ -583,12 +591,56 @@ export class PaymentWebhooksService {
     }
   }
 
-  private async sweepOne(payment: {
-    id: string;
-    bookingId: string;
-    providerOrderId: string | null;
-    providerPaymentId: string | null;
-  }): Promise<boolean> {
+  /**
+   * Asks the gateway about one payment right after its checkout result was
+   * verified, and applies what the gateway itself reports, exactly as the
+   * sweep does (`sweepOne`, `applyOutcome`: under the booking's lock, only
+   * forward, a duplicate capture flagged). The browser's word alone never
+   * settles a payment (rule 2), and a webhook or sweep that applies the same
+   * outcome changes nothing more (rule 5). `captured` makes it `SUCCEEDED`,
+   * `failed` `FAILED`; anything else (`authorized` while capture is pending,
+   * `created`) or a gateway that cannot be asked leaves it `PENDING` for the
+   * notice or the sweep. `checkoutPaymentId`, the signed result's payment,
+   * is asked about too: after a failed attempt the customer can pay again
+   * in the same order. Never throws: the checkout result is already
+   * recorded. Whether the payment changed.
+   */
+  async settleFromGateway(
+    paymentId: string,
+    checkoutPaymentId: string,
+  ): Promise<boolean> {
+    try {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: paymentId },
+        select: {
+          id: true,
+          bookingId: true,
+          providerOrderId: true,
+          providerPaymentId: true,
+        },
+      });
+      return payment
+        ? await this.sweepOne(payment, 'checkout-fetch', checkoutPaymentId)
+        : false;
+    } catch (error) {
+      // Only the error's name: the payment is settled later.
+      this.logger.error(
+        `Payment check after checkout failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+      return false;
+    }
+  }
+
+  private async sweepOne(
+    payment: {
+      id: string;
+      bookingId: string;
+      providerOrderId: string | null;
+      providerPaymentId: string | null;
+    },
+    source: OutcomeSource = 'sweep',
+    reportedPaymentId?: string,
+  ): Promise<boolean> {
     const orderId = payment.providerOrderId;
     if (!orderId) return false;
     const early = await this.prisma.paymentEvent.findMany({
@@ -603,6 +655,7 @@ export class PaymentWebhooksService {
     });
     const candidates = new Set<string>();
     if (payment.providerPaymentId) candidates.add(payment.providerPaymentId);
+    if (reportedPaymentId) candidates.add(reportedPaymentId);
     for (const { payload } of early) {
       const id = (payload as { providerPaymentId?: unknown } | null)
         ?.providerPaymentId;
@@ -642,7 +695,7 @@ export class PaymentWebhooksService {
         );
         if (!booking) return false;
         return this.applyOutcome(tx, payment.id, booking, outcome, fetched, {
-          source: 'sweep',
+          source,
         });
       });
       changed ||= done;
