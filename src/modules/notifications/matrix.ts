@@ -99,10 +99,24 @@ export function ruleFor(key: string): NotificationRule {
 }
 
 /**
- * The channels a rule uses now. WhatsApp is off until a provider and
- * registered templates exist (`WHATSAPP_ENABLED`). In-app is never dropped;
- * a mandatory rule ignores `optedOut` (preferences are not stored yet, the
- * parameter is where they plug in).
+ * The channels a recipient has opted out of, from their stored preferences
+ * (`User.smsOptedOut`, `User.whatsappOptedOut`). Only SMS and WhatsApp can be
+ * opted out of: in-app and email are never dropped.
+ */
+export function optedOutChannels(preferences: {
+  smsOptedOut: boolean;
+  whatsappOptedOut: boolean;
+}): NotificationChannel[] {
+  const channels: NotificationChannel[] = [];
+  if (preferences.smsOptedOut) channels.push('SMS');
+  if (preferences.whatsappOptedOut) channels.push('WHATSAPP');
+  return channels;
+}
+
+/**
+ * The channels a rule uses now for one recipient. WhatsApp is off until a
+ * provider and registered templates exist (`WHATSAPP_ENABLED`). In-app is
+ * never dropped; a mandatory rule ignores `optedOut` (`optedOutChannels`).
  */
 export function channelsFor(
   rule: NotificationRule,

@@ -548,6 +548,68 @@
         ]
       }
     },
+    "/api/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "MeNotificationPreferencesController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "My SMS and WhatsApp opt-outs",
+        "tags": [
+          "me"
+        ]
+      },
+      "patch": {
+        "operationId": "MeNotificationPreferencesController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferencesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change my SMS and WhatsApp opt-outs",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/content/policies/{slug}": {
       "get": {
         "description": "For example `terms` or `privacy`.",
@@ -10703,6 +10765,36 @@
           "email",
           "role"
         ]
+      },
+      "NotificationPreferencesResponseDto": {
+        "type": "object",
+        "properties": {
+          "smsOptedOut": {
+            "type": "boolean",
+            "description": "No SMS messages. Non-mandatory messages only: mandatory messages (security codes, urgent air ambulance updates and the like) are always sent, and in-app and email are never turned off."
+          },
+          "whatsappOptedOut": {
+            "type": "boolean",
+            "description": "No WhatsApp messages. Non-mandatory messages only: mandatory messages (security codes, urgent air ambulance updates and the like) are always sent, and in-app and email are never turned off."
+          }
+        },
+        "required": [
+          "smsOptedOut",
+          "whatsappOptedOut"
+        ]
+      },
+      "UpdateNotificationPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "smsOptedOut": {
+            "type": "boolean",
+            "description": "No SMS messages. Non-mandatory messages only: mandatory messages (security codes, urgent air ambulance updates and the like) are always sent, and in-app and email are never turned off."
+          },
+          "whatsappOptedOut": {
+            "type": "boolean",
+            "description": "No WhatsApp messages. Non-mandatory messages only: mandatory messages (security codes, urgent air ambulance updates and the like) are always sent, and in-app and email are never turned off."
+          }
+        }
       },
       "PolicyResponseDto": {
         "type": "object",

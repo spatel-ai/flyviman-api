@@ -45,6 +45,21 @@ export const STAFF_ROLES: Role[] = [
   Role.SUPER_ADMIN,
 ];
 
+/** A notification recipient (`contacts`): the phone only once verified. */
+export interface ContactRow {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  smsOptedOut: boolean;
+  whatsappOptedOut: boolean;
+}
+
+/** Opt-outs from non-mandatory SMS and WhatsApp messages. */
+export interface NotificationPreferences {
+  smsOptedOut: boolean;
+  whatsappOptedOut: boolean;
+}
+
 export type Identifier = { email: string } | { phone: string };
 
 /** Ends every sign-in of a user, inside the caller's transaction. */
@@ -716,30 +731,69 @@ export class UsersService {
    * Where to reach accounts (M10): the email address, and the phone number
    * only once it is verified. Accounts not in the list are left out.
    */
-  async contacts(
-    ids: string[],
-  ): Promise<{ id: string; email: string | null; phone: string | null }[]> {
+  async contacts(ids: string[]): Promise<ContactRow[]> {
     if (ids.length === 0) return [];
     return this.contactRows({ id: { in: ids } });
   }
 
   /** The active accounts holding `role`, for staff alerts. */
-  async contactsByRole(
-    role: Role,
-  ): Promise<{ id: string; email: string | null; phone: string | null }[]> {
+  async contactsByRole(role: Role): Promise<ContactRow[]> {
     return this.contactRows({ role, status: UserStatus.ACTIVE });
   }
 
-  private async contactRows(where: Prisma.UserWhereInput) {
+  private async contactRows(
+    where: Prisma.UserWhereInput,
+  ): Promise<ContactRow[]> {
     const rows = await this.prisma.user.findMany({
       where,
-      select: { id: true, email: true, phone: true, phoneVerifiedAt: true },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        phoneVerifiedAt: true,
+        smsOptedOut: true,
+        whatsappOptedOut: true,
+      },
     });
     return rows.map((row) => ({
       id: row.id,
       email: row.email,
       phone: row.phoneVerifiedAt ? row.phone : null,
+      smsOptedOut: row.smsOptedOut,
+      whatsappOptedOut: row.whatsappOptedOut,
     }));
+  }
+
+  /** The account's opt-outs from non-mandatory SMS and WhatsApp messages. */
+  async notificationPreferences(id: string): Promise<NotificationPreferences> {
+    const row = await this.prisma.user.findUnique({
+      where: { id },
+      select: { smsOptedOut: true, whatsappOptedOut: true },
+    });
+    if (!row) throw notFound();
+    return row;
+  }
+
+  /**
+   * Changes the account's opt-outs; fields left out keep their value. An
+   * erased account is refused (its preferences were reset with it).
+   */
+  async updateNotificationPreferences(
+    id: string,
+    change: Partial<NotificationPreferences>,
+  ): Promise<NotificationPreferences> {
+    const result = await this.prisma.user.updateMany({
+      where: { id, status: { not: UserStatus.ERASED } },
+      data: change,
+    });
+    if (result.count === 0) {
+      throw new AppException(
+        'UNAUTHENTICATED',
+        'Sign in to continue.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    return this.notificationPreferences(id);
   }
 
   /** The web page where a reset or invitation token is exchanged. */

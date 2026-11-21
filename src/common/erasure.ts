@@ -184,6 +184,8 @@ export function scrubbedUser(now: Date) {
     emailVerifiedAt: null,
     phoneVerifiedAt: null,
     lastLoginAt: null,
+    smsOptedOut: false,
+    whatsappOptedOut: false,
   };
 }
 

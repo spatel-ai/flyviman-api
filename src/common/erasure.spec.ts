@@ -329,6 +329,8 @@ describe('scrubbed values', () => {
       erasedAt: NOW,
       emailVerifiedAt: null,
       phoneVerifiedAt: null,
+      smsOptedOut: false,
+      whatsappOptedOut: false,
     });
     expect(
       columnsLeftOut(Prisma.UserScalarFieldEnum, user, [

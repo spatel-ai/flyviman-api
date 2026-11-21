@@ -6,8 +6,8 @@ import {
 } from '../../../generated/prisma/enums.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { OperatorsService } from '../../operators/operators.service.js';
-import { UsersService } from '../../users/users.service.js';
-import { channelsFor, hrefFor, ruleFor } from '../matrix.js';
+import { type ContactRow, UsersService } from '../../users/users.service.js';
+import { channelsFor, hrefFor, optedOutChannels, ruleFor } from '../matrix.js';
 import { NotificationsService } from '../notifications.service.js';
 
 export interface EventContext {
@@ -31,6 +31,8 @@ interface Contact {
   userId: string | null;
   email: string | null;
   phone: string | null;
+  /** The non-mandatory channels this recipient opted out of. */
+  optedOut: NotificationChannel[];
 }
 
 /**
@@ -54,9 +56,8 @@ export class NotificationEventsService {
     context: EventContext,
   ): Promise<string[]> {
     const rule = ruleFor(key);
-    const channels = channelsFor(rule, {
-      whatsappEnabled: this.config.get<boolean>('WHATSAPP_ENABLED') ?? false,
-    });
+    const whatsappEnabled =
+      this.config.get<boolean>('WHATSAPP_ENABLED') ?? false;
     const href = hrefFor(rule, context.reference, {
       confirmed: context.confirmed ?? false,
     });
@@ -70,6 +71,10 @@ export class NotificationEventsService {
 
     const ids: string[] = [];
     for (const contact of await this.recipients(rule.audience, context)) {
+      const channels = channelsFor(rule, {
+        whatsappEnabled,
+        optedOut: contact.optedOut,
+      });
       for (const channel of channels) {
         const to = this.addressFor(channel, contact, rule.audience);
         if (to === undefined) continue;
@@ -157,13 +162,17 @@ export class NotificationEventsService {
         userId: null,
         email: this.config.getOrThrow<string>('OPERATIONS_INBOX_EMAIL'),
         phone: null,
+        optedOut: [],
       },
     ];
   }
 
-  private accounts(
-    rows: { id: string; email: string | null; phone: string | null }[],
-  ): Contact[] {
-    return rows.map((row) => ({ userId: row.id, ...row }));
+  private accounts(rows: ContactRow[]): Contact[] {
+    return rows.map((row) => ({
+      userId: row.id,
+      email: row.email,
+      phone: row.phone,
+      optedOut: optedOutChannels(row),
+    }));
   }
 }

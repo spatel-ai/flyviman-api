@@ -133,4 +133,56 @@ describe('NotificationEventsService', () => {
     });
     expect(enqueue).not.toHaveBeenCalled();
   });
+
+  it('drops the SMS and WhatsApp a recipient opted out of, unless the rule is mandatory', async () => {
+    const optedOut = build();
+    optedOut.users.contacts.mockResolvedValue([
+      {
+        id: 'c1',
+        email: 'a@example.com',
+        phone: '+919800000001',
+        smsOptedOut: true,
+        whatsappOptedOut: true,
+      },
+      {
+        id: 'c2',
+        email: 'b@example.com',
+        phone: '+919800000002',
+        smsOptedOut: false,
+        whatsappOptedOut: true,
+      },
+    ]);
+    await optedOut.service.notify(tx, 'booking.quote_sent', {
+      reference: 'FV-1',
+      customerId: 'c1',
+    });
+    expect(optedOut.sent().map((m) => [m.userId, m.channel])).toEqual([
+      ['c1', 'IN_APP'],
+      ['c1', 'EMAIL'],
+      ['c2', 'IN_APP'],
+      ['c2', 'EMAIL'],
+      ['c2', 'SMS'],
+    ]);
+
+    const mandatory = build();
+    mandatory.users.contacts.mockResolvedValue([
+      {
+        id: 'c1',
+        email: 'a@example.com',
+        phone: '+919800000001',
+        smsOptedOut: true,
+        whatsappOptedOut: true,
+      },
+    ]);
+    await mandatory.service.notify(tx, 'air_ambulance.confirmed', {
+      reference: 'FV-AA-1',
+      customerId: 'c1',
+    });
+    expect(mandatory.sent().map((m) => m.channel)).toEqual([
+      'IN_APP',
+      'EMAIL',
+      'SMS',
+      'WHATSAPP',
+    ]);
+  });
 });

@@ -4,6 +4,7 @@ import {
   channelsFor,
   hrefFor,
   NOTIFICATION_MATRIX,
+  optedOutChannels,
   ruleFor,
 } from './matrix.js';
 
@@ -164,5 +165,19 @@ describe('bookingStatusEvents', () => {
     expect(bookingStatusEvents('CONFIRMED', 'CANCELLED', 'OPERATIONS')).toEqual(
       ['booking.cancelled'],
     );
+  });
+});
+
+describe('optedOutChannels', () => {
+  it('maps the stored opt-outs to SMS and WhatsApp only', () => {
+    expect(
+      optedOutChannels({ smsOptedOut: false, whatsappOptedOut: false }),
+    ).toEqual([]);
+    expect(
+      optedOutChannels({ smsOptedOut: true, whatsappOptedOut: false }),
+    ).toEqual(['SMS']);
+    expect(
+      optedOutChannels({ smsOptedOut: true, whatsappOptedOut: true }),
+    ).toEqual(['SMS', 'WHATSAPP']);
   });
 });
