@@ -7,6 +7,7 @@ import {
 } from '../../generated/prisma/enums.js';
 import {
   changedFields,
+  COMMITTED_FIELDS,
   MATERIAL_FIELDS,
   nextEmptyLegStatus,
   type OfferTerms,
@@ -144,6 +145,26 @@ describe('changedFields', () => {
     expect(changedFields(before, after, MATERIAL_FIELDS)).toEqual([
       'priceMinor',
     ]);
+  });
+
+  it('fixes the aircraft, the route and the validity under a live request', () => {
+    const before = terms();
+    const after = terms({
+      aircraftId: 'b',
+      originId: 'o2',
+      destinationId: 'd2',
+      expiresAt: hours(30),
+    });
+    expect(changedFields(before, after, COMMITTED_FIELDS)).toEqual([
+      'aircraftId',
+      'originId',
+      'destinationId',
+      'expiresAt',
+    ]);
+  });
+
+  it('fixes every term of the offer under a live request', () => {
+    expect([...COMMITTED_FIELDS].sort()).toEqual(Object.keys(terms()).sort());
   });
 });
 

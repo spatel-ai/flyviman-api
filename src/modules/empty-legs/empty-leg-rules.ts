@@ -177,6 +177,25 @@ export const MATERIAL_FIELDS = [
   'bookingConditions',
 ] as const;
 
+/**
+ * Fixed while a booking request is live (M8-C): what the customer asked for.
+ * That is every term: the aircraft and route as much as the price, and the
+ * validity too, since an earlier expiry would end the offer under the
+ * request (the expiry job does not wait for it, unlike withdrawal), and any
+ * change can return a listed offer to review.
+ */
+export const COMMITTED_FIELDS = [
+  'aircraftId',
+  'originId',
+  'destinationId',
+  'priceMinor',
+  'departureWindowStart',
+  'departureWindowEnd',
+  'passengerCapacity',
+  'expiresAt',
+  'bookingConditions',
+] as const;
+
 function same(a: unknown, b: unknown): boolean {
   return a instanceof Date && b instanceof Date
     ? a.getTime() === b.getTime()

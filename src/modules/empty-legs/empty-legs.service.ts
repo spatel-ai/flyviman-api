@@ -37,6 +37,7 @@ import {
   ALTERNATIVE_WINDOW_DAYS,
   BOOKING_ENDED,
   changedFields,
+  COMMITTED_FIELDS,
   greatCircleKm,
   EDITABLE,
   type EmptyLegAction,
@@ -80,21 +81,16 @@ const LOCATION_SELECT = {
   timeZone: true,
 } as const;
 
-/** Fixed while a booking request is live (M8-C): what the customer asked for. */
-const COMMITTED_FIELDS = [
-  'priceMinor',
-  'departureWindowStart',
-  'departureWindowEnd',
-  'passengerCapacity',
-  'bookingConditions',
-] as const;
-
 /** The API's names for the offer's columns, in error details. */
 const API_FIELD: Record<string, string> = {
+  aircraftId: 'aircraftId',
+  originId: 'originId',
+  destinationId: 'destinationId',
   priceMinor: 'priceMinor',
   departureWindowStart: 'departureFrom',
   departureWindowEnd: 'departureTo',
   passengerCapacity: 'seatsAvailable',
+  expiresAt: 'validUntil',
   bookingConditions: 'conditions',
 };
 
@@ -871,8 +867,8 @@ export class EmptyLegsService {
 
   /**
    * 409 `EMPTY_LEG_HAS_LIVE_REQUEST` while a customer's booking request for
-   * the offer is live (M8-C): its price, seats, window and conditions, and
-   * the offer itself, are what the customer asked for. Under the offer's row lock, which a
+   * the offer is live (M8-C): its terms (`COMMITTED_FIELDS`) and the offer
+   * itself are what the customer asked for. Under the offer's row lock, which a
    * booking request takes too (`forBooking`), so neither slips past the
    * other. `fields` names what the caller would change.
    */
@@ -889,7 +885,7 @@ export class EmptyLegsService {
     throw new AppException(
       'EMPTY_LEG_HAS_LIVE_REQUEST',
       fields.length > 0
-        ? 'A customer has requested this offer, so its price, seats, departure window and conditions cannot change until that request is answered. Answer it under Requests first.'
+        ? 'A customer has requested this offer, so its aircraft, route, departure window, seats, price, validity and conditions cannot change until that request is answered. Answer it under Requests first.'
         : 'A customer has requested this offer, so it cannot be withdrawn until that request is answered. Answer it under Requests first.',
       HttpStatus.CONFLICT,
       fields.map((field) => ({
