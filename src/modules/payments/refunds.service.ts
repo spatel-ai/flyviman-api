@@ -688,6 +688,7 @@ function toRefundResponse(
     paymentReference: refund.payment.reference,
     bookingReference: refund.payment.booking.reference,
     reason: refund.reason,
+    providerRefundId: refund.providerRefundId,
     paymentStatus: refund.payment.status,
     refundableMinor: minorToNumber(
       refundableRemainderMinor(
