@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import { Role } from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
@@ -8,8 +9,12 @@ import type { UsersService } from '../users/users.service.js';
 import { FEASIBILITY_ITEMS } from './air-ambulance-transitions.js';
 import type { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { AirAmbulanceWorkflowService } from './air-ambulance-workflow.service.js';
+import { FieldCipher, isEncrypted } from '../../common/crypto/field-cipher.js';
 
 const NOW = new Date('2026-11-20T08:00:00.000Z');
+const KEY = Buffer.alloc(32, 7).toString('base64');
+const cipher = () =>
+  new FieldCipher({ getOrThrow: () => KEY } as unknown as ConfigService);
 const OWNER = { id: 'u-owner', role: Role.OPS };
 const OTHER_OPS = { id: 'u-ops-2', role: Role.OPS };
 const ADMIN = { id: 'u-sa', role: Role.SUPER_ADMIN };
@@ -81,7 +86,9 @@ function setup(
   const prisma = {
     $transaction: vi.fn(async (run: (client: typeof tx) => unknown) => run(tx)),
   } as unknown as PrismaService;
-  const audit = { record: vi.fn(async (): Promise<void> => undefined) };
+  const audit = {
+    record: vi.fn(async (..._args: unknown[]): Promise<void> => undefined),
+  };
   const operators = { statusOf: vi.fn(async () => operatorStatus) };
   const users = {
     findAccount: vi.fn(async (id: string) =>
@@ -101,6 +108,7 @@ function setup(
     {
       hasAirAmbulanceAircraft: vi.fn(async () => ambulanceAircraft),
     } as unknown as AircraftService,
+    cipher(),
   );
   return { service, events, audit, current: () => current };
 }
@@ -202,6 +210,34 @@ describe('AirAmbulanceWorkflowService.quote', () => {
     ).rejects.toMatchObject({ code: 'AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE' });
     expect(current().status).toBe('FEASIBILITY_CHECK');
     expect(events).toEqual([]);
+  });
+
+  it('replacing a quotation already sent needs a reason', async () => {
+    const { service, events } = setup({ status: 'QUOTED' });
+    await expect(
+      service.quote(OWNER, 'FLY-AA-7K2M9Q', QUOTE),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: [{ field: 'revisionReason' }],
+    });
+    expect(events).toEqual([]);
+  });
+
+  it('keeps the revision reason encrypted in the timeline, and out of the audit record', async () => {
+    const { service, events, audit } = setup({ status: 'QUOTED' });
+    await service.quote(OWNER, 'FLY-AA-7K2M9Q', {
+      ...QUOTE,
+      revisionReason: 'Operator repriced fuel',
+    });
+    const payload = events[0].payload as { revisionReason: string };
+    expect(isEncrypted(payload.revisionReason)).toBe(true);
+    expect(cipher().decrypt(payload.revisionReason)).toBe(
+      'Operator repriced fuel',
+    );
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('repriced');
+    expect(audit.record.mock.calls[0][0]).toMatchObject({
+      after: { revised: true },
+    });
   });
 
   it('quotes an eligible operator', async () => {

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { requestContext } from '../../common/context/request-context.js';
 import { erasureBlockers } from '../../common/erasure.js';
 import { AppException } from '../../common/errors/app.exception.js';
+import { isLockFailure } from '../../common/errors/lock-failure.js';
 import { forgetIdempotencyKeys } from '../../common/idempotency/idempotency.store.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { Role, UserStatus } from '../../generated/prisma/enums.js';
@@ -28,6 +29,15 @@ import { UsersService } from '../users/users.service.js';
 /** How the customer confirms their own erasure. */
 export type ErasureProof =
   { password: string } | { verificationId: string; code: string };
+
+/**
+ * Bounds on the erasure's one transaction: how long a lock may be waited
+ * for, how long to wait for a connection, and how long the whole may run.
+ * Past any of them it rolls back whole and answers 503 USER_ERASURE_BUSY.
+ */
+// lock_timeout: 5 s (`SET LOCAL`, the transaction's first statement).
+const TRANSACTION_MAX_WAIT_MS = 10_000;
+const TRANSACTION_TIMEOUT_MS = 30_000;
 
 function conflict(message: string): AppException {
   return new AppException(
@@ -127,76 +137,94 @@ export class ErasureService {
 
   private async erase(id: string, reason?: string): Promise<Date> {
     const now = new Date();
-    const storageKeys = await this.prisma.$transaction(async (tx) => {
-      // The order every write for the customer takes its locks: their lock
-      // (each write attaching personal data takes it first), each booking,
-      // each air ambulance request, their sessions, then the account row. A
-      // write in flight finishes first and is seen below; one after it finds
-      // the account erased (`UsersService.lockLiveCustomer`).
-      await this.users.lockCustomer(id, tx);
-      // Before the records: a payment or cancellation marks its key, then
-      // locks its booking. Rolled back with the rest if refused below.
-      const idempotencyKeys = await forgetIdempotencyKeys(tx, id);
-      await this.bookings.lockAll(id, tx);
-      await this.airAmbulance.lockAll(id, tx);
-      await this.auth.lockSessions(id, tx);
-      const account = await this.users.lockForErasure(id, tx);
-      if (!account) {
-        throw new AppException(
-          'NOT_FOUND',
-          'User not found.',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-      if (account.role !== Role.CUSTOMER) {
-        throw conflict(
-          'Only customer accounts can be erased. Suspend a staff or operator account instead.',
-        );
-      }
-      if (account.status === UserStatus.ERASED) {
-        throw conflict('This account has already been erased.');
-      }
-      await this.assertErasable(id, tx);
+    const storageKeys = await this.prisma
+      .$transaction(
+        async (tx) => {
+          // First: a lock held elsewhere (a long write for the customer) makes
+          // this fail fast and whole, never wait out the transaction.
+          await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
+          // The order every write for the customer takes its locks: their lock
+          // (each write attaching personal data takes it first), each booking,
+          // each air ambulance request, their sessions, then the account row. A
+          // write in flight finishes first and is seen below; one after it finds
+          // the account erased (`UsersService.lockLiveCustomer`).
+          await this.users.lockCustomer(id, tx);
+          // Before the records: a payment or cancellation marks its key, then
+          // locks its booking. Rolled back with the rest if refused below.
+          const idempotencyKeys = await forgetIdempotencyKeys(tx, id);
+          await this.bookings.lockAll(id, tx);
+          await this.airAmbulance.lockAll(id, tx);
+          await this.auth.lockSessions(id, tx);
+          const account = await this.users.lockForErasure(id, tx);
+          if (!account) {
+            throw new AppException(
+              'NOT_FOUND',
+              'User not found.',
+              HttpStatus.NOT_FOUND,
+            );
+          }
+          if (account.role !== Role.CUSTOMER) {
+            throw conflict(
+              'Only customer accounts can be erased. Suspend a staff or operator account instead.',
+            );
+          }
+          if (account.status === UserStatus.ERASED) {
+            throw conflict('This account has already been erased.');
+          }
+          await this.assertErasable(id, tx);
 
-      // Records first, then the files they pointed at, then the account.
-      const airAmbulance = await this.airAmbulance.erase(id, tx);
-      const keys = await this.documents.forgetOwnedFiles(id, tx);
-      const bookings = await this.bookings.erase(id, tx);
-      const { passengers } = await this.customers.erase(id, tx);
-      const notifications = await this.notifications.eraseFor(id, tx);
-      const enquiries = await this.enquiries.eraseFrom(account, tx);
-      const emptyLegAlerts = await this.emptyLegs.forgetInterests(id, tx);
-      const sessions = await this.auth.deleteAllSessions(id, tx);
-      await this.users.anonymise(id, now, tx);
-      // Counts only: nothing that was erased is copied into the audit log.
-      await this.audit.record(
-        {
-          action: 'user.erase',
-          entityType: 'User',
-          entityId: id,
-          before: { status: account.status },
-          after: {
-            status: UserStatus.ERASED,
-            bookings: bookings.bookings,
-            passengerSnapshots: bookings.passengers,
-            changeRequests: bookings.changeRequests,
-            savedPassengers: passengers,
-            airAmbulanceRequests: airAmbulance.requests,
-            airAmbulanceMedicalRecords: airAmbulance.medical,
-            airAmbulanceDocuments: airAmbulance.documents,
-            files: keys.length,
-            notifications,
-            enquiries,
-            emptyLegAlerts,
-            idempotencyKeys,
-            sessions,
-          },
-          reason,
+          // Records first, then the files they pointed at, then the account.
+          const airAmbulance = await this.airAmbulance.erase(id, tx);
+          const keys = await this.documents.forgetOwnedFiles(id, tx);
+          const bookings = await this.bookings.erase(id, tx);
+          const { passengers } = await this.customers.erase(id, tx);
+          const notifications = await this.notifications.eraseFor(id, tx);
+          const enquiries = await this.enquiries.eraseFrom(account, tx);
+          const emptyLegAlerts = await this.emptyLegs.forgetInterests(id, tx);
+          const sessions = await this.auth.deleteAllSessions(id, tx);
+          await this.users.anonymise(id, now, tx);
+          // Counts only: nothing that was erased is copied into the audit log.
+          await this.audit.record(
+            {
+              action: 'user.erase',
+              entityType: 'User',
+              entityId: id,
+              before: { status: account.status },
+              after: {
+                status: UserStatus.ERASED,
+                bookings: bookings.bookings,
+                passengerSnapshots: bookings.passengers,
+                changeRequests: bookings.changeRequests,
+                savedPassengers: passengers,
+                airAmbulanceRequests: airAmbulance.requests,
+                airAmbulanceMedicalRecords: airAmbulance.medical,
+                airAmbulanceDocuments: airAmbulance.documents,
+                files: keys.length,
+                notifications,
+                enquiries,
+                emptyLegAlerts,
+                idempotencyKeys,
+                sessions,
+              },
+              reason,
+            },
+            tx,
+          );
+          return keys;
         },
-        tx,
-      );
-      return keys;
-    });
+        { maxWait: TRANSACTION_MAX_WAIT_MS, timeout: TRANSACTION_TIMEOUT_MS },
+      )
+      .catch((error: unknown) => {
+        // Nothing was written: the request may simply be sent again.
+        if (isLockFailure(error)) {
+          throw new AppException(
+            'USER_ERASURE_BUSY',
+            'The account is busy right now. Nothing was erased; try again in a minute.',
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }
+        throw error;
+      });
 
     // After the commit, never failing the request: the erasure stands.
     // Emailed links would be refused anyway (the account is not active).

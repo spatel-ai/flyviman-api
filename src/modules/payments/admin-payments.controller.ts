@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -28,6 +29,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import {
   AdminPaymentDto,
   AdminPaymentsQueryDto,
+  ResolvePaymentFlagDto,
 } from './dto/payment-view.dto.js';
 import {
   AdminRefundsQueryDto,
@@ -35,6 +37,7 @@ import {
   RefundDueItemDto,
   RefundResponseDto,
 } from './dto/refund.dto.js';
+import { PaymentFlagsService } from './payment-flags.service.js';
 import { PaymentReferencePipe } from './payment-reference.pipe.js';
 import { ReceiptsService } from './receipts.service.js';
 import { RefundsService } from './refunds.service.js';
@@ -51,6 +54,7 @@ export class AdminPaymentsController {
   constructor(
     private readonly refunds: RefundsService,
     private readonly receipts: ReceiptsService,
+    private readonly flags: PaymentFlagsService,
   ) {}
 
   @Get('payments')
@@ -65,6 +69,21 @@ export class AdminPaymentsController {
   ): Promise<Paginated<AdminPaymentDto>> {
     const { items, total } = await this.receipts.adminList(query);
     return new Paginated(items, query.page, query.pageSize, total);
+  }
+
+  @Post('payments/:reference/resolve-flag')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Resolve a payment flagged AMOUNT_MISMATCH or DUPLICATE_CAPTURE',
+    description:
+      'Records that finance settled the flag: the amount was checked at the gateway, and any money owed back was refunded through `POST /admin/payments/:reference/refunds`. Moves no money and changes no status; `reviewReason` stays and `reviewResolvedAt` is set. A resolved flag no longer blocks the customer’s erasure (`PAYMENT_UNDER_REVIEW`). Needs a reason; audited as `payment.flag_resolve`. 409 `PAYMENT_FLAG_NOT_OPEN` when the payment has no such flag or it is already resolved. An unknown reference is 404.',
+  })
+  @ApiOkResponse({ type: AdminPaymentDto })
+  resolveFlag(
+    @Param('reference', PaymentReferencePipe) reference: string,
+    @Body() body: ResolvePaymentFlagDto,
+  ): Promise<AdminPaymentDto> {
+    return this.flags.resolve(reference, body.reason);
   }
 
   @Get('refunds')

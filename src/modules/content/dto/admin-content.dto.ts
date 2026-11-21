@@ -198,6 +198,13 @@ export class NotificationTemplateResponseDto {
     description: 'False while no row is stored and the built-in text applies.',
   })
   stored: boolean;
+
+  @ApiProperty({
+    minimum: 0,
+    description:
+      'Raised by each change; 0 while the built-in text applies. Send it back as `baseVersion`.',
+  })
+  version: number;
 }
 
 export class UpdateNotificationTemplateDto {
@@ -220,4 +227,15 @@ export class UpdateNotificationTemplateDto {
   @ApiProperty()
   @IsBoolean()
   isActive: boolean;
+
+  @ApiProperty({
+    minimum: 0,
+    maximum: 1000000,
+    description:
+      'The `version` the editor loaded (0 while the built-in text applies). Required. When the template has been changed since, 409 `CONTENT_VERSION_CONFLICT` and nothing is written.',
+  })
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  baseVersion: number;
 }

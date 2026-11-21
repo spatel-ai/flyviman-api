@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { AppException } from '../../common/errors/app.exception.js';
+import { settleLimited } from '../../common/settle-limited.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { FilePurpose, Role } from '../../generated/prisma/enums.js';
 import { ALLOWED_CONTENT_TYPES } from '../../integrations/storage/file-signature.js';
@@ -19,6 +20,13 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 export const MAX_PENDING_UPLOADS = 20;
 /** How long a reserved upload may wait to be attached before it is dropped. */
 export const RESERVATION_SECONDS = 60 * 60;
+/**
+ * Tries a queued file deletion gets (`StoragePurge.attempts`): a day of
+ * hourly runs. After that the row stays, for a person, and is not retried.
+ */
+export const PURGE_MAX_ATTEMPTS = 24;
+/** Storage deletions running at once. */
+const PURGE_CONCURRENCY = 8;
 
 export interface FileInfo {
   id: string;
@@ -58,6 +66,7 @@ const PURPOSE_ROLES: Record<FilePurpose, Role[]> = {
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
   private readonly accessChecks = new Map<FilePurpose, FileAccessCheck>();
 
   constructor(
@@ -236,15 +245,17 @@ export class DocumentsService {
   }
 
   /**
-   * Deletes queued files from storage, then their `StoragePurge` rows. A
-   * file that could not be deleted keeps its row, with one more attempt
-   * counted, for the purge job (`StoragePurgeJob`) to retry. Deleting a file
-   * that is already gone succeeds. Returns the number left.
+   * Deletes queued files from storage, `PURGE_CONCURRENCY` at a time, then
+   * their `StoragePurge` rows. A file that could not be deleted keeps its
+   * row, with one more attempt counted, for the purge job
+   * (`StoragePurgeJob`) to retry; one that reaches `PURGE_MAX_ATTEMPTS` is
+   * logged (its key only) and retried no more. Deleting a file that is
+   * already gone succeeds. Returns the number left.
    */
   async purgeStored(keys: string[]): Promise<number> {
     if (keys.length === 0) return 0;
-    const results = await Promise.allSettled(
-      keys.map((key) => this.storage.delete(key)),
+    const results = await settleLimited(keys, PURGE_CONCURRENCY, (key) =>
+      this.storage.delete(key),
     );
     const done = keys.filter((_, i) => results[i].status === 'fulfilled');
     const left = keys.filter((_, i) => results[i].status === 'rejected');
@@ -258,14 +269,27 @@ export class DocumentsService {
         where: { storageKey: { in: left } },
         data: { attempts: { increment: 1 } },
       });
+      const exhausted = await this.prisma.storagePurge.findMany({
+        where: { storageKey: { in: left }, attempts: PURGE_MAX_ATTEMPTS },
+        select: { storageKey: true },
+      });
+      for (const { storageKey } of exhausted) {
+        this.logger.warn(
+          `Storage purge gave up after ${PURGE_MAX_ATTEMPTS} attempts: ${storageKey}`,
+        );
+      }
     }
     return left.length;
   }
 
-  /** The oldest queued files, at most `limit`, through `purgeStored`. */
+  /**
+   * Up to `limit` queued files still to be tried, fewest attempts first,
+   * then the longest untried, through `purgeStored`.
+   */
   async purgeQueued(limit: number): Promise<{ tried: number; left: number }> {
     const rows = await this.prisma.storagePurge.findMany({
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      where: { attempts: { lt: PURGE_MAX_ATTEMPTS } },
+      orderBy: [{ attempts: 'asc' }, { updatedAt: 'asc' }, { id: 'asc' }],
       take: limit,
       select: { storageKey: true },
     });

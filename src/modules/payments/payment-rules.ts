@@ -426,3 +426,24 @@ export function bookingPaymentSummary(
     ? BookingPaymentStatus.PAID
     : BookingPaymentStatus.PARTIALLY_PAID;
 }
+
+/**
+ * Flags finance resolves by hand (`POST /admin/payments/:reference/resolve-flag`):
+ * the extra money is at the gateway, not on a payment the refund queue lists.
+ */
+const RESOLVABLE_FLAGS: readonly PaymentReviewReason[] = [
+  PaymentReviewReason.AMOUNT_MISMATCH,
+  PaymentReviewReason.DUPLICATE_CAPTURE,
+];
+
+/** An `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` flag not yet resolved. */
+export function hasOpenGatewayFlag(payment: {
+  reviewReason: PaymentReviewReason | null;
+  reviewResolvedAt: Date | null;
+}): boolean {
+  return (
+    payment.reviewReason !== null &&
+    RESOLVABLE_FLAGS.includes(payment.reviewReason) &&
+    payment.reviewResolvedAt === null
+  );
+}

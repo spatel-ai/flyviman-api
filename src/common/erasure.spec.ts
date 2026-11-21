@@ -46,8 +46,9 @@ function booking(
 function payment(
   status: PaymentStatus,
   reviewReason: PaymentReviewReason | null = null,
+  reviewResolvedAt: Date | null = null,
 ) {
-  return { status, reviewReason };
+  return { status, reviewReason, reviewResolvedAt };
 }
 
 describe('closed statuses', () => {
@@ -166,6 +167,20 @@ describe('erasureBlockers', () => {
       ).toEqual(['PAYMENT_UNDER_REVIEW']);
     },
   );
+
+  it.each([
+    PaymentReviewReason.AMOUNT_MISMATCH,
+    PaymentReviewReason.DUPLICATE_CAPTURE,
+  ])('no longer blocks once finance resolved the %s flag', (reason) => {
+    expect(
+      erasureBlockers(
+        facts({
+          payments: [payment(PaymentStatus.SUCCEEDED, reason, LONG_AGO)],
+        }),
+        POLICY,
+      ),
+    ).toEqual([]);
+  });
 
   it.each([
     PaymentReviewReason.BOOKING_CLOSED,

@@ -374,6 +374,7 @@ test.describe('notification templates', () => {
           subject: 'Hi',
           body: 'Hi {{firstName}}',
           isActive: true,
+          baseVersion: welcome.version,
         },
       },
     );
@@ -390,6 +391,7 @@ test.describe('notification templates', () => {
         subject: 'Hi',
         body: 'Hello there.',
         isActive: true,
+        baseVersion: welcome.version,
       },
     });
     expect(dropped.status()).toBe(400);
@@ -402,6 +404,7 @@ test.describe('notification templates', () => {
         subject: 'Hi',
         body: '{{firstName}} {{nope}}',
         isActive: true,
+        baseVersion: welcome.version,
       },
     });
     expect(unknown.status()).toBe(400);
@@ -414,16 +417,42 @@ test.describe('notification templates', () => {
         subject: 'Welcome aboard',
         body,
         isActive: true,
+        baseVersion: welcome.version,
       },
     });
     expect(ok.status()).toBe(200);
-    expect((await ok.json()).data).toMatchObject({ body, stored: true });
+    const saved = (await ok.json()).data;
+    expect(saved).toMatchObject({
+      body,
+      stored: true,
+      version: welcome.version + 1,
+    });
+
+    // A change made on the version before is refused, and writes nothing.
+    const stale = await request.put(url, {
+      headers,
+      data: {
+        channel: 'EMAIL',
+        subject: 'Stale',
+        body: 'Stale {{firstName}}',
+        isActive: true,
+        baseVersion: welcome.version,
+      },
+    });
+    expect(stale.status()).toBe(409);
+    expect((await stale.json()).error.code).toBe('CONTENT_VERSION_CONFLICT');
 
     const missing = await request.put(
       'admin/content/notification-templates/no.such_key',
       {
         headers,
-        data: { channel: 'EMAIL', subject: 'x', body: 'x', isActive: true },
+        data: {
+          channel: 'EMAIL',
+          subject: 'x',
+          body: 'x',
+          isActive: true,
+          baseVersion: 0,
+        },
       },
     );
     expect(missing.status()).toBe(404);
@@ -448,6 +477,7 @@ test.describe('notification templates', () => {
         subject: 'Welcome to Flyviman',
         body: 'Hello {{firstName}}, your Flyviman account is ready.',
         isActive: true,
+        baseVersion: saved.version,
       },
     });
   });

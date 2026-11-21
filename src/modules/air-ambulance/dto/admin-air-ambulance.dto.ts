@@ -118,7 +118,7 @@ export class AdminTimelineEntryDto {
     type: Object,
     nullable: true,
     description:
-      'What the step recorded (`kind`: ASSIGNMENT, FEASIBILITY or QUOTE). Never medical or contact data.',
+      'What the step recorded (`kind`: ASSIGNMENT, FEASIBILITY or QUOTE; a QUOTE that replaced one already sent carries its `revisionReason`). Never medical or contact data.',
   })
   payload: Record<string, unknown> | null;
 
@@ -187,6 +187,22 @@ export class QuoteAirAmbulanceDto {
   @MaxLength(2000)
   @IsPlainText()
   conditions: string;
+
+  @ApiPropertyOptional({
+    minLength: 3,
+    maxLength: 500,
+    description:
+      'Why a quotation already sent is replaced: required while the request is QUOTED (400 `VALIDATION_ERROR` without it), not stored otherwise. Kept encrypted in the timeline entry; the audit record says only that it was a revision. No medical details.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  @IsPlainText()
+  revisionReason?: string;
 }
 
 /** An operator operations may quote for a mission (W4-6). */

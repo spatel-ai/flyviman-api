@@ -12,6 +12,7 @@ import type {
   IdentityDocumentType,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import { UsersService } from '../users/users.service.js';
 import { encryptLegacySpecialAssistance } from './special-assistance-backfill.js';
 
@@ -63,6 +64,17 @@ function date(value: string | null | undefined): Date | null | undefined {
   return value === undefined || value === null ? value : new Date(value);
 }
 
+/**
+ * The fields a passenger change sent, by name only, for its audit record:
+ * never their values (identity documents and assistance notes, rule 8).
+ */
+export function sentFields(input: PassengerInput): string[] {
+  return Object.entries(input)
+    .filter(([, value]) => value !== undefined)
+    .map(([name]) => name)
+    .sort();
+}
+
 function notFound(): AppException {
   return new AppException(
     'NOT_FOUND',
@@ -80,6 +92,7 @@ export class CustomersService implements OnApplicationBootstrap {
     private readonly prisma: PrismaService,
     private readonly cipher: FieldCipher,
     private readonly users: UsersService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -193,7 +206,7 @@ export class CustomersService implements OnApplicationBootstrap {
           HttpStatus.UNPROCESSABLE_ENTITY,
         );
       }
-      return tx.passenger.create({
+      const created = await tx.passenger.create({
         data: {
           customerId,
           firstName: input.firstName,
@@ -201,6 +214,8 @@ export class CustomersService implements OnApplicationBootstrap {
           ...this.columns(input),
         },
       });
+      await this.recordChange(tx, 'passenger.create', created.id, input);
+      return created;
     });
     return this.present(row);
   }
@@ -213,7 +228,7 @@ export class CustomersService implements OnApplicationBootstrap {
     const row = await this.prisma.$transaction(async (tx) => {
       await this.users.lockLiveCustomer(userId, tx);
       await this.ownedOrThrow(userId, id, tx);
-      return tx.passenger.update({
+      const updated = await tx.passenger.update({
         where: { id },
         data: {
           firstName: input.firstName,
@@ -221,23 +236,47 @@ export class CustomersService implements OnApplicationBootstrap {
           ...this.columns(input),
         },
       });
+      await this.recordChange(tx, 'passenger.update', id, input);
+      return updated;
     });
     return this.present(row);
   }
 
   async removePassenger(userId: string, id: string): Promise<void> {
-    await this.ownedOrThrow(userId, id);
-    // Soft delete: bookings will refer to passengers. The identity document
-    // is erased, since nothing needs it once the passenger is removed.
-    await this.prisma.passenger.update({
-      where: { id },
-      data: {
-        deletedAt: new Date(),
-        documentType: null,
-        documentNumber: null,
-        documentExpiry: null,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await this.ownedOrThrow(userId, id, tx);
+      // Soft delete: bookings will refer to passengers. The identity
+      // document is erased, since nothing needs it once the passenger is
+      // removed.
+      await tx.passenger.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          documentType: null,
+          documentNumber: null,
+          documentExpiry: null,
+        },
+      });
+      await this.recordChange(tx, 'passenger.delete', id);
     });
+  }
+
+  /** The audit record of a saved-passenger change: ids and field names. */
+  private recordChange(
+    tx: Prisma.TransactionClient,
+    action: 'passenger.create' | 'passenger.update' | 'passenger.delete',
+    id: string,
+    input?: PassengerInput,
+  ): Promise<void> {
+    return this.audit.record(
+      {
+        action,
+        entityType: 'Passenger',
+        entityId: id,
+        after: input ? { fields: sentFields(input) } : undefined,
+      },
+      tx,
+    );
   }
 
   /**

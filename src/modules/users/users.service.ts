@@ -211,11 +211,22 @@ export class UsersService {
     return { account, activated };
   }
 
-  async recordLogin(id: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id },
+  /**
+   * Records a sign-in, in the caller's transaction, only while the account
+   * is ACTIVE; false otherwise. The row's update lock makes a sign-in and an
+   * erasure or suspension of the same account take turns: whichever comes
+   * second sees the other's outcome (the erasure deletes the new session; the
+   * sign-in finds the account no longer ACTIVE).
+   */
+  async recordLogin(
+    id: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const { count } = await tx.user.updateMany({
+      where: { id, status: UserStatus.ACTIVE },
       data: { lastLoginAt: new Date() },
     });
+    return count === 1;
   }
 
   // --- Administration -----------------------------------------------------

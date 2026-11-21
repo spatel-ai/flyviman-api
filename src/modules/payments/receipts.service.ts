@@ -59,6 +59,14 @@ const VIEW = {
 
 type ViewRow = Prisma.PaymentGetPayload<{ select: typeof VIEW }>;
 
+const ADMIN_VIEW = {
+  ...VIEW,
+  reviewReason: true,
+  reviewResolvedAt: true,
+} as const satisfies Prisma.PaymentSelect;
+
+type AdminViewRow = Prisma.PaymentGetPayload<{ select: typeof ADMIN_VIEW }>;
+
 function notFound(): AppException {
   return new AppException(
     'NOT_FOUND',
@@ -136,7 +144,7 @@ export class ReceiptsService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.payment.findMany({
         where,
-        select: { ...VIEW, reviewReason: true },
+        select: ADMIN_VIEW,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -144,11 +152,26 @@ export class ReceiptsService {
       this.prisma.payment.count({ where }),
     ]);
     return {
-      items: rows.map((row) => ({
-        ...this.toDetail(row),
-        reviewReason: row.reviewReason,
-      })),
+      items: rows.map((row) => this.toAdmin(row)),
       total,
+    };
+  }
+
+  /** One payment as finance's list shows it; 404 if unknown. */
+  async adminOne(reference: string): Promise<AdminPaymentDto> {
+    const row = await this.prisma.payment.findUnique({
+      where: { reference },
+      select: ADMIN_VIEW,
+    });
+    if (!row) throw notFound();
+    return this.toAdmin(row);
+  }
+
+  private toAdmin(row: AdminViewRow): AdminPaymentDto {
+    return {
+      ...this.toDetail(row),
+      reviewReason: row.reviewReason,
+      reviewResolvedAt: row.reviewResolvedAt?.toISOString() ?? null,
     };
   }
 

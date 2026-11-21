@@ -24,6 +24,7 @@ import type {
 } from './dto/reconciliation.dto.js';
 import {
   bookingPaymentSummary,
+  hasOpenGatewayFlag,
   REFUNDABLE,
   refundableRemainderMinor,
 } from './payment-rules.js';
@@ -37,11 +38,6 @@ const MAX_PERIOD_DAYS = 92;
 const STUCK_HOURS = 24;
 const MAX_LISTED = 200;
 
-/** Flags whose extra money is not on our record (the gateway's dashboard). */
-const GATEWAY_FLAGS: readonly PaymentReviewReason[] = [
-  PaymentReviewReason.AMOUNT_MISMATCH,
-  PaymentReviewReason.DUPLICATE_CAPTURE,
-];
 const OPEN_REFUND: readonly RefundStatus[] = [
   RefundStatus.REQUESTED,
   RefundStatus.PENDING,
@@ -189,6 +185,7 @@ export class ReconciliationService {
             reference: true,
             status: true,
             reviewReason: true,
+            reviewResolvedAt: true,
             amountMinor: true,
             currency: true,
             createdAt: true,
@@ -285,10 +282,8 @@ export class ReconciliationService {
           paymentReference: payment.reference,
           currency: payment.currency,
         };
-        if (
-          payment.reviewReason &&
-          GATEWAY_FLAGS.includes(payment.reviewReason)
-        ) {
+        // Until finance resolves it (`PaymentFlagsService`).
+        if (hasOpenGatewayFlag(payment)) {
           flag(
             'PAYMENT_FLAGGED',
             `Flagged ${payment.reviewReason}: check the gateway’s dashboard.`,

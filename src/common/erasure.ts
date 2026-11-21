@@ -58,10 +58,14 @@ export interface ErasureFacts {
     paymentStatus: BookingPaymentStatus;
     updatedAt: Date;
   }[];
-  /** Every payment on the customer's bookings, with its operations flag. */
+  /**
+   * Every payment on the customer's bookings, with its operations flag and
+   * when finance resolved it (`POST /admin/payments/:reference/resolve-flag`).
+   */
   payments: readonly {
     status: PaymentStatus;
     reviewReason: PaymentReviewReason | null;
+    reviewResolvedAt: Date | null;
   }[];
   /** Every refund of those payments. */
   refunds: readonly { status: RefundStatus }[];
@@ -125,10 +129,13 @@ export function erasureBlockers(
   }
   if (facts.refundsDue > 0) found.add('REFUND_DUE');
   // Money held that the refund queue leaves out (another amount, or a
-  // second capture, at the gateway): operations must settle it first.
+  // second capture, at the gateway): finance must resolve it first.
   if (
     facts.payments.some(
-      (p) => p.reviewReason !== null && GATEWAY_FLAGS.includes(p.reviewReason),
+      (p) =>
+        p.reviewReason !== null &&
+        GATEWAY_FLAGS.includes(p.reviewReason) &&
+        p.reviewResolvedAt === null,
     )
   ) {
     found.add('PAYMENT_UNDER_REVIEW');

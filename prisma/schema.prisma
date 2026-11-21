@@ -464,6 +464,9 @@ model NotificationTemplate {
   subject   String?
   body      String
   isActive  Boolean             @default(true)
+  /// Raised by each change; a change names the version it was made on
+  /// (0 while no row is stored), else 409 CONTENT_VERSION_CONFLICT.
+  version   Int                 @default(1)
   createdAt DateTime            @default(now()) @db.Timestamptz
   updatedAt DateTime            @updatedAt @db.Timestamptz
 
@@ -1435,6 +1438,10 @@ model Payment {
   paidAt            DateTime?            @db.Timestamptz
   /// Set when a verified event needs operations (late success, double payment).
   reviewReason      PaymentReviewReason?
+  /// Finance resolved an AMOUNT_MISMATCH or DUPLICATE_CAPTURE flag (with a
+  /// reason, audited `payment.flag_resolve`). `reviewReason` is kept: the
+  /// money it describes still counts as it did.
+  reviewResolvedAt  DateTime?            @db.Timestamptz
   createdAt         DateTime             @default(now()) @db.Timestamptz
   updatedAt         DateTime             @updatedAt @db.Timestamptz
 
