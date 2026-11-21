@@ -23,6 +23,7 @@ import {
   PriceType,
 } from '../../../generated/prisma/enums.js';
 import { MAX_PRICE_MINOR } from '../empty-leg-rules.js';
+import { CancellationTierTableDto } from '../../pricing/dto/cancellation-terms.dto.js';
 
 const OFFSET = /(Z|[+-]\d{2}:\d{2})$/;
 const trim = ({ value }: { value: unknown }) =>
@@ -363,6 +364,13 @@ export class EmptyLegDetailResponseDto extends EmptyLegResponseDto {
       'Whether the signed-in customer follows this offer for change alerts. False when not signed in as a customer.',
   })
   interested: boolean;
+
+  @ApiProperty({
+    type: CancellationTierTableDto,
+    description:
+      "Flyviman's cancellation tiers, shown before a booking request (rule 9). Send `version` as `cancellationTermsVersion` with `POST /bookings/empty-leg`.",
+  })
+  cancellationTerms: CancellationTierTableDto;
 }
 
 /** The operator's and operations' view. */
@@ -397,9 +405,15 @@ export class OperatorEmptyLegResponseDto extends EmptyLegResponseDto {
 
   @ApiProperty({
     description:
-      'Whether withdraw is allowed (draft, under review or published).',
+      'Whether withdraw is allowed (draft, under review or published, with no live booking request).',
   })
   withdrawable: boolean;
+
+  @ApiProperty({
+    description:
+      'A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`).',
+  })
+  hasLiveRequest: boolean;
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;

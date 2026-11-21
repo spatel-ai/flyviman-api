@@ -766,6 +766,7 @@ model EmptyLeg {
   destination     Location           @relation("EmptyLegDestination", fields: [destinationId], references: [id], onDelete: Restrict)
   currentLocation Location?          @relation("EmptyLegCurrentLocation", fields: [currentLocationId], references: [id], onDelete: SetNull)
   interests       EmptyLegInterest[]
+  bookings        Booking[]
 
   @@index([status, expiresAt])
   @@index([originId, destinationId, departureWindowStart])
@@ -1149,6 +1150,12 @@ enum BookingEventType {
   MESSAGE
   CHANGE_REQUESTED
   CANCELLATION_REQUESTED
+  /// Operations flagged the booking for attention (M8-C).
+  ESCALATED
+  /// Operations closed the escalation (M8-C).
+  ESCALATION_RESOLVED
+  /// The customer replaced the booking's passengers; counts only (M8-C).
+  PASSENGERS_CHANGED
 }
 
 enum ChangeRequestKind {
@@ -1214,7 +1221,8 @@ model Booking {
   /// Null for scheduled airline bookings.
   operatorId         String?              @db.Uuid
   aircraftId         String?              @db.Uuid
-  /// No foreign key until EmptyLeg exists (M7).
+  /// The empty-leg offer booked (M8-C). At most one live booking per offer
+  /// (partial unique index `Booking_one_live_per_empty_leg` in the migration).
   emptyLegId         String?              @db.Uuid
   /// Scheduled airline supplier and its booking reference.
   supplier           String?
@@ -1235,12 +1243,16 @@ model Booking {
   confirmedAt        DateTime?            @db.Timestamptz
   cancelledAt        DateTime?            @db.Timestamptz
   cancellationReason String?
+  /// Set while operations have the booking escalated (M8-C); who and why
+  /// are on the ESCALATED event and in the audit trail.
+  escalatedAt        DateTime?            @db.Timestamptz
   createdAt          DateTime             @default(now()) @db.Timestamptz
   updatedAt          DateTime             @updatedAt @db.Timestamptz
 
   customer       User                @relation(fields: [customerId], references: [id], onDelete: Restrict)
   operator       Operator?           @relation(fields: [operatorId], references: [id], onDelete: Restrict)
   aircraft       Aircraft?           @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  emptyLeg       EmptyLeg?           @relation(fields: [emptyLegId], references: [id], onDelete: Restrict)
   calculation    PriceCalculation?   @relation(fields: [calculationId], references: [id], onDelete: Restrict)
   acceptedQuote  Quote?              @relation("BookingAcceptedQuote", fields: [acceptedQuoteId], references: [id], onDelete: Restrict)
   quotes         Quote[]             @relation("BookingQuotes")
@@ -1259,6 +1271,8 @@ model Booking {
   @@index([aircraftId])
   @@index([calculationId])
   @@index([assignedToId])
+  @@index([emptyLegId])
+  @@index([escalatedAt])
 }
 
 /// A traveller as they were when the booking was made. `documentNumber` and

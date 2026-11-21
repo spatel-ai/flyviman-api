@@ -3,6 +3,7 @@ import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AvailabilityModule } from '../availability/availability.module.js';
 import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
+import { EmptyLegsModule } from '../empty-legs/empty-legs.module.js';
 import { NotificationEventsModule } from '../notifications/events/notification-events.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OperatorsModule } from '../operators/operators.module.js';
@@ -10,10 +11,14 @@ import { PricingModule } from '../pricing/pricing.module.js';
 import { QuotesModule } from '../quotes/quotes.module.js';
 import { SearchModule } from '../search/search.module.js';
 import { UsersModule } from '../users/users.module.js';
+import { AdminBookingEscalationController } from './admin-booking-escalation.controller.js';
 import { AdminBookingsController } from './admin-bookings.controller.js';
 import { AdminBookingsService } from './admin-bookings.service.js';
 import { AdminChangeRequestsController } from './admin-change-requests.controller.js';
 import { AdminPriceOverrideController } from './admin-price-override.controller.js';
+import { BookingDocumentsController } from './booking-documents.controller.js';
+import { BookingDocumentsService } from './booking-documents.service.js';
+import { BookingEscalationService } from './booking-escalation.service.js';
 import { BookingPassengersService } from './booking-passengers.service.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import { BookingRevalidationService } from './booking-revalidation.service.js';
@@ -27,6 +32,8 @@ import {
   CustomerQuotesController,
 } from './customer-quotes.controller.js';
 import { DevBookingJobsController } from './dev-booking-jobs.controller.js';
+import { EmptyLegBookingsController } from './empty-leg-bookings.controller.js';
+import { EmptyLegBookingsService } from './empty-leg-bookings.service.js';
 import { MeBookingsController } from './me-bookings.controller.js';
 import { OperatorBookingRequestsController } from './operator-booking-requests.controller.js';
 import { OperatorBookingsController } from './operator-bookings.controller.js';
@@ -55,6 +62,7 @@ import { BookingReportsService } from './booking-reports.service.js';
     NotificationsModule,
     PricingModule,
     NotificationEventsModule,
+    EmptyLegsModule,
   ],
   controllers: [
     BookingsController,
@@ -68,6 +76,9 @@ import { BookingReportsService } from './booking-reports.service.js';
     OperatorBookingRequestsController,
     OperatorBookingsController,
     DevBookingJobsController,
+    EmptyLegBookingsController,
+    BookingDocumentsController,
+    AdminBookingEscalationController,
     BookingSelfServiceController,
   ],
   providers: [
@@ -79,6 +90,9 @@ import { BookingReportsService } from './booking-reports.service.js';
     ChangeRequestListsService,
     BookingReportsService,
     FieldCipher,
+    EmptyLegBookingsService,
+    BookingDocumentsService,
+    BookingEscalationService,
     BookingTimelineService,
     BookingPassengersService,
     BookingRevalidationService,

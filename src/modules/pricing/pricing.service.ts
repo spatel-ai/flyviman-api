@@ -10,6 +10,10 @@ import {
   legMetrics,
   type PromotionInput,
 } from './engine.js';
+import {
+  type EmptyLegPriceResult,
+  priceEmptyLegTotal,
+} from './empty-leg-price.js';
 import { priceOperatorQuote, type QuotePriceResult } from './quote-price.js';
 import { resolveRules, type RuleRow } from './rules.js';
 
@@ -124,6 +128,66 @@ export class PricingService {
         inputs: {
           source: 'OPERATOR_QUOTE',
           bookingId: input.bookingId,
+          category: input.category,
+        },
+        appliedRules: result.appliedRules as unknown as Prisma.InputJsonValue,
+        breakdown: result.breakdown as unknown as Prisma.InputJsonValue,
+        baseMinor: result.baseMinor,
+        feesMinor: result.feesMinor,
+        taxMinor: result.taxMinor,
+        discountMinor: result.discountMinor,
+        totalMinor: result.totalMinor,
+        operatorPayableMinor: result.operatorPayableMinor,
+        platformRevenueMinor: result.platformRevenueMinor,
+        currency: result.currency,
+        priceType: PriceType.QUOTE,
+        validUntil: input.validUntil,
+        availabilityCheckedAt: input.availabilityCheckedAt,
+        assumptions: result.assumptions,
+        exclusions: result.exclusions,
+        warnings: result.warnings,
+      },
+      select: { id: true },
+    });
+    return { calculationId: row.id, result };
+  }
+
+  /**
+   * The calculation of an empty-leg booking (M8-C): the offer's price taken
+   * as the customer's tax-inclusive total and split into tax, Flyviman's
+   * commission and the operator's payable with the platform and category
+   * rules in force for the aircraft (`priceEmptyLegTotal`). Stored,
+   * immutable and labelled `QUOTE` (rule 1), in the caller's transaction.
+   */
+  async priceEmptyLeg(
+    db: Prisma.TransactionClient,
+    input: {
+      aircraftId: string;
+      operatorId: string;
+      category: AircraftCategory;
+      emptyLegId: string;
+      totalMinor: number;
+      validUntil: Date;
+      availabilityCheckedAt: Date;
+    },
+  ): Promise<{ calculationId: string; result: EmptyLegPriceResult }> {
+    const rules = resolveRules(
+      await this.activeRules(input.availabilityCheckedAt),
+      {
+        aircraftId: input.aircraftId,
+        operatorId: input.operatorId,
+        category: input.category,
+      },
+    );
+    const result = priceEmptyLegTotal({ totalMinor: input.totalMinor, rules });
+    const row = await db.priceCalculation.create({
+      data: {
+        searchId: null,
+        aircraftId: input.aircraftId,
+        operatorId: input.operatorId,
+        inputs: {
+          source: 'EMPTY_LEG',
+          emptyLegId: input.emptyLegId,
           category: input.category,
         },
         appliedRules: result.appliedRules as unknown as Prisma.InputJsonValue,

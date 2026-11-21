@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
+import { BOOKING_ENDED } from '../empty-legs/empty-leg-rules.js';
 import { QuotesService } from '../quotes/quotes.service.js';
 import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
@@ -24,6 +25,7 @@ import { BookingsService } from './bookings.service.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import type {
   AdminBookingDetailDto,
+  AdminBookingEscalationDto,
   AdminBookingEventDto,
   AdminBookingQueryDto,
   AdminBookingSummaryDto,
@@ -103,6 +105,7 @@ export class AdminBookingsService {
       ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(query.operatorId ? { operatorId: query.operatorId } : {}),
+      ...(query.escalated ? { escalatedAt: { not: null } } : {}),
       ...(query.from || query.to
         ? {
             createdAt: {
@@ -191,6 +194,7 @@ export class AdminBookingsService {
         );
         return hide ? { ...view, details: '', decisionNote: null } : view;
       }),
+      escalation: escalationOf(row),
       payments: row.payments.map((payment) => ({
         reference: payment.reference,
         purpose: payment.purpose,
@@ -319,6 +323,7 @@ export class AdminBookingsService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
       const row = await lockByReference(tx, reference);
       const now = new Date();
+      await assertOfferFree(tx, row, input.status);
       if (input.status === BookingStatus.CANCELLED) {
         const quote = await this.trips.quoteForCancellation(tx, row, now);
         await this.trips.applyCancellation(tx, row, quote, now, {
@@ -392,6 +397,40 @@ export class AdminBookingsService {
   }
 }
 
+/**
+ * Reviving an ended empty-leg booking (M8-C) needs its offer free: another
+ * live booking of the offer is 409 `BOOKING_UNAVAILABLE`, not the partial
+ * unique index's failure.
+ */
+async function assertOfferFree(
+  tx: Prisma.TransactionClient,
+  row: Prisma.BookingGetPayload<object>,
+  to: BookingStatus,
+): Promise<void> {
+  if (
+    row.emptyLegId === null ||
+    !BOOKING_ENDED.includes(row.status) ||
+    BOOKING_ENDED.includes(to)
+  ) {
+    return;
+  }
+  const other = await tx.booking.findFirst({
+    where: {
+      emptyLegId: row.emptyLegId,
+      id: { not: row.id },
+      status: { notIn: BOOKING_ENDED },
+    },
+    select: { id: true },
+  });
+  if (other) {
+    throw new AppException(
+      'BOOKING_UNAVAILABLE',
+      'Another booking holds this empty leg, so this one cannot be reopened.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
 /** The booking by reference, locked (`FOR UPDATE`) for the transaction. */
 async function lockByReference(
   tx: Prisma.TransactionClient,
@@ -455,7 +494,33 @@ function summaryOf(row: SummaryRow): AdminBookingSummaryDto {
     departureAt: first.departureAt,
     passengerCount: itinerary.passengerCount,
     assignedToId: row.assignedToId,
+    escalatedAt: row.escalatedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** A reason kept on an escalation event's payload, or null. */
+function escalationReason(payload: unknown): string | null {
+  return payload !== null &&
+    typeof payload === 'object' &&
+    typeof (payload as Record<string, unknown>).reason === 'string'
+    ? ((payload as Record<string, unknown>).reason as string)
+    : null;
+}
+
+/** The open escalation, from the column and the latest ESCALATED event. */
+function escalationOf(row: {
+  escalatedAt: Date | null;
+  events: Prisma.BookingEventGetPayload<object>[];
+}): AdminBookingEscalationDto | null {
+  if (!row.escalatedAt) return null;
+  const event = row.events.findLast(
+    (e) => e.type === BookingEventType.ESCALATED,
+  );
+  return {
+    escalatedAt: row.escalatedAt.toISOString(),
+    reason: escalationReason(event?.payload ?? null) ?? '',
+    escalatedById: event?.actorId ?? null,
   };
 }
 
@@ -469,12 +534,15 @@ function eventOf(
   const payload = event.payload as Record<string, unknown> | null;
   // The override reason is in the audit trail too, which finance reads.
   const overrideReason =
-    payload !== null &&
-    typeof payload === 'object' &&
-    payload.override === true &&
-    typeof payload.reason === 'string'
-      ? payload.reason
-      : null;
+    event.type === BookingEventType.ESCALATED ||
+    event.type === BookingEventType.ESCALATION_RESOLVED
+      ? escalationReason(payload)
+      : payload !== null &&
+          typeof payload === 'object' &&
+          payload.override === true &&
+          typeof payload.reason === 'string'
+        ? payload.reason
+        : null;
   return {
     id: event.id,
     type: event.type,

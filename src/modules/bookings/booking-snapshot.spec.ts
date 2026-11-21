@@ -132,6 +132,7 @@ describe('itineraryFrom', () => {
       operatorName: 'Skyline Aviation',
       distanceKm: 430,
       flightMinutes: 65,
+      emptyLeg: null,
     });
   });
 });

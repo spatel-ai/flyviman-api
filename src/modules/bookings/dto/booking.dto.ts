@@ -201,18 +201,52 @@ export class ItineraryAircraftDto {
   passengerCapacity: number;
 }
 
+/** The empty-leg offer an `EMPTY_LEG` booking was made from. */
+export class ItineraryEmptyLegDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ example: 'FLY-EL-7K2M9Q' })
+  reference: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'The end of the departure window; the leg’s `departureAt` is its start. The operator confirms the time.',
+  })
+  departureTo: string;
+
+  @ApiProperty({
+    description: 'The offer’s conditions as shown before the request.',
+  })
+  conditions: string;
+}
+
 export class ItineraryDto {
   @ApiProperty({ enum: [1] })
   version: 1;
 
-  @ApiProperty({ enum: ['SEARCH'] })
-  source: 'SEARCH';
+  @ApiProperty({
+    enum: ['SEARCH', 'EMPTY_LEG'],
+    description: 'A search result, or an empty-leg offer (`emptyLeg`).',
+  })
+  source: 'SEARCH' | 'EMPTY_LEG';
 
-  @ApiProperty({ format: 'uuid' })
-  searchId: string;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Null for an empty-leg booking.',
+  })
+  searchId: string | null;
 
-  @ApiProperty({ format: 'uuid' })
-  resultId: string;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Null for an empty-leg booking.',
+  })
+  resultId: string | null;
 
   @ApiProperty({ enum: ['ONE_WAY', 'ROUND_TRIP'], enumName: 'SearchTripType' })
   tripType: 'ONE_WAY' | 'ROUND_TRIP';
@@ -244,6 +278,13 @@ export class ItineraryDto {
 
   @ApiProperty({ type: Number, nullable: true })
   flightMinutes: number | null;
+
+  @ApiProperty({
+    type: ItineraryEmptyLegDto,
+    nullable: true,
+    description: 'The offer, for an empty-leg booking; null otherwise.',
+  })
+  emptyLeg: ItineraryEmptyLegDto | null;
 }
 
 export class CancellationChargeDto {

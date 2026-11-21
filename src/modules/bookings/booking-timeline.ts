@@ -147,6 +147,13 @@ export function customerEvent(
         note: reveal(note),
       });
     }
+    case BookingEventType.PASSENGERS_CHANGED:
+      // Counts only are stored; no names are shown.
+      return entry('PASSENGERS_UPDATED');
+    case BookingEventType.ESCALATED:
+    case BookingEventType.ESCALATION_RESOLVED:
+      // Operations' own flag and its reasons: never the customer's.
+      return null;
     default:
       // OPERATOR_RESPONSE (the status change says it, the reason is
       // internal), CANCELLATION_REQUESTED (unused) and any later type.

@@ -5,7 +5,10 @@ import {
   type IdempotencyClaim,
   markIdempotencyCommitted,
 } from '../../common/idempotency/idempotency.store.js';
-import { BookingStatus } from '../../generated/prisma/enums.js';
+import {
+  BookingEventType,
+  BookingStatus,
+} from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
@@ -131,7 +134,17 @@ export class BookingPassengersService {
           ...snapshot,
         })),
       });
-      // Counts only: a passenger's details never reach the audit trail.
+      // Counts only, on the timeline and in the audit trail: a passenger's
+      // details never reach either.
+      await tx.bookingEvent.create({
+        data: {
+          bookingId: booking.id,
+          type: BookingEventType.PASSENGERS_CHANGED,
+          actorId: user.id,
+          actorRole: user.role,
+          payload: { before, after: snapshots.length },
+        },
+      });
       await this.audit.record(
         {
           action: 'booking.passengers_replace',

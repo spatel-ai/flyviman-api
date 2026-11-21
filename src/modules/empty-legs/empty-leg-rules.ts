@@ -1,4 +1,5 @@
 import {
+  BookingStatus,
   EmptyLegPricingBasis,
   EmptyLegStatus,
   PriceType,
@@ -14,7 +15,7 @@ export const MAX_DAYS_AHEAD = 365;
 export const MAX_PRICE_MINOR = 1_000_000_000;
 
 export type EmptyLegAction =
-  'publish' | 'approve' | 'reject' | 'withdraw' | 'expire';
+  'publish' | 'approve' | 'reject' | 'withdraw' | 'expire' | 'book';
 
 /** `null` is the system: the expiry job. */
 type Actor = Role | null;
@@ -53,6 +54,15 @@ const TRANSITIONS: Record<EmptyLegAction, Transition> = {
   },
   withdraw: { from: OPEN, actors: OPERATOR, reasonRequired: false },
   expire: { from: OPEN, actors: [null], reasonRequired: false },
+  /**
+   * A booking of the offer was confirmed (M8-C). From `EXPIRED` too: the
+   * expiry job may close an offer while its booking request is answered.
+   */
+  book: {
+    from: [EmptyLegStatus.PUBLISHED, EmptyLegStatus.EXPIRED],
+    actors: [null],
+    reasonRequired: false,
+  },
 };
 
 export type TransitionRefusal = 'role' | 'state' | 'reason';
@@ -88,8 +98,22 @@ export function nextEmptyLegStatus(
       return { to: EmptyLegStatus.WITHDRAWN };
     case 'expire':
       return { to: EmptyLegStatus.EXPIRED };
+    case 'book':
+      return { to: EmptyLegStatus.BOOKED };
   }
 }
+
+/**
+ * Booking statuses that end a booking and free its offer again. Every other
+ * status is a live booking, of which an offer has at most one (the partial
+ * unique index `Booking_one_live_per_empty_leg` lists the same four).
+ */
+export const BOOKING_ENDED: BookingStatus[] = [
+  BookingStatus.OPERATOR_UNAVAILABLE,
+  BookingStatus.QUOTE_DECLINED,
+  BookingStatus.EXPIRED,
+  BookingStatus.CANCELLED,
+];
 
 /** Statuses an operator may edit in. */
 export const EDITABLE: EmptyLegStatus[] = [
