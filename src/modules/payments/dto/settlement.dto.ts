@@ -68,7 +68,7 @@ export class AdminSettlementDto {
     enum: SettlementStatus,
     enumName: 'SettlementStatus',
     description:
-      '`NOT_DUE` (the trip is not flown, a refund is on its way or the money kept does not cover the figures), `DUE`, `ON_HOLD` (held by finance) or `PAID` (paid out by hand; never changes again).',
+      '`NOT_DUE` (the trip is not flown or not paid in full, a refund is on its way or the money kept does not cover the figures), `DUE`, `ON_HOLD` (held by finance) or `PAID` (paid out by hand; never changes again).',
   })
   status: SettlementStatus;
 

@@ -53,7 +53,7 @@ export class AdminSettlementsController {
   @ApiOperation({
     summary: 'Operator settlements, newest first',
     description:
-      'One per completed booking with money kept, created by a job every 5 minutes: `payableMinor` = money kept − `commissionMinor` − `taxMinor`, from the price calculation of the price booked. `DUE` once the booking is `COMPLETED`, no refund is on its way and the figures add up to the money kept; otherwise `NOT_DUE`. Filter by `status`.',
+      'One per completed booking with money kept, created by a job every 5 minutes: `payableMinor` = money kept − `commissionMinor` − `taxMinor`, from the price calculation of the price booked. `DUE` once the booking is `COMPLETED` and its price was paid in full, no refund is on its way and the figures add up to the money kept; otherwise `NOT_DUE`. Filter by `status`.',
   })
   @ApiOkResponse({ type: [AdminSettlementDto] })
   async list(

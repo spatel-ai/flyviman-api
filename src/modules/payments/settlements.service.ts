@@ -19,7 +19,11 @@ import { REDIS } from '../../redis/redis.module.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { BookingsService } from '../bookings/bookings.service.js';
-import { MONEY_IN, netPaidMinor } from '../bookings/paid-amount.js';
+import {
+  creditedMinor,
+  MONEY_IN,
+  netPaidMinor,
+} from '../bookings/paid-amount.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import type {
@@ -67,6 +71,8 @@ export interface SettlementBasis {
     operatorId: string | null;
   };
   keptMinor: bigint;
+  /** Credited towards the booking (refunds not deducted) reached its total. */
+  fullyPaid: boolean;
   refundOpen: boolean;
   calculation: SettlementCalculation | null;
   /** Why the calculation cannot price it, or null. */
@@ -239,6 +245,7 @@ export class SettlementsService {
         operatorId: booking.operatorId,
       },
       keptMinor: netPaidMinor(payments),
+      fullyPaid: creditedMinor(payments) >= booking.totalMinor,
       refundOpen: payments.some((payment) =>
         payment.refunds.some((refund) => OPEN_REFUND.includes(refund.status)),
       ),
@@ -268,6 +275,7 @@ export class SettlementsService {
     const derived = derivedSettlementStatus({
       bookingStatus: booking.status,
       keptMinor,
+      fullyPaid: basis.fullyPaid,
       refundOpen: basis.refundOpen,
       figures,
     });
@@ -423,18 +431,20 @@ export class SettlementsService {
           derivedSettlementStatus({
             bookingStatus: basis.booking.status,
             keptMinor: basis.keptMinor,
+            fullyPaid: basis.fullyPaid,
             refundOpen: basis.refundOpen,
             figures: fresh,
           }) === SettlementStatus.DUE;
         if (!basis || !fresh || !due) {
           throw new AppException(
             'SETTLEMENT_NOT_DUE',
-            'This settlement is not due: the trip is not completed, a refund is on its way, or the money kept does not cover it.',
+            'This settlement is not due: the trip is not completed or not fully paid, a refund is on its way, or the money kept does not cover it.',
             HttpStatus.CONFLICT,
             basis
               ? [
                   { field: 'bookingStatus', issue: basis.booking.status },
                   { field: 'keptMinor', issue: String(basis.keptMinor) },
+                  { field: 'fullyPaid', issue: String(basis.fullyPaid) },
                   { field: 'refundOpen', issue: String(basis.refundOpen) },
                 ]
               : [],

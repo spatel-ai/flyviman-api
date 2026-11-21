@@ -18,8 +18,10 @@ import {
  *   as priced; the operator's payable is what is kept less the two
  *   (`payable = kept − commission − tax`, never below 0). With the whole
  *   price kept, that is the calculation's `operatorPayableMinor`.
- * - It is `DUE` while the booking is `COMPLETED`, no refund is on its way
- *   and the three figures add up to the money kept; otherwise `NOT_DUE`.
+ * - It is `DUE` while the booking is `COMPLETED`, its whole price was paid
+ *   (`creditedMinor` at least the total, so an unpaid Model C balance is
+ *   never passed to the operator as a smaller payout), no refund is on its
+ *   way and the three figures add up to the money kept; otherwise `NOT_DUE`.
  *   So a refund after the trip (goodwill) comes out of the operator's
  *   payable, and a refund larger than the payable leaves the record
  *   `NOT_DUE` for finance (the reconciliation report flags it).
@@ -104,11 +106,14 @@ export function sameFigures(
 export function derivedSettlementStatus(input: {
   bookingStatus: BookingStatus;
   keptMinor: bigint;
+  /** Whether the money credited towards the booking reached its price. */
+  fullyPaid: boolean;
   refundOpen: boolean;
   figures: SettlementFigures;
 }): typeof SettlementStatus.DUE | typeof SettlementStatus.NOT_DUE {
   const due =
     input.bookingStatus === BookingStatus.COMPLETED &&
+    input.fullyPaid &&
     input.keptMinor > 0n &&
     !input.refundOpen &&
     figuresTotal(input.figures) === input.keptMinor;
