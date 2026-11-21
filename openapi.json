@@ -8112,6 +8112,230 @@
         ]
       }
     },
+    "/api/v1/admin/settlements": {
+      "get": {
+        "description": "One per completed booking with money kept, created by a job every 5 minutes: `payableMinor` = money kept − `commissionMinor` − `taxMinor`, from the price calculation of the price booked. `DUE` once the booking is `COMPLETED` and its price was paid in full, no refund is on its way and the figures add up to the money kept; otherwise `NOT_DUE`, with `notDueReason`. A refund after the trip comes out of the payable; one larger than the payable leaves it `NOT_DUE` (“Refund exceeds payable — finance to resolve.”). Filter by `status`.",
+        "operationId": "AdminSettlementsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SettlementStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminSettlementDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Operator settlements, newest first",
+        "tags": [
+          "admin-payments"
+        ]
+      }
+    },
+    "/api/v1/admin/settlements/{id}": {
+      "patch": {
+        "description": "`ON_HOLD` from `NOT_DUE` or `DUE`; `DUE` from `ON_HOLD` releases the hold: the record becomes what the rules give now (`DUE` or `NOT_DUE`, see `notDueReason`); `PAID` from `DUE` with the payout’s bank `paymentReference` and the `expectedPayableMinor` shown, only while still due (409 `SETTLEMENT_NOT_DUE`, the reason in `details`) and unchanged (409 `SETTLEMENT_CHANGED`, the current payable in `details`). A `PAID` record never changes again: marking it paid with the same reference returns it, another reference is 409 `SETTLEMENT_ALREADY_PAID`; any other move is 409 `SETTLEMENT_INVALID_TRANSITION`. Audited with the reason. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "operationId": "AdminSettlementsController_change",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each change and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettlementDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSettlementDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Hold, release or mark a settlement paid",
+        "tags": [
+          "admin-payments"
+        ]
+      }
+    },
+    "/api/v1/admin/reconciliation": {
+      "get": {
+        "description": "Per currency: payments whose money arrived (by `paidAt`), refunds started (by `createdAt`, completed and still open), bookings with a payment created in the period and the money kept on them now, settlements created (by `createdAt`) and paid out (by `paidAt`). Then the mismatches, checked as they are now, on every booking with a payment, refund or settlement in the period or completed in it. Reads Flyviman’s own record only; it does not ask the gateway. The period is at most 92 days (400 `VALIDATION_ERROR`).",
+        "operationId": "AdminSettlementsController_report",
+        "parameters": [
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "description": "Start of the period, inclusive.",
+            "schema": {
+              "format": "date-time",
+              "example": "2026-11-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "description": "End of the period, exclusive. At most 92 days after `from` (400 otherwise).",
+            "schema": {
+              "format": "date-time",
+              "example": "2026-12-01T00:00:00.000Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Reconciliation report for a period",
+        "tags": [
+          "admin-payments"
+        ]
+      }
+    },
+    "/api/v1/operator/settlements": {
+      "get": {
+        "description": "What Flyviman owes the caller’s organisation per completed booking: the money kept, the commission and tax deducted, the payable, its status and, once paid, the bank reference of the payout.",
+        "operationId": "OperatorSettlementsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorSettlementDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Own settlement records, newest first",
+        "tags": [
+          "operator-settlements"
+        ]
+      }
+    },
     "/api/v1/air-ambulance/requests": {
       "post": {
         "description": "Records the request as `SUBMITTED` with the medical details encrypted; operations take it from there. Both locations must be active (404 `NOT_FOUND`, field in `details`) and different (400 `VALIDATION_ERROR`). The answer holds the reference, status and `emergencyNotice` only. Medical details are never logged or audited. A repeat with the same `Idempotency-Key` and body returns the first answer.",
@@ -20455,6 +20679,393 @@
           "dueMinor",
           "currency",
           "since"
+        ]
+      },
+      "SettlementStatus": {
+        "type": "string",
+        "enum": [
+          "NOT_DUE",
+          "DUE",
+          "PAID",
+          "ON_HOLD"
+        ]
+      },
+      "AdminSettlementDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "bookingStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "payableMinor": {
+            "type": "number",
+            "description": "Paise owed to the operator: the money kept towards the booking less commission and tax."
+          },
+          "commissionMinor": {
+            "type": "number",
+            "description": "Paise: Flyviman’s revenue on the price (commission, markup and service fee, less its discount)."
+          },
+          "taxMinor": {
+            "type": "number",
+            "description": "Paise of tax collected on the price."
+          },
+          "keptMinor": {
+            "type": "number",
+            "description": "Paise kept towards the booking now (credited less refunds). Payable + commission + tax equals it when the record is consistent."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "status": {
+            "description": "`NOT_DUE` (the trip is not flown or not paid in full, a refund is on its way or the money kept does not cover the figures), `DUE`, `ON_HOLD` (held by finance) or `PAID` (paid out by hand; never changes again).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SettlementStatus"
+              }
+            ]
+          },
+          "notDueReason": {
+            "type": "string",
+            "nullable": true,
+            "example": "Refund exceeds payable — finance to resolve.",
+            "description": "For `NOT_DUE` and `ON_HOLD`: why it is not due by the rules now (the trip not completed, the price not paid in full, a refund on its way, a refund larger than the payable, more kept than the price); null when due, and for `DUE` and `PAID`."
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "paymentReference": {
+            "type": "string",
+            "nullable": true,
+            "description": "The bank transfer reference of the payout."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "bookingReference",
+          "bookingStatus",
+          "operatorId",
+          "operatorName",
+          "payableMinor",
+          "commissionMinor",
+          "taxMinor",
+          "keptMinor",
+          "currency",
+          "status",
+          "notDueReason",
+          "paidAt",
+          "paymentReference",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateSettlementDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "DUE",
+              "PAID",
+              "ON_HOLD"
+            ],
+            "description": "`ON_HOLD` from `NOT_DUE` or `DUE`; `DUE` from `ON_HOLD` releases the hold (the record becomes what the rules give now: `DUE` or `NOT_DUE`); `PAID` from `DUE`."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why, for the audit trail (rule 6). No personal or bank account details."
+          },
+          "paymentReference": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Required for `PAID`: the bank transfer reference of the payout (letters, digits, spaces, `-`, `_`, `/`, `.`)."
+          },
+          "expectedPayableMinor": {
+            "type": "number",
+            "description": "Required for `PAID`: the payable finance paid out, as shown. Another amount than the record’s is 409 `SETTLEMENT_CHANGED`."
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ]
+      },
+      "ReconciliationTotalsDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "paymentsCount": {
+            "type": "number",
+            "description": "Payments whose money arrived (`SUCCEEDED` or later), by `paidAt` in the period."
+          },
+          "paymentsInMinor": {
+            "type": "number",
+            "description": "Paise: their amounts."
+          },
+          "extraMoneyMinor": {
+            "type": "number",
+            "description": "Paise of those that were not towards a booking (paid after it closed, or paid twice): owed back."
+          },
+          "refundsCompletedMinor": {
+            "type": "number",
+            "description": "Paise of refunds started in the period that completed."
+          },
+          "refundsOpenMinor": {
+            "type": "number",
+            "description": "Paise of refunds started in the period still on their way (`REQUESTED`, `PENDING`)."
+          },
+          "bookingsCount": {
+            "type": "number",
+            "description": "Bookings with a payment created in the period whose money arrived."
+          },
+          "bookingsKeptMinor": {
+            "type": "number",
+            "description": "Paise kept towards those bookings now: credited less refunds (extra money left out)."
+          },
+          "settlementsCount": {
+            "type": "number",
+            "description": "Settlements created in the period."
+          },
+          "settlementsPayableMinor": {
+            "type": "number",
+            "description": "Paise payable to operators on them."
+          },
+          "settlementsCommissionMinor": {
+            "type": "number",
+            "description": "Paise of commission on them."
+          },
+          "settlementsTaxMinor": {
+            "type": "number",
+            "description": "Paise of tax on them."
+          },
+          "settlementsPaidMinor": {
+            "type": "number",
+            "description": "Paise paid out to operators, by `paidAt` in the period."
+          }
+        },
+        "required": [
+          "currency",
+          "paymentsCount",
+          "paymentsInMinor",
+          "extraMoneyMinor",
+          "refundsCompletedMinor",
+          "refundsOpenMinor",
+          "bookingsCount",
+          "bookingsKeptMinor",
+          "settlementsCount",
+          "settlementsPayableMinor",
+          "settlementsCommissionMinor",
+          "settlementsTaxMinor",
+          "settlementsPaidMinor"
+        ]
+      },
+      "ReconciliationMismatchKind": {
+        "type": "string",
+        "enum": [
+          "PAYMENT_SUMMARY_MISMATCH",
+          "PAYMENT_FLAGGED",
+          "EXTRA_MONEY_UNREFUNDED",
+          "PAYMENT_STUCK",
+          "REFUND_STUCK",
+          "KEPT_EXCEEDS_TOTAL",
+          "SETTLEMENT_MISSING",
+          "SETTLEMENT_AMOUNT_MISMATCH",
+          "SETTLEMENT_BOOKING_NOT_COMPLETED"
+        ],
+        "description": "`PAYMENT_SUMMARY_MISMATCH` (the booking’s payment status is not what its payments say); `PAYMENT_FLAGGED` (another amount or a second capture at the gateway: check its dashboard); `EXTRA_MONEY_UNREFUNDED` (money paid after closing or twice, not yet refunded); `PAYMENT_STUCK` and `REFUND_STUCK` (no final answer after 24 hours); `KEPT_EXCEEDS_TOTAL`; `SETTLEMENT_MISSING` (a completed booking with money kept and no settlement); `SETTLEMENT_AMOUNT_MISMATCH` (the settlement’s figures do not add up to the money kept now); `SETTLEMENT_BOOKING_NOT_COMPLETED` (a due or paid settlement whose booking is no longer `COMPLETED`)."
+      },
+      "ReconciliationMismatchDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "description": "`PAYMENT_SUMMARY_MISMATCH` (the booking’s payment status is not what its payments say); `PAYMENT_FLAGGED` (another amount or a second capture at the gateway: check its dashboard); `EXTRA_MONEY_UNREFUNDED` (money paid after closing or twice, not yet refunded); `PAYMENT_STUCK` and `REFUND_STUCK` (no final answer after 24 hours); `KEPT_EXCEEDS_TOTAL`; `SETTLEMENT_MISSING` (a completed booking with money kept and no settlement); `SETTLEMENT_AMOUNT_MISMATCH` (the settlement’s figures do not add up to the money kept now); `SETTLEMENT_BOOKING_NOT_COMPLETED` (a due or paid settlement whose booking is no longer `COMPLETED`).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReconciliationMismatchKind"
+              }
+            ]
+          },
+          "bookingReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "paymentReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "settlementId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "detail": {
+            "type": "string",
+            "description": "What is wrong, for finance."
+          },
+          "amountMinor": {
+            "type": "number",
+            "nullable": true,
+            "description": "Paise at stake, when there is one amount."
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "kind",
+          "bookingReference",
+          "paymentReference",
+          "refundReference",
+          "settlementId",
+          "detail",
+          "amountMinor",
+          "currency"
+        ]
+      },
+      "ReconciliationReportDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationTotalsDto"
+            }
+          },
+          "mismatches": {
+            "description": "At most 200, bookings first by reference.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationMismatchDto"
+            }
+          },
+          "mismatchTotal": {
+            "type": "number",
+            "description": "Mismatches found, including any not listed."
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "generatedAt",
+          "totals",
+          "mismatches",
+          "mismatchTotal"
+        ]
+      },
+      "OperatorSettlementDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "keptMinor": {
+            "type": "number",
+            "description": "Paise Flyviman kept from the customer for the booking now (paid less refunds)."
+          },
+          "commissionMinor": {
+            "type": "number",
+            "description": "Paise of Flyviman’s commission deducted."
+          },
+          "taxMinor": {
+            "type": "number",
+            "description": "Paise of tax deducted (collected by Flyviman)."
+          },
+          "payableMinor": {
+            "type": "number",
+            "description": "Paise owed to the operator."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SettlementStatus"
+              }
+            ]
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "paymentReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "bookingReference",
+          "keptMinor",
+          "commissionMinor",
+          "taxMinor",
+          "payableMinor",
+          "currency",
+          "status",
+          "paidAt",
+          "paymentReference",
+          "createdAt"
         ]
       },
       "PatientMobility": {
