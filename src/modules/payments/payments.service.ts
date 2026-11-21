@@ -8,7 +8,6 @@ import { minorToNumber } from '../../common/money.js';
 import { paymentReference } from '../../common/reference.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
-  PaymentModel,
   PaymentProvider,
   PaymentStatus,
   PriceType,
@@ -25,6 +24,7 @@ import {
   BookingsService,
   type PayableBookingRow,
 } from '../bookings/bookings.service.js';
+import { depositPercentFor } from '../bookings/deposit-percent.js';
 import { readCreditedMinor } from '../bookings/paid-amount.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import type {
@@ -276,10 +276,11 @@ export class PaymentsService {
     booking: PayableBookingRow,
     input: CreatePaymentDto,
   ) {
-    const depositPercent =
-      booking.paymentModel === PaymentModel.C_DEPOSIT
-        ? (await this.categories.resolve(booking.category)).depositPercent
-        : 100;
+    const depositPercent = await depositPercentFor(
+      booking,
+      async () =>
+        (await this.categories.resolve(booking.category)).depositPercent,
+    );
     const due = amountDue(
       {
         status: booking.status,

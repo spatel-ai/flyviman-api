@@ -36,6 +36,7 @@ import {
   requestTerms,
 } from './booking-snapshot.js';
 import { afterRequested } from './booking-transitions.js';
+import { depositPercentToSave } from './deposit-percent.js';
 import { BookingsService, OPEN_STATUSES } from './bookings.service.js';
 import type { BookingCreatedDto } from './dto/booking.dto.js';
 import type { CreateEmptyLegBookingDto } from './dto/empty-leg-booking.dto.js';
@@ -311,6 +312,7 @@ export class EmptyLegBookingsService {
         status: BookingStatus.REQUESTED,
         bookingMode: config.bookingMode,
         paymentModel: config.paymentModel,
+        depositPercent: depositPercentToSave(config),
         operatorId: offer.operatorId,
         aircraftId: offer.aircraft.id,
         emptyLegId: offer.id,

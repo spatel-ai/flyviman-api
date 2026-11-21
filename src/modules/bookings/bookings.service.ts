@@ -22,7 +22,6 @@ import {
   type BookingPaymentStatus,
   BookingStatus,
   OperatorStatus,
-  PaymentModel,
   PriceType,
   QuoteStatus,
 } from '../../generated/prisma/enums.js';
@@ -42,6 +41,7 @@ import { SearchService } from '../search/search.service.js';
 import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
+import { depositPercentFor, depositPercentToSave } from './deposit-percent.js';
 import { encryptLegacyFreeText } from './free-text-backfill.js';
 import { readCreditedMinor, readPaidMinor } from './paid-amount.js';
 import { paymentInProgressUntil } from './payment-in-progress.js';
@@ -118,6 +118,7 @@ export const PAYABLE_FIELDS = {
   status: true,
   priceType: true,
   paymentModel: true,
+  depositPercent: true,
   paymentStatus: true,
   operatorAcceptedAt: true,
   totalMinor: true,
@@ -331,6 +332,7 @@ export class BookingsService implements OnApplicationBootstrap {
               status: BookingStatus.REQUESTED,
               bookingMode: config.bookingMode,
               paymentModel: config.paymentModel,
+              depositPercent: depositPercentToSave(config),
               operatorId: current.operatorId,
               aircraftId,
               itinerary: itinerary as unknown as Prisma.InputJsonValue,
@@ -501,10 +503,11 @@ export class BookingsService implements OnApplicationBootstrap {
   private async amountDueNow(
     booking: PayableBookingRow,
   ): Promise<BookingAmountDueDto | null> {
-    const depositPercent =
-      booking.paymentModel === PaymentModel.C_DEPOSIT
-        ? (await this.categories.resolve(booking.category)).depositPercent
-        : 100;
+    const depositPercent = await depositPercentFor(
+      booking,
+      async () =>
+        (await this.categories.resolve(booking.category)).depositPercent,
+    );
     const due = amountDue(
       {
         status: booking.status,
@@ -749,10 +752,10 @@ export class BookingsService implements OnApplicationBootstrap {
     if (!check.allowed) {
       return { confirmed: false, reason: check.reason, unbookable: false };
     }
-    const depositPercent =
-      row.paymentModel === PaymentModel.C_DEPOSIT
-        ? (await this.categories.resolve(row.category)).depositPercent
-        : 100;
+    const depositPercent = await depositPercentFor(
+      row,
+      async () => (await this.categories.resolve(row.category)).depositPercent,
+    );
     const required = confirmationKeptMinor(
       row.paymentModel,
       row.totalMinor,
