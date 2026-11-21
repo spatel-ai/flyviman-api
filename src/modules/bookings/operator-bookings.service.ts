@@ -22,6 +22,7 @@ import { isQuoteRequest } from './booking-snapshot.js';
 import { CANCELLABLE } from './booking-transitions.js';
 import { BookingsService } from './bookings.service.js';
 import type {
+  OperatorBookingCancelledDto,
   OperatorBookingDetailDto,
   OperatorBookingQueryDto,
   OperatorBookingSummaryDto,
@@ -211,10 +212,10 @@ export class OperatorBookingsService {
     reference: string,
     reason: string,
     claim: IdempotencyClaim,
-  ): Promise<OperatorBookingDetailDto> {
+  ): Promise<OperatorBookingCancelledDto> {
     const access = await this.access(user);
     const bookingId = await this.findId(access, reference);
-    await this.prisma.$transaction(async (tx) => {
+    const cancelledAt = await this.prisma.$transaction(async (tx) => {
       await markIdempotencyCommitted(tx, claim);
       const row = await lock(tx, bookingId);
       if (!CANCELLABLE.includes(row.status)) {
@@ -228,7 +229,7 @@ export class OperatorBookingsService {
       const now = new Date();
       // Read under the booking's lock: payments write after locking it too.
       const terms = await this.trips.quoteForCancellation(tx, row, now);
-      await this.trips.applyCancellation(
+      return this.trips.applyCancellation(
         tx,
         row,
         {
@@ -243,7 +244,23 @@ export class OperatorBookingsService {
         { kind: 'OPERATOR', user, reason },
       );
     });
-    return this.detail(user, reference);
+    // References only: the idempotency store keeps this answer (D-128).
+    const done = await this.prisma.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      select: {
+        reference: true,
+        status: true,
+        paymentStatus: true,
+        updatedAt: true,
+      },
+    });
+    return {
+      reference: done.reference,
+      status: done.status,
+      paymentStatus: done.paymentStatus,
+      cancelledAt: cancelledAt.toISOString(),
+      updatedAt: done.updatedAt.toISOString(),
+    };
   }
 
   /**

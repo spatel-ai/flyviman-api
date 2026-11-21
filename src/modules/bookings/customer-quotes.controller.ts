@@ -27,7 +27,7 @@ import { QUOTE_REFERENCE } from '../../common/reference.js';
 import { Role } from '../../generated/prisma/enums.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CurrentUser, Roles } from '../auth/auth.decorators.js';
-import { QuoteResponseDto } from '../quotes/dto/quote.dto.js';
+import { QuoteAcceptedDto, QuoteResponseDto } from '../quotes/dto/quote.dto.js';
 import { BookingReferencePipe } from './booking-reference.pipe.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import {
@@ -80,7 +80,7 @@ export class CustomerQuotesController {
   @ApiOperation({
     summary: 'Accept a quote',
     description:
-      'The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price and at once `AWAITING_PAYMENT`, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. A repeat with the same `Idempotency-Key` returns the first answer.',
+      'The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price and at once `AWAITING_PAYMENT`, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. Answers references, status and time only (`GET /quotes/:reference` has the details). A repeat with the same `Idempotency-Key` returns the first answer.',
   })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -88,12 +88,12 @@ export class CustomerQuotesController {
     description: 'A UUID, new for each acceptance and reused on retry.',
     schema: { type: 'string', format: 'uuid' },
   })
-  @ApiOkResponse({ type: QuoteResponseDto })
+  @ApiOkResponse({ type: QuoteAcceptedDto })
   accept(
     @CurrentUser() user: AuthUser,
     @Param('reference', QuoteReferencePipe) reference: string,
     @IdempotencyClaimParam() claim: IdempotencyClaim,
-  ): Promise<QuoteResponseDto> {
+  ): Promise<QuoteAcceptedDto> {
     return this.requests.acceptQuote(user, reference, claim);
   }
 

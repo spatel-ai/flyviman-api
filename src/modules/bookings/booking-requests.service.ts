@@ -41,6 +41,7 @@ import { PricingService } from '../pricing/pricing.service.js';
 import { PromotionsService } from '../pricing/promotions.service.js';
 import type {
   OperatorQuoteResponseDto,
+  QuoteAcceptedDto,
   QuoteResponseDto,
   ReviseQuoteDto,
 } from '../quotes/dto/quote.dto.js';
@@ -65,6 +66,7 @@ import type { OverridePriceDto } from './dto/price-override.dto.js';
 import type {
   BookingMessageDto,
   BookingNoteDto,
+  BookingRequestAcceptedDto,
   OperatorBookingRequestDetailDto,
   OperatorBookingRequestDto,
   OperatorBookingRequestQueryDto,
@@ -235,7 +237,7 @@ export class BookingRequestsService {
     user: AuthUser,
     reference: string,
     claim: IdempotencyClaim,
-  ): Promise<OperatorBookingRequestDetailDto> {
+  ): Promise<BookingRequestAcceptedDto> {
     const access = await this.access(user);
     const booking = await this.operatorBooking(access, reference);
     await this.changeRequest(booking.id, async (tx, row, now) => {
@@ -283,7 +285,16 @@ export class BookingRequestsService {
       await this.bookings.afterPriceConfirmed(tx, row.id);
       return this.notifyCustomer(tx, row, 'booking.price_confirmed', {});
     });
-    return this.operatorDetail(user, reference);
+    // References only: the idempotency store keeps this answer (D-128).
+    const done = await this.prisma.booking.findUniqueOrThrow({
+      where: { id: booking.id },
+      select: { reference: true, status: true, updatedAt: true },
+    });
+    return {
+      reference: done.reference,
+      status: done.status,
+      updatedAt: done.updatedAt.toISOString(),
+    };
   }
 
   /**
@@ -733,7 +744,7 @@ export class BookingRequestsService {
     user: AuthUser,
     quoteReference: string,
     claim: IdempotencyClaim,
-  ): Promise<QuoteResponseDto> {
+  ): Promise<QuoteAcceptedDto> {
     const owned = await this.ownQuote(user, quoteReference);
     await this.changeRequest(owned.booking.id, async (tx, row, now) => {
       await markIdempotencyCommitted(tx, claim);
@@ -788,7 +799,17 @@ export class BookingRequestsService {
       await this.bookings.afterPriceConfirmed(tx, row.id);
       return this.notifyOperator(tx, row, 'booking.quote_accepted');
     });
-    return this.customerQuote(user, quoteReference);
+    // References only: the idempotency store keeps this answer (D-128).
+    const done = await this.prisma.quote.findUniqueOrThrow({
+      where: { id: owned.quote.id },
+      select: { reference: true, status: true, updatedAt: true },
+    });
+    return {
+      reference: done.reference,
+      bookingReference: owned.booking.reference,
+      status: done.status,
+      updatedAt: done.updatedAt.toISOString(),
+    };
   }
 
   /** Declines the operator's quote: `REJECTED`, the booking `QUOTE_DECLINED`. */

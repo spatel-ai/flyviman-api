@@ -354,22 +354,44 @@ test.describe('operator booking request inbox', () => {
   }) => {
     const contexts = { request, playwright, baseURL };
     const { reference, customer, email, created } = await requested(contexts);
+    // A special request, which the answer must not repeat.
+    await withPrisma((prisma) =>
+      prisma.booking.update({
+        where: { reference },
+        data: { specialRequests: 'Birthday cake for Rohan' },
+      }),
+    );
     const key = randomUUID();
     const path = `operator/booking-requests/${reference}/accept`;
 
     const accepted = await post(request, path, undefined, key);
     expect(accepted.status()).toBe(200);
     const body = (await accepted.json()).data;
-    // Every payment model asks for payment once the price is confirmed.
-    expect(body).toMatchObject({
+    // Every payment model asks for payment once the price is confirmed. The
+    // answer holds references only: it is kept for replay (D-128).
+    expect(body).toEqual({
       reference,
       status: 'AWAITING_PAYMENT',
-      price: { priceType: 'CONFIRMED', amountMinor: created.price.amountMinor },
+      updatedAt: expect.any(String),
+    });
+    const detail = (
+      await (await request.get(`operator/booking-requests/${reference}`)).json()
+    ).data;
+    expect(detail.price).toMatchObject({
+      priceType: 'CONFIRMED',
+      amountMinor: created.price.amountMinor,
     });
     // The same key returns the same answer; a new key is a second accept.
     const repeat = await post(request, path, undefined, key);
     expect(repeat.status()).toBe(200);
-    expect((await repeat.json()).data.status).toBe('AWAITING_PAYMENT');
+    expect((await repeat.json()).data).toEqual(body);
+    // The stored answer holds no special request.
+    const kept = await withPrisma((prisma) =>
+      prisma.idempotencyKey.findMany({ where: { key } }),
+    );
+    expect(kept).toHaveLength(1);
+    expect(kept[0].responseBody).toEqual(body);
+    expect(JSON.stringify(kept[0].responseBody)).not.toContain('Rohan');
     const again = await post(request, path, undefined, randomUUID());
     expect(again.status()).toBe(409);
     expect((await again.json()).error.code).toBe('BOOKING_INVALID_TRANSITION');
@@ -738,12 +760,23 @@ test.describe('quotes', () => {
       key,
     );
     expect(accepted.status()).toBe(200);
-    expect((await accepted.json()).data).toMatchObject({
+    // References only: the answer is kept for replay (D-128).
+    const answer = (await accepted.json()).data;
+    expect(answer).toEqual({
+      reference: second.reference,
+      bookingReference: reference,
+      status: 'ACCEPTED',
+      updatedAt: expect.any(String),
+    });
+    const shown = (
+      await (await customer.get(`quotes/${second.reference}`)).json()
+    ).data;
+    expect(shown).toMatchObject({
       status: 'ACCEPTED',
       open: false,
       price: { priceType: 'CONFIRMED', amountMinor: secondTotal },
     });
-    expect((await accepted.json()).data).not.toHaveProperty('operatorPrice');
+    expect(shown).not.toHaveProperty('operatorPrice');
     const repeat = await post(
       customer,
       `quotes/${second.reference}/accept`,
@@ -751,6 +784,7 @@ test.describe('quotes', () => {
       key,
     );
     expect(repeat.status()).toBe(200);
+    expect((await repeat.json()).data).toEqual(answer);
     const twice = await post(
       customer,
       `quotes/${second.reference}/accept`,

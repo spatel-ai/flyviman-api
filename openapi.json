@@ -6922,7 +6922,7 @@
     },
     "/api/v1/quotes/{reference}/accept": {
       "post": {
-        "description": "The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price and at once `AWAITING_PAYMENT`, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. A repeat with the same `Idempotency-Key` returns the first answer.",
+        "description": "The quote becomes `ACCEPTED` with its price `CONFIRMED`, and the booking `PRICE_CONFIRMED` at the quoted price and at once `AWAITING_PAYMENT`, on the quote’s cancellation conditions (shown before you commit). The aircraft is checked again first (409 `BOOKING_UNAVAILABLE`). 409 `QUOTE_EXPIRED` past `validUntil`; 409 `QUOTE_INVALID_TRANSITION` for a quote already answered or replaced by a revision; 409 `BOOKING_INVALID_TRANSITION` when the booking is not waiting for this answer. Answers references, status and time only (`GET /quotes/:reference` has the details). A repeat with the same `Idempotency-Key` returns the first answer.",
         "operationId": "CustomerQuotesController_accept",
         "parameters": [
           {
@@ -6950,7 +6950,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuoteResponseDto"
+                  "$ref": "#/components/schemas/QuoteAcceptedDto"
                 }
               }
             }
@@ -7114,7 +7114,7 @@
     },
     "/api/v1/operator/booking-requests/{reference}/accept": {
       "post": {
-        "description": "Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED` and at once on to `AWAITING_PAYMENT` (every payment model asks for payment then): the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.",
+        "description": "Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED` and at once on to `AWAITING_PAYMENT` (every payment model asks for payment then): the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. Answers the reference, status and time only (`GET /operator/booking-requests/:reference` has the details). A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.",
         "operationId": "OperatorBookingRequestsController_accept",
         "parameters": [
           {
@@ -7142,7 +7142,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperatorBookingRequestDetailDto"
+                  "$ref": "#/components/schemas/BookingRequestAcceptedDto"
                 }
               }
             }
@@ -7525,7 +7525,7 @@
     },
     "/api/v1/operator/bookings/{reference}/cancel": {
       "post": {
-        "description": "From any status before `COMPLETED`. Moves the booking to `CANCELLED` at once, releases the aircraft’s hold, closes any open quote and change request, and records a completed cancellation with no charge: everything the customer paid is recorded as due back, for Flyviman finance to refund (nothing is refunded here). The reason is kept for you and Flyviman, stored encrypted; the customer is told the booking was cancelled. 409 `BOOKING_NOT_CANCELLABLE` once completed or closed; 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s final answer. Audited. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "From any status before `COMPLETED`. Moves the booking to `CANCELLED` at once, releases the aircraft’s hold, closes any open quote and change request, and records a completed cancellation with no charge: everything the customer paid is recorded as due back, for Flyviman finance to refund (nothing is refunded here). The reason is kept for you and Flyviman, stored encrypted; the customer is told the booking was cancelled. 409 `BOOKING_NOT_CANCELLABLE` once completed or closed; 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s final answer. Audited. Answers references, statuses and times only (`GET /operator/bookings/:reference` has the details). A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "OperatorBookingsController_cancel",
         "parameters": [
           {
@@ -7563,7 +7563,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperatorBookingDetailDto"
+                  "$ref": "#/components/schemas/OperatorBookingCancelledDto"
                 }
               }
             }
@@ -19816,6 +19816,36 @@
           "message"
         ]
       },
+      "QuoteAcceptedDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-QT-7K2M9Q"
+          },
+          "bookingReference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QuoteStatus"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "bookingReference",
+          "status",
+          "updatedAt"
+        ]
+      },
       "BookingRequestAircraftDto": {
         "type": "object",
         "properties": {
@@ -20145,6 +20175,31 @@
           "changeRequests"
         ]
       },
+      "BookingRequestAcceptedDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "updatedAt"
+        ]
+      },
       "RejectBookingRequestDto": {
         "type": "object",
         "properties": {
@@ -20433,6 +20488,44 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "OperatorBookingCancelledDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "paymentStatus",
+          "cancelledAt",
+          "updatedAt"
         ]
       },
       "CreateEmptyLegBookingDto": {
