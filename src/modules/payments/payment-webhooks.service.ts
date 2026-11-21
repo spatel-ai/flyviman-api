@@ -439,7 +439,8 @@ export class PaymentWebhooksService {
    * flag that sets the reason is always recorded; any other is recorded
    * once per payment and reason (and `once`, the reported fact that makes
    * it new): a notice stored before its order was known stays unlinked and
-   * is applied again on every redelivery (W5-9d).
+   * is applied again on every redelivery (W5-9d). Recording a flag clears
+   * `reviewResolvedAt` (a resolved flag reopens).
    */
   private async flag(
     tx: Prisma.TransactionClient,
@@ -475,6 +476,13 @@ export class PaymentWebhooksService {
       )
     ) {
       return;
+    } else {
+      // A new flag reopens one finance resolved: it is listed in
+      // reconciliation and blocks erasure again.
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { reviewResolvedAt: null },
+      });
     }
     await this.audit.record(
       {

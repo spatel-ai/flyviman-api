@@ -104,6 +104,7 @@ function paymentWorld(overrides: Record<string, unknown> = {}) {
     currency: 'INR',
     purpose: 'FULL',
     reviewReason: null as string | null,
+    reviewResolvedAt: null as Date | null,
     ...overrides,
   };
   const booking = {
@@ -276,7 +277,12 @@ describe('PaymentWebhooksService applying notices', () => {
       providerEventId: 'evt_2',
       providerPaymentId: 'pay_2',
     });
-    expect(world.tx.payment.update).not.toHaveBeenCalled();
+    // The first reason stays; the only write reopens a resolved flag.
+    expect(world.tx.payment.update).toHaveBeenCalledTimes(1);
+    expect(world.tx.payment.update.mock.calls[0][0].data).toEqual({
+      reviewResolvedAt: null,
+    });
+    expect(world.payment.reviewReason).toBe('ALREADY_PAID');
     expect(world.audit.record.mock.calls[0][0].after).toMatchObject({
       reviewReason: 'ALREADY_PAID',
       flagged: 'DUPLICATE_CAPTURE',
@@ -286,7 +292,11 @@ describe('PaymentWebhooksService applying notices', () => {
   it('still audits a refused amount mismatch when another reason is already set', async () => {
     const world = paymentWorld({ reviewReason: 'ALREADY_PAID' });
     await world.deliver({ amountMinor: 9_000 });
-    expect(world.tx.payment.update).not.toHaveBeenCalled();
+    expect(world.tx.payment.update).toHaveBeenCalledTimes(1);
+    expect(world.tx.payment.update.mock.calls[0][0].data).toEqual({
+      reviewResolvedAt: null,
+    });
+    expect(world.payment.reviewReason).toBe('ALREADY_PAID');
     expect(world.payment.status).toBe('INITIATED');
     expect(world.audit.record).toHaveBeenCalledTimes(1);
     expect(world.audit.record.mock.calls[0][0]).toMatchObject({
@@ -407,6 +417,33 @@ describe('PaymentWebhooksService flag records', () => {
       flagged: 'DUPLICATE_CAPTURE',
       reportedProviderPaymentId: 'pay_3',
     });
+  });
+
+  it('reopens a resolved flag when a new flag is recorded, never on a redelivery', async () => {
+    const resolvedAt = new Date('2026-11-20T10:00:00.000Z');
+    const world = paymentWorld({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+      reviewReason: 'DUPLICATE_CAPTURE',
+      reviewResolvedAt: resolvedAt,
+    });
+    world.audit.exists.mockImplementation(
+      (where: { after: { reportedProviderPaymentId?: string } }) =>
+        Promise.resolve(where.after.reportedProviderPaymentId === 'pay_2'),
+    );
+    // The capture already recorded, delivered again: stays resolved.
+    await world.deliver({
+      providerEventId: 'evt_2',
+      providerPaymentId: 'pay_2',
+    });
+    expect(world.payment.reviewResolvedAt).toBe(resolvedAt);
+    // A new capture: open again, listed and blocking erasure.
+    await world.deliver({
+      providerEventId: 'evt_3',
+      providerPaymentId: 'pay_3',
+    });
+    expect(world.payment.reviewResolvedAt).toBeNull();
+    expect(world.payment.reviewReason).toBe('DUPLICATE_CAPTURE');
   });
 
   it('always records the flag that sets the reason', async () => {
