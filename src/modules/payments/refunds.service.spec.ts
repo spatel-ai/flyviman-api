@@ -8,6 +8,7 @@ import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import type { BookingsService } from '../bookings/bookings.service.js';
+import type { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { RefundsService } from './refunds.service.js';
 
 /**
@@ -98,11 +99,13 @@ async function refundWith(answer: Partial<GatewayRefund>) {
       ...answer,
     }),
   };
+  const events = { notifyBooking: vi.fn() };
   const service = new RefundsService(
     db as unknown as PrismaService,
     audit as unknown as AuditService,
     bookings as unknown as BookingsService,
     gateway as unknown as PaymentGatewayProvider,
+    events as unknown as NotificationEventsService,
   );
   const response = await service.start(
     { id: 'u-1' } as AuthUser,
@@ -114,18 +117,43 @@ async function refundWith(answer: Partial<GatewayRefund>) {
   const flags = audit.record.mock.calls
     .map(([entry]) => entry as { action: string; after: object })
     .filter((entry) => entry.action === 'refund.flag');
-  return { response, payment, flags };
+  const notified = events.notifyBooking.mock.calls.map(
+    ([, key, bookingId, variables]) => ({ key, bookingId, variables }),
+  );
+  return { response, payment, flags, notified };
 }
 
 describe('RefundsService.start with an answer settled at once', () => {
   it('completes a refund the gateway processed for this payment and amount', async () => {
-    const { response, payment, flags } = await refundWith({});
+    const { response, payment, flags, notified } = await refundWith({});
     expect(response).toMatchObject({
       status: 'COMPLETED',
       providerRefundId: 'rfnd_1',
     });
     expect(payment.status).toBe('REFUNDED');
     expect(flags).toEqual([]);
+    // Told once it is recorded, and once the money is back.
+    expect(notified).toEqual([
+      {
+        key: 'refund.initiated',
+        bookingId: 'b-1',
+        variables: { refundReference: response.reference },
+      },
+      {
+        key: 'refund.completed',
+        bookingId: 'b-1',
+        variables: { refundReference: response.reference },
+      },
+    ]);
+  });
+
+  it('tells operations, not the customer, of a refund the gateway answered as failed', async () => {
+    const { response, notified } = await refundWith({ status: 'failed' });
+    expect(response.status).toBe('FAILED');
+    expect(notified.map((n) => n.key)).toEqual([
+      'refund.initiated',
+      'refund.failed',
+    ]);
   });
 
   it('leaves a refund answered for another amount or currency REQUESTED, audited for finance', async () => {
@@ -162,7 +190,7 @@ describe('RefundsService.start with an answer settled at once', () => {
   });
 
   it('still records a pending answer as before', async () => {
-    const { response, flags } = await refundWith({
+    const { response, flags, notified } = await refundWith({
       status: 'pending',
       amountMinor: 9_000,
     });
@@ -171,5 +199,6 @@ describe('RefundsService.start with an answer settled at once', () => {
       providerRefundId: 'rfnd_1',
     });
     expect(flags).toEqual([]);
+    expect(notified.map((n) => n.key)).toEqual(['refund.initiated']);
   });
 });

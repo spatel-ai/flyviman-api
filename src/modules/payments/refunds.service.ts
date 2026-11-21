@@ -31,6 +31,8 @@ import {
   REFUND_HOLDS,
 } from '../bookings/paid-amount.js';
 import { cancellationsWithRefundDue } from '../bookings/refund-due.js';
+import { refundStatusEvent } from '../notifications/matrix.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import type {
   AdminRefundsQueryDto,
   CreateRefundDto,
@@ -87,6 +89,7 @@ export class RefundsService {
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
     private readonly gateway: PaymentGatewayProvider,
+    private readonly events: NotificationEventsService,
   ) {}
 
   /**
@@ -94,7 +97,8 @@ export class RefundsService {
    * 1. In one transaction, under the booking's lock: the remainder is
    *    re-checked, the refund recorded `REQUESTED` with the idempotency key
    *    (both the header's and the stored one), and the payment and booking
-   *    summary moved to `REFUND_PENDING`.
+   *    summary moved to `REFUND_PENDING`; the customer's `refund.initiated`
+   *    is queued in the outbox.
    * 2. The gateway is asked, outside any transaction, with the refund's
    *    reference as its receipt.
    * 3. Its answer is recorded: `PENDING` (or settled at once), `FAILED` for
@@ -205,6 +209,11 @@ export class RefundsService {
             tx,
           );
           await this.settle(tx, payment.id, booking, created.reference);
+          // Queued with the record, so the customer is told if and only if
+          // the refund exists (a gateway refusal goes to operations).
+          await this.events.notifyBooking(tx, 'refund.initiated', booking.id, {
+            refundReference: created.reference,
+          });
           return created;
         });
         break;
@@ -545,7 +554,8 @@ export class RefundsService {
   /**
    * Moves a refund on (only out of `REQUESTED` or `PENDING`, and only
    * forward: `REQUESTED` → `PENDING` → `COMPLETED` or `FAILED`), keeps the
-   * gateway's refund id, audits, and re-derives the payment and booking.
+   * gateway's refund id, audits, re-derives the payment and booking, and
+   * raises `refund.completed` or `refund.failed` for a move that happened.
    */
   private async move(
     tx: Prisma.TransactionClient,
@@ -595,6 +605,12 @@ export class RefundsService {
       tx,
     );
     await this.settle(tx, refund.paymentId, booking, refund.reference);
+    const event = refundStatusEvent(to);
+    if (event) {
+      await this.events.notifyBooking(tx, event, booking.id, {
+        refundReference: refund.reference,
+      });
+    }
   }
 
   /**

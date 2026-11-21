@@ -15,7 +15,7 @@ import type { NotificationChannel } from '../../generated/prisma/enums.js';
 export type Audience = 'CUSTOMER' | 'OPERATOR' | 'OPERATIONS';
 
 /** Where the message's link leads. */
-export type Subject = 'BOOKING' | 'AIR_AMBULANCE';
+export type Subject = 'BOOKING' | 'AIR_AMBULANCE' | 'SETTLEMENT';
 
 export interface NotificationRule {
   /** The event; also the template key of its messages. */
@@ -85,6 +85,14 @@ export const NOTIFICATION_MATRIX: readonly NotificationRule[] = [
   // Payments (rule 2: a payment notice is not a confirmation).
   rule('payment.succeeded', 'CUSTOMER', 'BOOKING', URGENT, true),
   rule('payment.failed', 'CUSTOMER', 'BOOKING', URGENT, true),
+  // Refunds: the customer is told when one starts and when the money is
+  // back; a failure is for operations to follow up, not the customer.
+  rule('refund.initiated', 'CUSTOMER', 'BOOKING', BASIC, true),
+  rule('refund.completed', 'CUSTOMER', 'BOOKING', BASIC, true),
+  rule('refund.failed', 'OPERATIONS', 'BOOKING', BASIC, true),
+  // An existing settlement's payable changed (a refund after the trip):
+  // the operator's administrators only (no aircraft given).
+  rule('settlement.updated', 'OPERATOR', 'SETTLEMENT', BASIC, false),
   // Air ambulance: operations on a new request, the customer afterwards.
   rule('air_ambulance.received', 'OPERATIONS', 'AIR_AMBULANCE', URGENT, true),
   rule('air_ambulance.quoted', 'CUSTOMER', 'AIR_AMBULANCE', URGENT, true),
@@ -143,6 +151,7 @@ export function hrefFor(
   options: { confirmed?: boolean } = {},
 ): string {
   const ref = encodeURIComponent(reference);
+  if (rule.subject === 'SETTLEMENT') return '/operator/settlements';
   if (rule.subject === 'AIR_AMBULANCE') {
     return rule.audience === 'OPERATIONS'
       ? `/admin/air-ambulance/${ref}`
@@ -200,6 +209,17 @@ export function bookingStatusEvents(
     if (to === 'PRICE_CONFIRMED') return ['booking.price_confirmed'];
   }
   return [];
+}
+
+/**
+ * The event a refund's forward move raises, if any (`RefundsService.move`
+ * calls it only for a move that happened, so a redelivered notice raises
+ * nothing). `refund.initiated` is raised where the refund is recorded.
+ */
+export function refundStatusEvent(to: string): string | null {
+  if (to === 'COMPLETED') return 'refund.completed';
+  if (to === 'FAILED') return 'refund.failed';
+  return null;
 }
 
 /** The air ambulance statuses that tell the customer, and the event each raises. */
