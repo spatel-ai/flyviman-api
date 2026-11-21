@@ -51,13 +51,7 @@ export class MockMessagingProvider extends MessagingProvider {
   }
 
   async send(message: OutboundMessage): Promise<SentMessage> {
-    const providerMessageId = `mock-${randomUUID()}`;
-    this.outbox.push({
-      ...message,
-      providerMessageId,
-      sentAt: new Date().toISOString(),
-    });
-    if (this.outbox.length > KEEP) this.outbox.shift();
+    const { providerMessageId } = this.record(message);
     if (!this.printToLog) return { providerMessageId };
     this.logger.log(
       `[DEV ONLY, not sent] ${message.channel} to ${maskRecipient(message.to)}` +
@@ -66,6 +60,22 @@ export class MockMessagingProvider extends MessagingProvider {
           ? ' | (body holds personal data, not printed)'
           : ` | ${message.body.replace(/\s+/g, ' ')}`),
     );
+    return { providerMessageId };
+  }
+
+  /**
+   * Keeps a message for the outbox without printing it. The SMTP provider
+   * uses this with ENABLE_DEV_TOOLS for the emails it really sends, so tests
+   * can still read one-time codes.
+   */
+  record(message: OutboundMessage): SentMessage {
+    const providerMessageId = `mock-${randomUUID()}`;
+    this.outbox.push({
+      ...message,
+      providerMessageId,
+      sentAt: new Date().toISOString(),
+    });
+    if (this.outbox.length > KEEP) this.outbox.shift();
     return { providerMessageId };
   }
 

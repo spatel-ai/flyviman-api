@@ -21,8 +21,9 @@ export interface SentMessage {
 }
 
 /**
- * Delivers email, SMS and WhatsApp. The provider is not chosen yet
- * (docs/open-decisions.md), so the mock is the only implementation.
+ * Delivers email, SMS and WhatsApp. Email can go out by SMTP
+ * (`SmtpMessagingProvider`); SMS and WhatsApp providers are not chosen yet
+ * (docs/open-decisions.md).
  */
 export abstract class MessagingProvider {
   abstract send(message: OutboundMessage): Promise<SentMessage>;

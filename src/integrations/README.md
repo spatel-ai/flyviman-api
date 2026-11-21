@@ -11,7 +11,7 @@ Each integration is a folder containing:
 
 | Interface                  | Purpose                                               | Real implementation                                                                  | Milestone |
 | -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------ | --------- |
-| `MessagingProvider`        | Email, SMS, WhatsApp                                  | Not chosen. Mock (development) and sink (proof of concept) built                     | M1        |
+| `MessagingProvider`        | Email, SMS, WhatsApp                                  | Email by SMTP (`smtp`); SMS, WhatsApp not chosen. Mock and sink built                | M1        |
 | `StorageProvider`          | Signed upload and download URLs for private documents | S3-compatible (assumed). Local-disk store built (development, proof of concept)      | M1        |
 | `RoutingProvider`          | Distance between two locations                        | Built-in great-circle with routing factor                                            | M5        |
 | `AirlineInventoryProvider` | Scheduled search, fare rules, revalidation, booking   | Not chosen. Mock built (`AIRLINE_PROVIDER=mock`, deterministic Indian domestic data) | M6        |
@@ -46,6 +46,16 @@ A shared server with no real providers yet can start without development tools:
 | `STORAGE_PROVIDER=local`  | The local-disk store and its signed routes run without development tools (`LocalStorageGuard`). Needs `API_PUBLIC_URL`. Files live on the server's disk and are lost when a host wipes it on redeploy.                                       |
 
 `ENABLE_DEV_TOOLS` stays off there, so the outbox answers 404. This is for a proof of concept, not production: production needs a real messaging provider and object storage.
+
+## Email by SMTP
+
+`MESSAGING_PROVIDER=smtp` sends email through an SMTP server with nodemailer (`SmtpMessagingProvider`). Defaults suit Gmail with an app password: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465` (TLS from the start; any other port must upgrade with STARTTLS). `USER_EMAIL` and `USER_EMAIL_PASSWORD` are required and `USER_EMAIL` is the From address, shown as `EMAIL_FROM_NAME` (default `Flyviman`). `@nestjs/mail` was not used: it was at 0.0.2.
+
+- **Redirect:** with `EMAIL_REDIRECT_TO` set, every email goes to that inbox instead, the real recipient named in the subject (`[to …]`) and in an `X-Flyviman-Original-To` header. Set it to your own inbox on a developer machine: demo accounts use `*.flyviman.test`.
+- **Reserved domains:** an email whose final recipient is on `.test`, `.example`, `.invalid`, `.localhost` or `example.com`/`.net`/`.org` is never sent. The send counts as done (the row is recorded as sent) and only a debug count is logged.
+- **SMS and WhatsApp** have no provider yet: with `ENABLE_DEV_TOOLS` they go to the development outbox as with the mock; without it they are discarded as with the sink.
+- **Development outbox:** with `ENABLE_DEV_TOOLS`, each email is also kept in the outbox under its original recipient, so tests still read one-time codes there.
+- **Failures** throw `SmtpDeliveryError` with only nodemailer's code (`EAUTH`, `ETIMEDOUT`, …): the notification outbox logs its name and retries. Messages with a code or link are not stored, so a failed one is lost (as with any provider). Nothing about a message is logged but counts.
 
 When adding a real provider: bind it in the integration's module by configuration, keep the mock for development and tests, and move any check the mock does at upload time (content type by leading bytes, size) to where a real bucket can enforce it.
 

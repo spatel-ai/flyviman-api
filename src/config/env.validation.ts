@@ -313,10 +313,50 @@ export class EnvironmentVariables {
    * Who delivers email and SMS. `mock` is the development outbox and needs
    * ENABLE_DEV_TOOLS. `sink` accepts and discards every message, so a
    * shared server can run without a provider; codes and links never
-   * arrive and are never exposed (D-064).
+   * arrive and are never exposed (D-064). `smtp` sends email through an
+   * SMTP server (settings below); SMS and WhatsApp stay undelivered.
    */
-  @IsIn(['mock', 'sink'])
+  @IsIn(['mock', 'sink', 'smtp'])
   MESSAGING_PROVIDER: string = 'mock';
+
+  // --- Email by SMTP (MESSAGING_PROVIDER=smtp); Gmail with an app password by default ---
+
+  @IsString()
+  @IsNotEmpty()
+  SMTP_HOST: string = 'smtp.gmail.com';
+
+  /** 465: TLS from the start. Any other port must upgrade with STARTTLS. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  SMTP_PORT: number = 465;
+
+  /** The SMTP account, also the From address. Required with smtp. */
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsEmail()
+  USER_EMAIL?: string;
+
+  /** The account's (app) password. Required with smtp. Never logged. */
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
+  USER_EMAIL_PASSWORD?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  EMAIL_FROM_NAME: string = 'Flyviman';
+
+  /**
+   * Development: every email goes to this inbox instead of its recipient,
+   * who is named in the subject. Demo accounts use `.test` addresses.
+   */
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsEmail()
+  EMAIL_REDIRECT_TO?: string;
 
   /**
    * Where uploads go. `mock` is the development store and needs
@@ -470,6 +510,15 @@ export function validateEnv(
   ) {
     throw new Error(
       'Invalid environment configuration: STORAGE_PROVIDER=local needs API_PUBLIC_URL, the public address of this API.',
+    );
+  }
+
+  if (
+    validated.MESSAGING_PROVIDER === 'smtp' &&
+    (!validated.USER_EMAIL || !validated.USER_EMAIL_PASSWORD)
+  ) {
+    throw new Error(
+      'Invalid environment configuration: MESSAGING_PROVIDER=smtp needs USER_EMAIL and USER_EMAIL_PASSWORD.',
     );
   }
 
