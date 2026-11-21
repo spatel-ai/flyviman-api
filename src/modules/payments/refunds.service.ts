@@ -43,6 +43,7 @@ import {
   paymentStatusFromRefunds,
   REFUNDABLE,
   refundableRemainderMinor,
+  refundReportMatches,
 } from './payment-rules.js';
 
 /** Attempts at a fresh reference before giving up (31^6 codes). */
@@ -246,6 +247,39 @@ export class RefundsService {
           });
           return;
         }
+        // A refund settled at once is completed only if the answer is for
+        // this refund, as a notice is (`applyNotice`). Otherwise it stays
+        // `REQUESTED` for finance, audited, and the answer's refund id is
+        // not kept.
+        const amountMatches = refundReportMatches(current, answer);
+        if (
+          answer.status === 'processed' &&
+          (!amountMatches ||
+            answer.providerPaymentId !== payment.providerPaymentId)
+        ) {
+          await this.audit.record(
+            {
+              action: 'refund.flag',
+              entityType: 'Refund',
+              entityId: current.id,
+              before: { reference: current.reference, status: current.status },
+              after: {
+                reference: current.reference,
+                status: current.status,
+                flagged: amountMatches ? 'PAYMENT_MISMATCH' : 'AMOUNT_MISMATCH',
+                reportedAmountMinor: answer.amountMinor,
+                reportedCurrency: answer.currency,
+                reportedProviderPaymentId: answer.providerPaymentId,
+                reportedProviderRefundId: answer.providerRefundId,
+                amountMinor: minorToNumber(current.amountMinor),
+                source: 'gateway',
+              },
+              actor: null,
+            },
+            tx,
+          );
+          return;
+        }
         const status =
           answer.status === 'processed'
             ? RefundStatus.COMPLETED
@@ -288,11 +322,7 @@ export class RefundsService {
       where: { id: found.id },
     });
     if (!OPEN_REFUND.includes(refund.status)) return refund.paymentId;
-    if (
-      event.amountMinor === undefined ||
-      BigInt(event.amountMinor) !== refund.amountMinor ||
-      event.currency !== refund.currency
-    ) {
+    if (!refundReportMatches(refund, event)) {
       await this.audit.record(
         {
           action: 'refund.flag',

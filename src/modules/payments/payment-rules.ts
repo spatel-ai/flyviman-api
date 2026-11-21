@@ -67,13 +67,18 @@ export type AmountDue =
  * share configured. 25% of 1,00,001 paise is 25,001 paise.
  */
 export function depositMinor(totalMinor: bigint, percent: number): bigint {
-  if (!Number.isInteger(percent) || percent < 1 || percent > 100) {
+  if (!isDepositPercent(percent)) {
     throw new RangeError(
       'The deposit percent must be a whole number from 1 to 100.',
     );
   }
   if (totalMinor <= 0n) throw new RangeError('The total must be positive.');
   return (totalMinor * BigInt(percent) + 99n) / 100n;
+}
+
+/** A deposit percent `depositMinor` takes: a whole number from 1 to 100. */
+function isDepositPercent(percent: number): boolean {
+  return Number.isInteger(percent) && percent >= 1 && percent <= 100;
 }
 
 /**
@@ -185,16 +190,29 @@ function balanceDue(booking: PayableBooking, now: Date): AmountDue {
  * (at the configured percent, as `amountDue` asks for it), the total for A
  * and B. Compared with the money kept (`bookings/paid-amount.ts`,
  * `netPaidMinor`), so a booking finance refunded in part is never
- * confirmed on less. Never throws (it runs inside a payment's transaction).
+ * confirmed on less. Never throws (it runs inside a payment's transaction):
+ * a deposit percent outside 1 to 100 (the database refuses one, CHECK)
+ * asks for the full total instead, with a `warning` for the audit trail.
  */
 export function confirmationKeptMinor(
   model: PaymentModel,
   totalMinor: bigint,
   depositPercent: number,
-): bigint {
-  return model === PaymentModel.C_DEPOSIT && totalMinor > 0n
-    ? depositMinor(totalMinor, depositPercent)
-    : totalMinor;
+): { requiredMinor: bigint; warning: string | null } {
+  if (model !== PaymentModel.C_DEPOSIT || totalMinor <= 0n) {
+    return { requiredMinor: totalMinor, warning: null };
+  }
+  if (!isDepositPercent(depositPercent)) {
+    return {
+      requiredMinor: totalMinor,
+      warning:
+        'The deposit percent is not a whole number from 1 to 100: the full total is required.',
+    };
+  }
+  return {
+    requiredMinor: depositMinor(totalMinor, depositPercent),
+    warning: null,
+  };
 }
 
 /**
@@ -299,13 +317,18 @@ export function isDuplicateCapture(
 
 /**
  * The outcome a status fetched from the gateway settles, or `null` while it
- * is not final (`created`, `authorized`). A refund is not an outcome of the
- * payment's own attempt; refunds are handled on their own (W4-1).
+ * is not final (`created`, `authorized`). `refunded` (captured, then
+ * refunded in full at the gateway) settles a capture, which
+ * `PaymentWebhooksService` flags for finance instead of counting it, since
+ * the money is gone again; refunds made by Flyviman are handled on their
+ * own (W4-1).
  */
 export function outcomeOfGatewayStatus(
   status: GatewayPaymentStatus,
 ): 'SUCCEEDED' | 'FAILED' | null {
-  if (status === 'captured') return PaymentStatus.SUCCEEDED;
+  if (status === 'captured' || status === 'refunded') {
+    return PaymentStatus.SUCCEEDED;
+  }
   if (status === 'failed') return PaymentStatus.FAILED;
   return null;
 }
@@ -337,6 +360,22 @@ function sum(
   return refunds
     .filter((refund) => statuses.includes(refund.status))
     .reduce((total, refund) => total + refund.amountMinor, 0n);
+}
+
+/**
+ * Whether the gateway's report of a refund (its notice, or its answer to
+ * our request) is for the amount and currency recorded. A report that is not
+ * is audited for finance and never applied.
+ */
+export function refundReportMatches(
+  refund: { amountMinor: bigint; currency: string },
+  report: { amountMinor?: number; currency?: string },
+): boolean {
+  return (
+    Number.isSafeInteger(report.amountMinor) &&
+    BigInt(report.amountMinor as number) === refund.amountMinor &&
+    report.currency === refund.currency
+  );
 }
 
 /**

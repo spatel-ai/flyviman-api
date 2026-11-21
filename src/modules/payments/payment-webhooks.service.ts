@@ -13,6 +13,7 @@ import { AppException } from '../../common/errors/app.exception.js';
 import { minorToNumber } from '../../common/money.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
+  BookingStatus,
   PaymentReviewReason,
   PaymentStatus,
 } from '../../generated/prisma/enums.js';
@@ -56,6 +57,13 @@ export const PAYMENT_SWEEP_AFTER_MINUTES = 15;
  * booking hold-expiry job waits for a pending payment as long.
  */
 export const PAYMENT_SWEEP_MAX_AGE_HOURS = PAYMENT_IN_PROGRESS_MAX_AGE_HOURS;
+/**
+ * A `FAILED` payment is asked about too (a retry in its order may have been
+ * captured unheard) while its booking still awaits payment, or else only
+ * while its order is younger than this: a retry happens in the checkout
+ * that failed, and the customer's next try makes a new order.
+ */
+export const PAYMENT_SWEEP_FAILED_RECENT_HOURS = 2;
 const SWEEP_LOCK_KEY = 'payments:sweep:lock';
 const SWEEP_LOCK_SECONDS = 5 * 60;
 const SWEEP_BATCH = 100;
@@ -283,8 +291,8 @@ export class PaymentWebhooksService {
     outcome: 'SUCCEEDED' | 'FAILED',
     report: Pick<
       WebhookEvent,
-      'providerPaymentId' | 'amountMinor' | 'currency' | 'method'
-    >,
+      'providerPaymentId' | 'amountMinor' | 'currency' | 'method' | 'status'
+    > & { amountRefundedMinor?: number },
     origin: { source: OutcomeSource; providerEventId?: string },
   ): Promise<boolean> {
     const payment = await tx.payment.findUniqueOrThrow({
@@ -314,9 +322,19 @@ export class PaymentWebhooksService {
       return true;
     }
 
+    // Captured and then refunded in full at the gateway's dashboard before
+    // we heard of it: the money came and went outside Flyviman. Recorded as
+    // a success it would count towards the booking (and could confirm it);
+    // as extra money finance would be asked to refund it again. So it is
+    // flagged for finance as an amount that does not match (the amount kept
+    // is nothing), with the gateway's status, and the payment stays as it is.
+    const refundedAtGateway =
+      report.status === 'refunded' &&
+      nextPaymentStatus(payment.status, PaymentStatus.SUCCEEDED) !== null;
     if (
       outcome === PaymentStatus.SUCCEEDED &&
-      (report.amountMinor === undefined ||
+      (refundedAtGateway ||
+        report.amountMinor === undefined ||
         BigInt(report.amountMinor) !== payment.amountMinor ||
         report.currency !== payment.currency)
     ) {
@@ -335,6 +353,12 @@ export class PaymentWebhooksService {
         reportedAmountMinor: report.amountMinor ?? null,
         reportedCurrency: report.currency ?? null,
         amountMinor: minorToNumber(payment.amountMinor),
+        ...(refundedAtGateway
+          ? {
+              gatewayStatus: 'refunded',
+              amountRefundedMinor: report.amountRefundedMinor ?? null,
+            }
+          : {}),
       });
       return true;
     }
@@ -527,8 +551,14 @@ export class PaymentWebhooksService {
    * order, as a notice would be. The gateway payments asked about are the
    * one the checkout reported and those named by notices stored unapplied
    * for the order; for a payment with neither, the payments the gateway
-   * lists for the order (`fetchOrderPayments`, W4-1). The gateway is
-   * called outside any transaction. One instance at a time (Redis lock).
+   * lists for the order (`fetchOrderPayments`, W4-1). A `FAILED` payment in
+   * the same window is asked about by its order too, while its booking
+   * still awaits payment or its order is younger than
+   * `PAYMENT_SWEEP_FAILED_RECENT_HOURS`: a retry captured in the same
+   * order whose notice was lost moves it to `SUCCEEDED` (or is flagged, as
+   * any capture), so money that moved is never left recorded as failed.
+   * The gateway is called outside any transaction. One instance at a time
+   * (Redis lock).
    */
   async runSweep(now = new Date()): Promise<{
     checked: number;
@@ -554,7 +584,27 @@ export class PaymentWebhooksService {
           where: {
             id: { notIn: seen },
             provider,
-            status: { in: [PaymentStatus.INITIATED, PaymentStatus.PENDING] },
+            OR: [
+              {
+                status: {
+                  in: [PaymentStatus.INITIATED, PaymentStatus.PENDING],
+                },
+              },
+              {
+                status: PaymentStatus.FAILED,
+                OR: [
+                  { booking: { status: BookingStatus.AWAITING_PAYMENT } },
+                  {
+                    createdAt: {
+                      gte: new Date(
+                        now.getTime() -
+                          PAYMENT_SWEEP_FAILED_RECENT_HOURS * 3_600_000,
+                      ),
+                    },
+                  },
+                ],
+              },
+            ],
             providerOrderId: { not: null },
             updatedAt: {
               lte: new Date(
@@ -570,6 +620,7 @@ export class PaymentWebhooksService {
           select: {
             id: true,
             bookingId: true,
+            status: true,
             providerOrderId: true,
             providerPaymentId: true,
           },
@@ -623,6 +674,7 @@ export class PaymentWebhooksService {
         select: {
           id: true,
           bookingId: true,
+          status: true,
           providerOrderId: true,
           providerPaymentId: true,
         },
@@ -643,6 +695,7 @@ export class PaymentWebhooksService {
     payment: {
       id: string;
       bookingId: string;
+      status: PaymentStatus;
       providerOrderId: string | null;
       providerPaymentId: string | null;
     },
@@ -661,20 +714,29 @@ export class PaymentWebhooksService {
       select: { payload: true },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    const candidates = new Set<string>();
-    if (payment.providerPaymentId) candidates.add(payment.providerPaymentId);
-    if (reportedPaymentId) candidates.add(reportedPaymentId);
+    // Each gateway payment to ask about, with the gateway's answer once
+    // known (from the order's list), so it is not asked twice.
+    const candidates = new Map<string, GatewayPayment | null>();
+    if (payment.providerPaymentId) {
+      candidates.set(payment.providerPaymentId, null);
+    }
+    if (reportedPaymentId) candidates.set(reportedPaymentId, null);
     for (const { payload } of early) {
       const id = (payload as { providerPaymentId?: unknown } | null)
         ?.providerPaymentId;
-      if (typeof id === 'string') candidates.add(id);
+      if (typeof id === 'string') candidates.set(id, null);
     }
     // No gateway payment id reached us (the checkout result and the notice
-    // were both lost): ask the gateway for the payments on the order.
-    if (candidates.size === 0) {
+    // were both lost), or the payment failed and a retry in its order may
+    // have been captured unheard: ask the gateway for the payments on the
+    // order.
+    if (
+      candidates.size === 0 ||
+      (payment.status === PaymentStatus.FAILED && !reportedPaymentId)
+    ) {
       try {
         for (const attempt of await this.gateway.fetchOrderPayments(orderId)) {
-          candidates.add(attempt.providerPaymentId);
+          candidates.set(attempt.providerPaymentId, attempt);
         }
       } catch (error) {
         // Unknown to the gateway, or it is down: asked again next run.
@@ -684,10 +746,10 @@ export class PaymentWebhooksService {
     }
 
     let changed = false;
-    for (const candidate of candidates) {
+    for (const [candidate, listed] of candidates) {
       let fetched: GatewayPayment;
       try {
-        fetched = await this.gateway.fetchPayment(candidate);
+        fetched = listed ?? (await this.gateway.fetchPayment(candidate));
       } catch (error) {
         // Unknown to the gateway, or it is down: asked again next run.
         if (error instanceof PaymentGatewayError) continue;
@@ -696,6 +758,13 @@ export class PaymentWebhooksService {
       const outcome = outcomeOfGatewayStatus(fetched.status);
       // Only the gateway's own answer for this order settles it.
       if (!outcome || fetched.providerOrderId !== orderId) continue;
+      // A failure cannot move a failed payment: no transaction, no lock.
+      if (
+        outcome === PaymentStatus.FAILED &&
+        payment.status === PaymentStatus.FAILED
+      ) {
+        continue;
+      }
       const done = await this.prisma.$transaction(async (tx) => {
         const booking = await this.bookings.forPayment(
           { id: payment.bookingId },

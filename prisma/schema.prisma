@@ -1245,7 +1245,7 @@ model Booking {
   paymentModel       PaymentModel
   /// The Model C deposit percent saved when the booking was made, so a later
   /// configuration change does not alter what it owes. Null for other models
-  /// (and the configuration is read then).
+  /// (and the configuration is read then). 1 to 100 when set (CHECK).
   depositPercent     Int?
   /// Null for scheduled airline bookings.
   operatorId         String?              @db.Uuid

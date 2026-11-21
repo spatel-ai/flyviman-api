@@ -23,6 +23,7 @@ import {
   type PayableBooking,
   paymentStatusFromRefunds,
   refundableRemainderMinor,
+  refundReportMatches,
   reviewOnSuccess,
   storedEventPayload,
 } from './payment-rules.js';
@@ -374,12 +375,29 @@ describe('isDuplicateCapture', () => {
 });
 
 describe('outcomeOfGatewayStatus', () => {
-  it('settles only captured and failed payments', () => {
+  it('settles only captured (refunded too: captured first) and failed payments', () => {
     expect(outcomeOfGatewayStatus('captured')).toBe(PaymentStatus.SUCCEEDED);
+    expect(outcomeOfGatewayStatus('refunded')).toBe(PaymentStatus.SUCCEEDED);
     expect(outcomeOfGatewayStatus('failed')).toBe(PaymentStatus.FAILED);
     expect(outcomeOfGatewayStatus('created')).toBeNull();
     expect(outcomeOfGatewayStatus('authorized')).toBeNull();
-    expect(outcomeOfGatewayStatus('refunded')).toBeNull();
+  });
+});
+
+describe('refundReportMatches', () => {
+  it('matches only the amount and currency recorded', () => {
+    const refund = { amountMinor: 10_000n, currency: 'INR' };
+    expect(
+      refundReportMatches(refund, { amountMinor: 10_000, currency: 'INR' }),
+    ).toBe(true);
+    for (const report of [
+      { amountMinor: 9_999, currency: 'INR' },
+      { amountMinor: 10_000, currency: 'USD' },
+      { currency: 'INR' },
+      { amountMinor: 10_000.5, currency: 'INR' },
+    ]) {
+      expect(refundReportMatches(refund, report)).toBe(false);
+    }
   });
 });
 
@@ -621,19 +639,40 @@ describe('bookingPaymentSummary', () => {
 
 describe('confirmationKeptMinor', () => {
   it('is the deposit for Model C and the total for A and B', () => {
-    expect(confirmationKeptMinor(PaymentModel.C_DEPOSIT, 100_001n, 25)).toBe(
-      25_001n,
+    expect(confirmationKeptMinor(PaymentModel.C_DEPOSIT, 100_001n, 25)).toEqual(
+      { requiredMinor: 25_001n, warning: null },
     );
-    expect(confirmationKeptMinor(PaymentModel.A_INSTANT, 100_001n, 25)).toBe(
-      100_001n,
+    expect(confirmationKeptMinor(PaymentModel.A_INSTANT, 100_001n, 25)).toEqual(
+      { requiredMinor: 100_001n, warning: null },
     );
     expect(
       confirmationKeptMinor(PaymentModel.B_OPERATOR_CONFIRMED, 100_001n, 25),
-    ).toBe(100_001n);
+    ).toEqual({ requiredMinor: 100_001n, warning: null });
+  });
+
+  it('never throws on a bad deposit percent: the full total, with a warning', () => {
+    for (const percent of [0, -5, 101, 12.5, Number.NaN]) {
+      const kept = confirmationKeptMinor(
+        PaymentModel.C_DEPOSIT,
+        100_001n,
+        percent,
+      );
+      expect(kept.requiredMinor).toBe(100_001n);
+      expect(kept.warning).toMatch(/full total/);
+    }
+    // Only Model C reads the percent.
+    expect(
+      confirmationKeptMinor(PaymentModel.A_INSTANT, 100_001n, 0).warning,
+    ).toBeNull();
+    expect(() => depositMinor(100_001n, 0)).toThrow(RangeError);
   });
 
   it('a deposit booking that kept less than the deposit after a refund does not meet it', () => {
-    const required = confirmationKeptMinor(PaymentModel.C_DEPOSIT, 1_000n, 25);
+    const { requiredMinor: required } = confirmationKeptMinor(
+      PaymentModel.C_DEPOSIT,
+      1_000n,
+      25,
+    );
     const kept = netPaidMinor([
       {
         status: PaymentStatus.PARTIALLY_REFUNDED,

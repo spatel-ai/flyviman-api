@@ -89,6 +89,19 @@ export const OPEN_STATUSES: BookingStatus[] = [
 const END_OF_TIME = new Date(8_640_000_000_000_000);
 
 /**
+ * Why `unbookable` refuses a booking. Callers map on these constants, never
+ * on the wording; the values are kept in audit records as they are.
+ */
+export const UNBOOKABLE = {
+  DEPARTED: 'the trip has departed',
+  OPERATOR_NOT_APPROVED: 'the operator is not approved',
+  AIRCRAFT_NOT_IN_SERVICE: 'the aircraft is not approved or not in service',
+  TIME_TAKEN: 'the aircraft time is no longer free',
+} as const;
+
+export type UnbookableReason = (typeof UNBOOKABLE)[keyof typeof UNBOOKABLE];
+
+/**
  * What `evaluateConfirmation` did. `unbookable` when the booking qualified
  * but the trip can no longer be flown as booked (rules 3 and 4): money that
  * arrived for it is flagged for refund by the payment's caller.
@@ -761,7 +774,24 @@ export class BookingsService implements OnApplicationBootstrap {
       row.totalMinor,
       depositPercent,
     );
-    if ((await readPaidMinor(tx, row.id)) < required) {
+    if (required.warning) {
+      // Never thrown: it would lose the payment this runs for.
+      await this.audit.record(
+        {
+          action: 'booking.confirmation_warning',
+          entityType: 'Booking',
+          entityId: row.id,
+          after: {
+            reference: row.reference,
+            depositPercent,
+            warning: required.warning,
+          },
+          actor: null,
+        },
+        tx,
+      );
+    }
+    if ((await readPaidMinor(tx, row.id)) < required.requiredMinor) {
       return {
         confirmed: false,
         reason: 'the money kept is less than the payment condition needs',
@@ -816,9 +846,9 @@ export class BookingsService implements OnApplicationBootstrap {
     tx: Prisma.TransactionClient,
     row: Prisma.BookingGetPayload<object>,
     keepUntil: Date = END_OF_TIME,
-  ): Promise<string | null> {
+  ): Promise<UnbookableReason | null> {
     const departure = parseItinerary(row.itinerary).legs[0].departureAt;
-    if (Date.parse(departure) <= Date.now()) return 'the trip has departed';
+    if (Date.parse(departure) <= Date.now()) return UNBOOKABLE.DEPARTED;
     if (row.aircraftId === null) return null;
     const aircraft = await tx.aircraft.findUnique({
       where: { id: row.aircraftId },
@@ -829,17 +859,17 @@ export class BookingsService implements OnApplicationBootstrap {
       },
     });
     if (aircraft?.operator.status !== OperatorStatus.APPROVED) {
-      return 'the operator is not approved';
+      return UNBOOKABLE.OPERATOR_NOT_APPROVED;
     }
     if (
       aircraft.listingStatus !== AircraftListingStatus.APPROVED ||
       aircraft.availabilityStatus !== AircraftAvailabilityStatus.AVAILABLE
     ) {
-      return 'the aircraft is not approved or not in service';
+      return UNBOOKABLE.AIRCRAFT_NOT_IN_SERVICE;
     }
     return (await this.availability.recheckBookingHold(tx, row.id, keepUntil))
       ? null
-      : 'the aircraft time is no longer free';
+      : UNBOOKABLE.TIME_TAKEN;
   }
 
   /**

@@ -566,6 +566,157 @@ describe('PaymentWebhooksService status sweep', () => {
   });
 });
 
+describe('PaymentWebhooksService status sweep of failed payments', () => {
+  const NOW = new Date('2026-11-21T12:00:00.000Z');
+  const failed = {
+    id: 'p-1',
+    bookingId: 'b-1',
+    status: 'FAILED',
+    providerOrderId: 'order_1',
+    providerPaymentId: 'pay_failed',
+  };
+  const attempt = (overrides: Record<string, unknown>) => ({
+    providerPaymentId: 'pay_failed',
+    providerOrderId: 'order_1',
+    amountMinor: 10_000,
+    currency: 'INR',
+    status: 'failed',
+    amountRefundedMinor: 0,
+    ...overrides,
+  });
+  function failedWorld() {
+    const world = paymentWorld({
+      status: 'FAILED',
+      providerPaymentId: 'pay_failed',
+    });
+    world.prisma.payment.findMany.mockResolvedValue([failed]);
+    return world;
+  }
+
+  it('asks only for failed payments whose booking awaits payment or whose order is recent', async () => {
+    const world = paymentWorld();
+    await world.service.runSweep(NOW);
+    const { where } = world.prisma.payment.findMany.mock.calls[0][0];
+    expect(where.OR).toEqual([
+      { status: { in: ['INITIATED', 'PENDING'] } },
+      {
+        status: 'FAILED',
+        OR: [
+          { booking: { status: 'AWAITING_PAYMENT' } },
+          { createdAt: { gte: new Date('2026-11-21T10:00:00.000Z') } },
+        ],
+      },
+    ]);
+    // The same age window as an open payment.
+    expect(where.createdAt).toEqual({
+      gte: new Date('2026-11-19T12:00:00.000Z'),
+    });
+  });
+
+  it('applies a retry captured in the same order whose notice was lost', async () => {
+    const world = failedWorld();
+    world.gateway.fetchOrderPayments.mockResolvedValue([
+      attempt({}),
+      attempt({ providerPaymentId: 'pay_ok', status: 'captured' }),
+    ]);
+
+    expect((await world.service.runSweep(NOW)).applied).toBe(1);
+    expect(world.gateway.fetchOrderPayments).toHaveBeenCalledWith('order_1');
+    // The listed answers are used as they are; the failed attempt opens no
+    // transaction.
+    expect(world.gateway.fetchPayment).not.toHaveBeenCalled();
+    expect(world.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_ok',
+    });
+    expect(world.bookings.recordPaymentStatus).toHaveBeenCalledTimes(1);
+    expect(world.audit.record.mock.calls[0][0]).toMatchObject({
+      action: 'payment.status',
+      before: { status: 'FAILED' },
+      after: { status: 'SUCCEEDED', source: 'sweep' },
+    });
+  });
+
+  it('flags a second capture in the order, never applied twice (rule 5)', async () => {
+    const world = failedWorld();
+    world.gateway.fetchOrderPayments.mockResolvedValue([
+      attempt({}),
+      attempt({ providerPaymentId: 'pay_ok', status: 'captured' }),
+      attempt({ providerPaymentId: 'pay_twice', status: 'captured' }),
+    ]);
+
+    await world.service.runSweep(NOW);
+    expect(world.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_ok',
+      reviewReason: 'DUPLICATE_CAPTURE',
+    });
+    expect(world.bookings.recordPaymentStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a payment whose order has only failed attempts, or that the gateway cannot list', async () => {
+    const world = failedWorld();
+    world.gateway.fetchOrderPayments.mockResolvedValue([attempt({})]);
+    expect((await world.service.runSweep(NOW)).applied).toBe(0);
+    world.gateway.fetchOrderPayments.mockRejectedValue(
+      new PaymentGatewayError('UNAVAILABLE', 'The gateway is down.'),
+    );
+    expect((await world.service.runSweep(NOW)).applied).toBe(0);
+    expect(world.prisma.$transaction).not.toHaveBeenCalled();
+    expect(world.payment.status).toBe('FAILED');
+  });
+});
+
+describe('PaymentWebhooksService a payment refunded at the gateway before it was settled', () => {
+  const refunded = {
+    providerPaymentId: 'pay_1',
+    providerOrderId: 'order_1',
+    amountMinor: 10_000,
+    currency: 'INR',
+    status: 'refunded',
+    amountRefundedMinor: 10_000,
+  };
+
+  it('is flagged for finance, never counted as paid, and recorded once', async () => {
+    const world = paymentWorld({
+      status: 'PENDING',
+      providerPaymentId: 'pay_1',
+    });
+    world.prisma.payment.findMany.mockResolvedValue([
+      {
+        id: 'p-1',
+        bookingId: 'b-1',
+        status: 'PENDING',
+        providerOrderId: 'order_1',
+        providerPaymentId: 'pay_1',
+      },
+    ]);
+    world.gateway.fetchPayment.mockResolvedValue(refunded);
+
+    expect((await world.service.runSweep()).applied).toBe(1);
+    expect(world.payment).toMatchObject({
+      status: 'PENDING',
+      reviewReason: 'AMOUNT_MISMATCH',
+    });
+    expect(world.bookings.recordPaymentStatus).not.toHaveBeenCalled();
+    expect(world.audit.record).toHaveBeenCalledTimes(1);
+    expect(world.audit.record.mock.calls[0][0]).toMatchObject({
+      action: 'payment.flag',
+      after: {
+        flagged: 'AMOUNT_MISMATCH',
+        gatewayStatus: 'refunded',
+        amountRefundedMinor: 10_000,
+        source: 'sweep',
+      },
+    });
+
+    // The next run asks again and records nothing more.
+    expect((await world.service.runSweep()).applied).toBe(0);
+    expect(world.audit.record).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('PaymentWebhooksService settling right after a checkout result', () => {
   const pending = {
     id: 'p-1',
