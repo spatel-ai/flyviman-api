@@ -180,9 +180,9 @@ export const MATERIAL_FIELDS = [
 /**
  * Fixed while a booking request is live (M8-C): what the customer asked for.
  * That is every term: the aircraft and route as much as the price, and the
- * validity too, since an earlier expiry would end the offer under the
- * request (the expiry job does not wait for it, unlike withdrawal), and any
- * change can return a listed offer to review.
+ * validity too. When review is required any change returns a listed offer
+ * to `PENDING_REVIEW` (`statusAfterEdit`), from which a confirmed booking
+ * cannot mark it `BOOKED`, so it could be approved and listed again.
  */
 export const COMMITTED_FIELDS = [
   'aircraftId',
