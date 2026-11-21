@@ -224,12 +224,13 @@ export class RegistrationService implements OnModuleInit {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Sessions before the account row, the order an erasure locks them.
+      await this.auth.revokeAllSessions(user.id, tx);
       await this.users.setPassword(user.id, passwordHash, tx);
       if (record.purpose === 'invitation') {
         // Receiving the invitation proves ownership of the email address.
         await this.users.markVerified(user.id, 'email', tx);
       }
-      await this.auth.revokeAllSessions(user.id, tx);
       await this.audit.record(
         {
           action:

@@ -134,6 +134,21 @@ export class AuthService {
   }
 
   /**
+   * Locks every session row of a user (`FOR UPDATE`, by id) for the rest of
+   * the caller's transaction: for an erasure, before it locks the account
+   * row. Every session change locks its row before the account's (a refresh
+   * claims the old row, then inserts a new one whose foreign key takes the
+   * account's), so the two never wait on each other.
+   */
+  async lockSessions(
+    userId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.$queryRaw`SELECT 1 FROM "Session"
+      WHERE "userId" = ${userId}::uuid ORDER BY "id" FOR UPDATE`;
+  }
+
+  /**
    * Deletes every session row of a user, inside the caller's transaction:
    * for an erasure, which keeps no sign-in history (address, browser).
    */

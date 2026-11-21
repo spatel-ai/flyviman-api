@@ -312,6 +312,14 @@ export class UsersService {
         );
       }
 
+      if (suspending) {
+        // Never suspend without signing out: refuse rather than skip.
+        // Sessions before the account row, the order an erasure locks them.
+        if (!this.sessionRevoker) {
+          throw new Error('No session revoker registered');
+        }
+        await this.sessionRevoker(id, tx);
+      }
       // Applied only if nothing changed since the read, so a suspension made
       // at the same moment by the operator cannot be mislabelled.
       const { count } = await tx.user.updateMany({
@@ -342,13 +350,6 @@ export class UsersService {
         },
         tx,
       );
-      if (suspending) {
-        // Never suspend without signing out: refuse rather than skip.
-        if (!this.sessionRevoker) {
-          throw new Error('No session revoker registered');
-        }
-        await this.sessionRevoker(id, tx);
-      }
       return tx.user.findUniqueOrThrow({
         where: { id },
         omit: { passwordHash: true },

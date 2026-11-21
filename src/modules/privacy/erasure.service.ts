@@ -130,15 +130,16 @@ export class ErasureService {
     const storageKeys = await this.prisma.$transaction(async (tx) => {
       // The order every write for the customer takes its locks: their lock
       // (each write attaching personal data takes it first), each booking,
-      // each air ambulance request, then the account row. A write in flight
-      // finishes first and is seen below; one after it finds the account
-      // erased (`UsersService.lockLiveCustomer`).
+      // each air ambulance request, their sessions, then the account row. A
+      // write in flight finishes first and is seen below; one after it finds
+      // the account erased (`UsersService.lockLiveCustomer`).
       await this.users.lockCustomer(id, tx);
       // Before the records: a payment or cancellation marks its key, then
       // locks its booking. Rolled back with the rest if refused below.
       const idempotencyKeys = await forgetIdempotencyKeys(tx, id);
       await this.bookings.lockAll(id, tx);
       await this.airAmbulance.lockAll(id, tx);
+      await this.auth.lockSessions(id, tx);
       const account = await this.users.lockForErasure(id, tx);
       if (!account) {
         throw new AppException(
