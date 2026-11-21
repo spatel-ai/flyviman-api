@@ -441,6 +441,24 @@ test.describe('notification templates', () => {
     });
     expect(stale.status()).toBe(409);
     expect((await stale.json()).error.code).toBe('CONTENT_VERSION_CONFLICT');
+    const after = (
+      await (await request.get('admin/content/notification-templates')).json()
+    ).data.find(
+      (t: { key: string; channel: string }) =>
+        t.key === 'customer.welcome' && t.channel === 'EMAIL',
+    );
+    expect(after).toMatchObject({ body, version: welcome.version + 1 });
+    // Without a base version the edit is not accepted (D-207).
+    const unversioned = await request.put(url, {
+      headers,
+      data: {
+        channel: 'EMAIL',
+        subject: 'No base',
+        body: 'No base {{firstName}}',
+        isActive: true,
+      },
+    });
+    expect(unversioned.status()).toBe(400);
 
     const missing = await request.put(
       'admin/content/notification-templates/no.such_key',
