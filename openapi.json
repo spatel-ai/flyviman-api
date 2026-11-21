@@ -3909,7 +3909,7 @@
     },
     "/api/v1/empty-legs/{id}": {
       "get": {
-        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
+        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `updatedAt` is sent back as `offerUpdatedAt` with a booking request. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
         "operationId": "EmptyLegsController_detail",
         "parameters": [
           {
@@ -4168,7 +4168,7 @@
         ]
       },
       "patch": {
-        "description": "Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); while a customer’s booking request for it is live the price and departure window are fixed (409 `EMPTY_LEG_HAS_LIVE_REQUEST`); a change notifies customers following it, or, when review is required, returns it to review. Audited.",
+        "description": "Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); while a customer’s booking request for it is live the price, seats, departure window and conditions are fixed (409 `EMPTY_LEG_HAS_LIVE_REQUEST`); a change notifies customers following it, or, when review is required, returns it to review. Audited.",
         "operationId": "OperatorEmptyLegsController_update",
         "parameters": [
           {
@@ -7470,7 +7470,7 @@
     },
     "/api/v1/bookings/empty-leg": {
       "post": {
-        "description": "The offer must be listed (published, still valid, approved operator and aircraft, not requested by anyone else) and its departure window not yet begun; otherwise 409 `BOOKING_UNAVAILABLE`, also when the aircraft is no longer free over the window. 409 `BOOKING_DUPLICATE` when the caller has already requested it. The price is the offer’s, a `QUOTE` (the operator’s own price) until the operator accepts: 409 `BOOKING_PRICE_CHANGED` when it is not `expectedTotalMinor`, with the current price in `details` (`totalMinor`, `currency`, `priceType`, `validUntil`). 409 `BOOKING_TERMS_CHANGED` when Flyviman’s cancellation tiers changed since the offer was shown (rule 9). 400 `VALIDATION_ERROR` when `passengerCount` exceeds the offer’s seats. 422 `BOOKING_CATEGORY_DISABLED`; 409 `BOOKING_LIMIT_REACHED`; 404 for a passenger that is not the caller’s. Limited per caller as `POST /bookings` (429 `RATE_LIMITED`). Holds the aircraft over the departure window (48 hours by default, `BOOKING_HOLD_HOURS`, never past the window’s end) and goes to the operator (`OPERATOR_PENDING`): never confirmed here. The leg’s `departureAt` is the window’s start; the operator confirms the time. The offer becomes `BOOKED` when the booking is confirmed, and is listed again if the request ends first. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "The offer must be listed (published, still valid, approved operator and aircraft, not requested by anyone else) and its departure window not yet begun; otherwise 409 `BOOKING_UNAVAILABLE`, also when the aircraft is no longer free over the window. 409 `BOOKING_DUPLICATE` when the caller has already requested it. The price is the offer’s, a `QUOTE` (the operator’s own price) until the operator accepts: 409 `BOOKING_PRICE_CHANGED` when it is not `expectedTotalMinor`, with the current price in `details` (`totalMinor`, `currency`, `priceType`, `validUntil`). Also 409 `BOOKING_PRICE_CHANGED` when the offer changed since `offerUpdatedAt` (seats, window, validity or conditions), with the current `offerUpdatedAt` in `details` and no `totalMinor`. 409 `BOOKING_TERMS_CHANGED` when Flyviman’s cancellation tiers changed since the offer was shown (rule 9). 400 `VALIDATION_ERROR` when `passengerCount` exceeds the offer’s seats. 422 `BOOKING_CATEGORY_DISABLED`; 409 `BOOKING_LIMIT_REACHED`; 404 for a passenger that is not the caller’s. Limited per caller as `POST /bookings` (429 `RATE_LIMITED`). Holds the aircraft over the departure window (48 hours by default, `BOOKING_HOLD_HOURS`, never past the window’s end) and goes to the operator (`OPERATOR_PENDING`): never confirmed here. The leg’s `departureAt` is the window’s start; the operator confirms the time. The offer becomes `BOOKED` when the booking is confirmed, and is listed again if the request ends first. A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "EmptyLegBookingsController_create",
         "parameters": [
           {
@@ -14662,6 +14662,11 @@
                 "$ref": "#/components/schemas/CancellationTierTableDto"
               }
             ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the offer last changed. Send it as `offerUpdatedAt` with `POST /bookings/empty-leg`."
           }
         },
         "required": [
@@ -14679,7 +14684,8 @@
           "validUntil",
           "conditions",
           "interested",
-          "cancellationTerms"
+          "cancellationTerms",
+          "updatedAt"
         ]
       },
       "EmptyLegInterestResponseDto": {
@@ -14820,7 +14826,7 @@
           },
           "hasLiveRequest": {
             "type": "boolean",
-            "description": "A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`)."
+            "description": "A customer’s booking request for the offer is live (M8-C): until it is answered the price, seats, departure window and conditions cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`)."
           },
           "createdAt": {
             "type": "string",
@@ -15051,7 +15057,7 @@
           },
           "hasLiveRequest": {
             "type": "boolean",
-            "description": "A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`)."
+            "description": "A customer’s booking request for the offer is live (M8-C): until it is answered the price, seats, departure window and conditions cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`)."
           },
           "createdAt": {
             "type": "string",
@@ -20089,6 +20095,11 @@
             ],
             "example": "INR"
           },
+          "offerUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The offer’s `updatedAt` as the offer detail showed it: the version of its seats, window, validity and conditions the customer read (rule 9). If the operator changed the offer since, 409 `BOOKING_PRICE_CHANGED` with the current `offerUpdatedAt` in `details` and no `totalMinor`: read the offer again and send with a new `Idempotency-Key`. A price change answers first, with the new price."
+          },
           "cancellationTermsVersion": {
             "type": "number",
             "minimum": 1,
@@ -20112,6 +20123,7 @@
           "passengerCount",
           "expectedTotalMinor",
           "currency",
+          "offerUpdatedAt",
           "cancellationTermsVersion"
         ]
       },

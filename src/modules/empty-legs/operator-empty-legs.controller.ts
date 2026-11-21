@@ -100,7 +100,7 @@ export class OperatorEmptyLegsController {
   @ApiOperation({
     summary: 'Update an offer',
     description:
-      'Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); while a customer’s booking request for it is live the price and departure window are fixed (409 `EMPTY_LEG_HAS_LIVE_REQUEST`); a change notifies customers following it, or, when review is required, returns it to review. Audited.',
+      'Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); while a customer’s booking request for it is live the price, seats, departure window and conditions are fixed (409 `EMPTY_LEG_HAS_LIVE_REQUEST`); a change notifies customers following it, or, when review is required, returns it to review. Audited.',
   })
   @ApiOkResponse({ type: OperatorEmptyLegResponseDto })
   async update(

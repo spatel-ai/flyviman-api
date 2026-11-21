@@ -5,6 +5,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsISO8601,
   IsString,
   IsUUID,
   Max,
@@ -46,6 +47,14 @@ export class CreateEmptyLegBookingDto {
   @ApiProperty({ enum: ['INR'], example: 'INR' })
   @IsIn(['INR'])
   currency: 'INR';
+
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'The offer’s `updatedAt` as the offer detail showed it: the version of its seats, window, validity and conditions the customer read (rule 9). If the operator changed the offer since, 409 `BOOKING_PRICE_CHANGED` with the current `offerUpdatedAt` in `details` and no `totalMinor`: read the offer again and send with a new `Idempotency-Key`. A price change answers first, with the new price.',
+  })
+  @IsISO8601({ strict: true })
+  offerUpdatedAt: string;
 
   @ApiProperty({
     minimum: 1,

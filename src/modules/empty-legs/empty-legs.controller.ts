@@ -67,7 +67,7 @@ export class EmptyLegsController {
   @ApiOperation({
     summary: 'Empty-leg offer detail',
     description:
-      '410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.',
+      '410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `updatedAt` is sent back as `offerUpdatedAt` with a booking request. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.',
   })
   @ApiOkResponse({ type: EmptyLegDetailResponseDto })
   async detail(
@@ -81,7 +81,12 @@ export class EmptyLegsController {
         : false;
     const { ruleId: _ruleId, ...cancellationTerms } =
       await this.cancellationTerms.current();
-    return { ...this.emptyLegs.toPublic(row), interested, cancellationTerms };
+    return {
+      ...this.emptyLegs.toPublic(row),
+      interested,
+      cancellationTerms,
+      updatedAt: row.updatedAt.toISOString(),
+    };
   }
 
   @Post(':id/interest')

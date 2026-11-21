@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import { BookingEventType } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -11,7 +12,8 @@ import type { AdminBookingDetailDto } from './dto/admin-booking.dto.js';
  * Operations' escalation flag on a booking (M8-C): set with a reason, and
  * resolved with one. `Booking.escalatedAt` is the flag the admin list
  * filters on; each change writes an `ESCALATED` or `ESCALATION_RESOLVED`
- * event with the reason and an audit record (rule 6), in one transaction
+ * event with the reason (encrypted, as other free text on booking events)
+ * and an audit record (rule 6), in one transaction
  * under the booking's row lock. The status is untouched.
  */
 @Injectable()
@@ -20,6 +22,7 @@ export class BookingEscalationService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly adminBookings: AdminBookingsService,
+    private readonly cipher: FieldCipher,
   ) {}
 
   escalate(
@@ -83,7 +86,7 @@ export class BookingEscalationService {
             : BookingEventType.ESCALATION_RESOLVED,
           actorId: user.id,
           actorRole: user.role,
-          payload: { reason },
+          payload: { reason: this.cipher.encrypt(reason) },
         },
       });
       await this.audit.record(

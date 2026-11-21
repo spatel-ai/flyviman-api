@@ -50,6 +50,26 @@ function unavailable(): AppException {
   );
 }
 
+/**
+ * Whether a write failed on `Booking_one_live_per_empty_leg`, the partial
+ * unique index behind one live booking per offer. Through adapter-pg the
+ * index name is at `meta.driverAdapterError.cause.constraint.index`
+ * (checked against PostgreSQL, D-199).
+ */
+export function violatesLiveEmptyLeg(error: unknown): boolean {
+  const e = error as {
+    code?: unknown;
+    meta?: {
+      driverAdapterError?: { cause?: { constraint?: { index?: unknown } } };
+    };
+  };
+  return (
+    e.code === 'P2002' &&
+    e.meta?.driverAdapterError?.cause?.constraint?.index ===
+      'Booking_one_live_per_empty_leg'
+  );
+}
+
 function invalid(field: string, issue: string): AppException {
   return new AppException(
     'VALIDATION_ERROR',
@@ -99,8 +119,9 @@ function itineraryOf(offer: BookableOffer, passengerCount: number): Itinerary {
  * is the offer's (rule 3; labelled `QUOTE`, the operator's own price, until
  * the operator accepts it; stored as a calculation split into tax,
  * commission and operator payable, `PricingService.priceEmptyLeg`), Flyviman's cancellation tiers are the version
- * shown (rule 9), and the aircraft is held over the departure window. The
- * booking then moves as any request does: `OPERATOR_PENDING`, which tells
+ * shown (rule 9), the offer is the version the customer read
+ * (`offerUpdatedAt`: price, seats, window and conditions), and the aircraft
+ * is held over the departure window. The booking then moves as any request does: `OPERATOR_PENDING`, which tells
  * the operator. Idempotent (rule 5).
  */
 @Injectable()
@@ -161,10 +182,7 @@ export class EmptyLegBookingsService {
         if ((error as { code?: unknown }).code !== 'P2002') throw error;
         // The offer's lock makes this unreachable in practice; the index
         // answers a second live booking of the offer as unavailable.
-        const meta = JSON.stringify((error as { meta?: unknown }).meta ?? {});
-        if (meta.includes('emptyLeg') || meta.includes('one_live')) {
-          throw unavailable();
-        }
+        if (violatesLiveEmptyLeg(error)) throw unavailable();
         if (attempt >= REFERENCE_ATTEMPTS) throw error;
       }
     }
@@ -215,12 +233,6 @@ export class EmptyLegBookingsService {
     // Only an operator's own price is bookable: a platform-calculated offer
     // (none can be made yet) would be an estimate with no calculation.
     if (offer.priceType !== PriceType.QUOTE) throw unavailable();
-    if (input.passengerCount > offer.seatsAvailable) {
-      throw invalid(
-        'passengerCount',
-        `must be at most the offer's ${offer.seatsAvailable} seats`,
-      );
-    }
     if (
       offer.priceMinor !== BigInt(input.expectedTotalMinor) ||
       offer.currency !== input.currency
@@ -235,6 +247,23 @@ export class EmptyLegBookingsService {
           { field: 'priceType', issue: offer.priceType },
           { field: 'validUntil', issue: offer.expiresAt.toISOString() },
         ],
+      );
+    }
+    // Seats, conditions, window or validity changed since the customer read
+    // the offer (rule 9): they read it again before sending. No `totalMinor`
+    // in the details, as the price is the one they agreed to.
+    if (offer.updatedAt.getTime() !== Date.parse(input.offerUpdatedAt)) {
+      throw new AppException(
+        'BOOKING_PRICE_CHANGED',
+        'The operator has changed this empty leg since you looked. Read it again before sending your request.',
+        HttpStatus.CONFLICT,
+        [{ field: 'offerUpdatedAt', issue: offer.updatedAt.toISOString() }],
+      );
+    }
+    if (input.passengerCount > offer.seatsAvailable) {
+      throw invalid(
+        'passengerCount',
+        `must be at most the offer's ${offer.seatsAvailable} seats`,
       );
     }
     const config = await this.categories.resolve(ServiceCategory.EMPTY_LEG, {

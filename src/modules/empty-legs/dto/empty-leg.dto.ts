@@ -371,6 +371,13 @@ export class EmptyLegDetailResponseDto extends EmptyLegResponseDto {
       "Flyviman's cancellation tiers, shown before a booking request (rule 9). Send `version` as `cancellationTermsVersion` with `POST /bookings/empty-leg`.",
   })
   cancellationTerms: CancellationTierTableDto;
+
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When the offer last changed. Send it as `offerUpdatedAt` with `POST /bookings/empty-leg`.',
+  })
+  updatedAt: string;
 }
 
 /** The operator's and operations' view. */
@@ -411,7 +418,7 @@ export class OperatorEmptyLegResponseDto extends EmptyLegResponseDto {
 
   @ApiProperty({
     description:
-      'A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`).',
+      'A customer’s booking request for the offer is live (M8-C): until it is answered the price, seats, departure window and conditions cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`).',
   })
   hasLiveRequest: boolean;
 

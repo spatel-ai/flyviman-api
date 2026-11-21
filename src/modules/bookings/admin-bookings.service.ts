@@ -23,6 +23,7 @@ import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { isQuoteRequest, lastFour } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
+import { violatesLiveEmptyLeg } from './empty-leg-bookings.service.js';
 import type {
   AdminBookingDetailDto,
   AdminBookingEscalationDto,
@@ -180,7 +181,7 @@ export class AdminBookingsService {
             specialAssistance: this.reveal(passenger.specialAssistance),
           })),
       specialRequests: hide ? null : this.revealLegacy(row.specialRequests),
-      events: row.events.map((event) => eventOf(event)),
+      events: row.events.map((event) => eventOf(event, this.cipher)),
       notes: hide ? null : this.notesOf(row.events),
       quotes: quotes.map((quote) =>
         this.quotes.toResponse(quote, row.reference, now),
@@ -194,7 +195,7 @@ export class AdminBookingsService {
         );
         return hide ? { ...view, details: '', decisionNote: null } : view;
       }),
-      escalation: escalationOf(row),
+      escalation: escalationOf(row, this.cipher),
       payments: row.payments.map((payment) => ({
         reference: payment.reference,
         purpose: payment.purpose,
@@ -318,8 +319,24 @@ export class AdminBookingsService {
       select: { id: true },
     });
     if (!found) throw notFound();
-    await this.prisma.$transaction(async (tx) => {
-      const key = `booking_request:${found.id}`;
+    try {
+      await this.overrideIn(user, found.id, reference, input);
+    } catch (error) {
+      // The partial unique index is the backstop to `assertOfferFree`.
+      if (violatesLiveEmptyLeg(error)) throw offerTaken();
+      throw error;
+    }
+    return this.detail(user, reference);
+  }
+
+  private overrideIn(
+    user: AuthUser,
+    id: string,
+    reference: string,
+    input: OverrideBookingStatusDto,
+  ): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      const key = `booking_request:${id}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
       const row = await lockByReference(tx, reference);
       const now = new Date();
@@ -356,7 +373,6 @@ export class AdminBookingsService {
         await this.bookings.endRequest(tx, row.id, now);
       }
     });
-    return this.detail(user, reference);
   }
 
   private notesOf(
@@ -397,10 +413,21 @@ export class AdminBookingsService {
   }
 }
 
+function offerTaken(): AppException {
+  return new AppException(
+    'BOOKING_UNAVAILABLE',
+    'Another booking holds this empty leg, so this one cannot be reopened.',
+    HttpStatus.CONFLICT,
+  );
+}
+
 /**
  * Reviving an ended empty-leg booking (M8-C) needs its offer free: another
  * live booking of the offer is 409 `BOOKING_UNAVAILABLE`, not the partial
- * unique index's failure.
+ * unique index's failure. Under the offer's row lock, which a customer's
+ * request takes too (`EmptyLegsService.forBooking`), so the two are made one
+ * after the other; the booking's row is locked first, as a confirmation
+ * locks it before marking the offer booked.
  */
 async function assertOfferFree(
   tx: Prisma.TransactionClient,
@@ -414,6 +441,7 @@ async function assertOfferFree(
   ) {
     return;
   }
+  await tx.$queryRaw`SELECT 1 FROM "EmptyLeg" WHERE "id" = ${row.emptyLegId}::uuid FOR UPDATE`;
   const other = await tx.booking.findFirst({
     where: {
       emptyLegId: row.emptyLegId,
@@ -422,13 +450,7 @@ async function assertOfferFree(
     },
     select: { id: true },
   });
-  if (other) {
-    throw new AppException(
-      'BOOKING_UNAVAILABLE',
-      'Another booking holds this empty leg, so this one cannot be reopened.',
-      HttpStatus.CONFLICT,
-    );
-  }
+  if (other) throw offerTaken();
 }
 
 /** The booking by reference, locked (`FOR UPDATE`) for the transaction. */
@@ -499,27 +521,41 @@ function summaryOf(row: SummaryRow): AdminBookingSummaryDto {
   };
 }
 
-/** A reason kept on an escalation event's payload, or null. */
-function escalationReason(payload: unknown): string | null {
-  return payload !== null &&
-    typeof payload === 'object' &&
-    typeof (payload as Record<string, unknown>).reason === 'string'
-    ? ((payload as Record<string, unknown>).reason as string)
-    : null;
+/**
+ * A reason kept on an escalation event's payload, or null. Encrypted; one
+ * written in plain text before it was (append-only events are never
+ * rewritten) is read as it is.
+ */
+function escalationReason(
+  payload: unknown,
+  cipher: FieldCipher,
+): string | null {
+  if (
+    payload === null ||
+    typeof payload !== 'object' ||
+    typeof (payload as Record<string, unknown>).reason !== 'string'
+  ) {
+    return null;
+  }
+  const stored = (payload as Record<string, unknown>).reason as string;
+  return isEncrypted(stored) ? cipher.decrypt(stored) : stored;
 }
 
 /** The open escalation, from the column and the latest ESCALATED event. */
-function escalationOf(row: {
-  escalatedAt: Date | null;
-  events: Prisma.BookingEventGetPayload<object>[];
-}): AdminBookingEscalationDto | null {
+function escalationOf(
+  row: {
+    escalatedAt: Date | null;
+    events: Prisma.BookingEventGetPayload<object>[];
+  },
+  cipher: FieldCipher,
+): AdminBookingEscalationDto | null {
   if (!row.escalatedAt) return null;
   const event = row.events.findLast(
     (e) => e.type === BookingEventType.ESCALATED,
   );
   return {
     escalatedAt: row.escalatedAt.toISOString(),
-    reason: escalationReason(event?.payload ?? null) ?? '',
+    reason: escalationReason(event?.payload ?? null, cipher) ?? '',
     escalatedById: event?.actorId ?? null,
   };
 }
@@ -530,13 +566,14 @@ function escalationOf(row: {
  */
 function eventOf(
   event: Prisma.BookingEventGetPayload<object>,
+  cipher: FieldCipher,
 ): AdminBookingEventDto {
   const payload = event.payload as Record<string, unknown> | null;
   // The override reason is in the audit trail too, which finance reads.
   const overrideReason =
     event.type === BookingEventType.ESCALATED ||
     event.type === BookingEventType.ESCALATION_RESOLVED
-      ? escalationReason(payload)
+      ? escalationReason(payload, cipher)
       : payload !== null &&
           typeof payload === 'object' &&
           payload.override === true &&
