@@ -70,8 +70,24 @@ export class EnquiriesService {
     }
     if (contact.phone) OR.push({ phone: contact.phone });
     if (OR.length === 0) return 0;
+    // Matched again exactly here: a case-insensitive match may be a pattern
+    // match, where `_` or `%` in an address would catch someone else's.
+    const email = contact.email?.toLowerCase();
+    const ids = (
+      await tx.enquiry.findMany({
+        where: { OR },
+        select: { id: true, email: true, phone: true },
+      })
+    )
+      .filter(
+        (row) =>
+          (email !== undefined && row.email?.toLowerCase() === email) ||
+          (contact.phone !== null && row.phone === contact.phone),
+      )
+      .map((row) => row.id);
+    if (ids.length === 0) return 0;
     const { count } = await tx.enquiry.updateMany({
-      where: { OR },
+      where: { id: { in: ids } },
       data: SCRUBBED_ENQUIRY,
     });
     return count;

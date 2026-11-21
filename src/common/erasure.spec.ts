@@ -6,6 +6,7 @@ import {
   RefundStatus,
   UserStatus,
 } from '../generated/prisma/enums.js';
+import { Prisma } from '../generated/prisma/browser.js';
 import {
   CLOSED_AIR_AMBULANCE_STATUSES,
   CLOSED_BOOKING_STATUSES,
@@ -143,6 +144,35 @@ describe('erasureBlockers', () => {
     ]);
   });
 
+  it.each([BookingPaymentStatus.UNPAID, BookingPaymentStatus.PARTIALLY_PAID])(
+    'blocks while a flown trip is %s',
+    (paymentStatus) => {
+      expect(
+        erasureBlockers(
+          facts({
+            bookings: [booking(BookingStatus.COMPLETED, paymentStatus)],
+          }),
+          POLICY,
+        ),
+      ).toEqual(['BALANCE_DUE']);
+    },
+  );
+
+  it('does not count an unpaid booking that never flew as owed', () => {
+    expect(
+      erasureBlockers(
+        facts({
+          bookings: [
+            booking(BookingStatus.CANCELLED, BookingPaymentStatus.UNPAID),
+            booking(BookingStatus.EXPIRED, BookingPaymentStatus.PARTIALLY_PAID),
+            booking(BookingStatus.COMPLETED, BookingPaymentStatus.PAID),
+          ],
+        }),
+        POLICY,
+      ),
+    ).toEqual([]);
+  });
+
   it('reports every reason, once each, in a fixed order', () => {
     expect(
       erasureBlockers(
@@ -152,6 +182,10 @@ describe('erasureBlockers', () => {
             booking(
               BookingStatus.CONFIRMED,
               BookingPaymentStatus.REFUND_PENDING,
+            ),
+            booking(
+              BookingStatus.COMPLETED,
+              BookingPaymentStatus.PARTIALLY_PAID,
             ),
           ],
           payments: [
@@ -170,6 +204,7 @@ describe('erasureBlockers', () => {
       'PAYMENT_IN_PROGRESS',
       'REFUND_IN_PROGRESS',
       'REFUND_DUE',
+      'BALANCE_DUE',
       'OPEN_AIR_AMBULANCE',
       'RECENT_ACTIVITY',
     ]);
@@ -211,6 +246,21 @@ describe('erasureBlockers', () => {
   });
 });
 
+/**
+ * Every column of a scrubbed table is either written by the erasure or
+ * listed here as kept on purpose, so a personal column added later fails
+ * this spec until it is decided.
+ */
+function columnsLeftOut(
+  fields: Record<string, string>,
+  scrubbed: object,
+  kept: string[],
+): string[] {
+  return Object.values(fields).filter(
+    (field) => !Object.hasOwn(scrubbed, field) && !kept.includes(field),
+  );
+}
+
 describe('scrubbed values', () => {
   it('leaves the account no identifier, password or verification', () => {
     const user = scrubbedUser(NOW);
@@ -223,33 +273,72 @@ describe('scrubbed values', () => {
       emailVerifiedAt: null,
       phoneVerifiedAt: null,
     });
+    expect(
+      columnsLeftOut(Prisma.UserScalarFieldEnum, user, [
+        'id',
+        'role',
+        'createdAt',
+        'updatedAt',
+      ]),
+    ).toEqual([]);
   });
 
-  it('clears every personal field of a passenger snapshot', () => {
-    expect(SCRUBBED_BOOKING_PASSENGER).toEqual({
-      passengerId: null,
+  it('clears every personal column of a passenger snapshot', () => {
+    expect(SCRUBBED_BOOKING_PASSENGER).toMatchObject({
       firstName: ERASED_TEXT,
       lastName: '',
-      dateOfBirth: null,
-      gender: 'UNSPECIFIED',
-      nationality: null,
-      documentType: null,
       documentNumber: null,
-      documentExpiry: null,
       specialAssistance: null,
     });
+    expect(
+      columnsLeftOut(
+        Prisma.BookingPassengerScalarFieldEnum,
+        SCRUBBED_BOOKING_PASSENGER,
+        ['id', 'bookingId', 'createdAt', 'updatedAt'],
+      ),
+    ).toEqual([]);
+    expect(
+      Object.values(SCRUBBED_BOOKING_PASSENGER).filter(
+        (value) => value !== null && value !== '' && value !== ERASED_TEXT,
+      ),
+    ).toEqual(['UNSPECIFIED']);
   });
 
-  it('clears every contact and address of an air ambulance request', () => {
-    expect(SCRUBBED_AIR_AMBULANCE_CONTACT).toEqual({
-      contactName: ERASED_TEXT,
-      contactPhone: '',
-      contactEmail: null,
-      emergencyContactName: null,
-      emergencyContactPhone: null,
-      pickupAddress: null,
-      destinationFacility: null,
-    });
+  it('clears every contact and address of an air ambulance request, keeping the operational record', () => {
+    expect(
+      Object.values(SCRUBBED_AIR_AMBULANCE_CONTACT).every(
+        (value) => value === null || value === '' || value === ERASED_TEXT,
+      ),
+    ).toBe(true);
+    expect(
+      columnsLeftOut(
+        Prisma.AirAmbulanceRequestScalarFieldEnum,
+        SCRUBBED_AIR_AMBULANCE_CONTACT,
+        [
+          'id',
+          'reference',
+          'requesterId',
+          'originLocationId',
+          'destinationLocationId',
+          'preferredAt',
+          'patientCount',
+          'accompanyingPersons',
+          'status',
+          'assignedToId',
+          'selectedOperatorId',
+          'quoteAmountMinor',
+          'quoteCurrency',
+          'quoteConditions',
+          'quotedAt',
+          'feasibility',
+          'confirmedAt',
+          'completedAt',
+          'closedAt',
+          'createdAt',
+          'updatedAt',
+        ],
+      ),
+    ).toEqual([]);
   });
 
   it('clears the sender and message of an enquiry', () => {
@@ -259,5 +348,15 @@ describe('scrubbed values', () => {
       phone: null,
       message: ERASED_TEXT,
     });
+    expect(
+      columnsLeftOut(Prisma.EnquiryScalarFieldEnum, SCRUBBED_ENQUIRY, [
+        'id',
+        'reference',
+        'topic',
+        'handledAt',
+        'createdAt',
+        'updatedAt',
+      ]),
+    ).toEqual([]);
   });
 });

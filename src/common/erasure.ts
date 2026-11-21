@@ -43,6 +43,7 @@ export const ERASURE_BLOCKERS = [
   'PAYMENT_IN_PROGRESS',
   'REFUND_IN_PROGRESS',
   'REFUND_DUE',
+  'BALANCE_DUE',
   'OPEN_AIR_AMBULANCE',
   'RECENT_ACTIVITY',
 ] as const;
@@ -112,6 +113,17 @@ export function erasureBlockers(
     found.add('REFUND_IN_PROGRESS');
   }
   if (facts.refundsDue > 0) found.add('REFUND_DUE');
+  // A trip flown before it was paid in full: the customer still owes.
+  if (
+    facts.bookings.some(
+      (booking) =>
+        booking.status === BookingStatus.COMPLETED &&
+        (booking.paymentStatus === BookingPaymentStatus.UNPAID ||
+          booking.paymentStatus === BookingPaymentStatus.PARTIALLY_PAID),
+    )
+  ) {
+    found.add('BALANCE_DUE');
+  }
   if (
     facts.airAmbulance.some(
       (request) => !CLOSED_AIR_AMBULANCE_STATUSES.includes(request.status),
