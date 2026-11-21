@@ -338,7 +338,7 @@ export class AdminPricingService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.priceCalculation.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         select: SUMMARY_SELECT,
