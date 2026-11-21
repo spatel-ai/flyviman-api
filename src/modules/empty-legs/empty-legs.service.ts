@@ -78,6 +78,20 @@ const LOCATION_SELECT = {
   timeZone: true,
 } as const;
 
+/** Fixed while a booking request is live (M8-C): what the customer asked for. */
+const COMMITTED_FIELDS = [
+  'priceMinor',
+  'departureWindowStart',
+  'departureWindowEnd',
+] as const;
+
+/** The API's names for the offer's columns, in error details. */
+const API_FIELD: Record<string, string> = {
+  priceMinor: 'priceMinor',
+  departureWindowStart: 'departureFrom',
+  departureWindowEnd: 'departureTo',
+};
+
 /**
  * Read-only joins for display, as in the aircraft lists (D-066): the
  * aircraft's type and seats, the operator's name and the two locations.
@@ -98,7 +112,13 @@ const OFFER_INCLUDE = {
   operator: { select: { legalName: true, tradingName: true } },
   origin: { select: LOCATION_SELECT },
   destination: { select: LOCATION_SELECT },
-  _count: { select: { interests: true } },
+  _count: {
+    select: {
+      interests: true,
+      // Live booking requests (M8-C): at most one, by the partial index.
+      bookings: { where: { status: { notIn: BOOKING_ENDED } } },
+    },
+  },
 } satisfies Prisma.EmptyLegInclude;
 
 type OfferRow = Prisma.EmptyLegGetPayload<{ include: typeof OFFER_INCLUDE }>;
@@ -284,7 +304,9 @@ export class EmptyLegsService {
       interestCount: row._count.interests,
       editable: EDITABLE.includes(row.status),
       publishable: row.status === EmptyLegStatus.DRAFT,
-      withdrawable: WITHDRAWABLE.includes(row.status),
+      withdrawable:
+        WITHDRAWABLE.includes(row.status) && row._count.bookings === 0,
+      hasLiveRequest: row._count.bookings > 0,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
@@ -779,7 +801,11 @@ export class EmptyLegsService {
     // Customers hear of a change to a listed offer at once; when it goes
     // back to review they hear on approval instead.
     const notify = to === EmptyLegStatus.PUBLISHED;
+    const committed = changedFields(before, next, COMMITTED_FIELDS);
     const queued = await this.prisma.$transaction(async (tx) => {
+      if (committed.length > 0) {
+        await this.assertNoLiveRequest(tx, id, committed);
+      }
       const { count } = await tx.emptyLeg.updateMany({
         where: { id, status: current.status, updatedAt: current.updatedAt },
         data: {
@@ -808,6 +834,36 @@ export class EmptyLegsService {
     });
     await this.deliverAll(queued);
     return this.own(access, id);
+  }
+
+  /**
+   * 409 `EMPTY_LEG_HAS_LIVE_REQUEST` while a customer's booking request for
+   * the offer is live (M8-C): its price and window, and the offer itself,
+   * are what the customer asked for. Under the offer's row lock, which a
+   * booking request takes too (`forBooking`), so neither slips past the
+   * other. `fields` names what the caller would change.
+   */
+  private async assertNoLiveRequest(
+    tx: Prisma.TransactionClient,
+    id: string,
+    fields: string[] = [],
+  ): Promise<void> {
+    await tx.$queryRaw`SELECT 1 FROM "EmptyLeg" WHERE "id" = ${id}::uuid FOR UPDATE`;
+    const live = await tx.booking.count({
+      where: { emptyLegId: id, status: { notIn: BOOKING_ENDED } },
+    });
+    if (live === 0) return;
+    throw new AppException(
+      'EMPTY_LEG_HAS_LIVE_REQUEST',
+      fields.length > 0
+        ? 'A customer has requested this offer, so its price and departure window cannot change until that request is answered. Answer it under Requests first.'
+        : 'A customer has requested this offer, so it cannot be withdrawn until that request is answered. Answer it under Requests first.',
+      HttpStatus.CONFLICT,
+      fields.map((field) => ({
+        field: API_FIELD[field] ?? field,
+        issue: 'is fixed while a booking request is live',
+      })),
+    );
   }
 
   private stale(): AppException {
@@ -979,6 +1035,7 @@ export class EmptyLegsService {
             ? 'empty_leg.changed'
             : null;
     const queued = await this.prisma.$transaction(async (tx) => {
+      if (action === 'withdraw') await this.assertNoLiveRequest(tx, current.id);
       const { count } = await tx.emptyLeg.updateMany({
         where: { id: current.id, status: current.status },
         data: { ...extra, status: to },

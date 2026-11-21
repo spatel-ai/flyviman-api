@@ -27,6 +27,7 @@ import {
   EmptyLegsService,
 } from '../empty-legs/empty-legs.service.js';
 import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
+import { PricingService } from '../pricing/pricing.service.js';
 import { type Itinerary, parseItinerary } from './booking-json.js';
 import {
   holdExpiry,
@@ -96,7 +97,8 @@ function itineraryOf(offer: BookableOffer, passengerCount: number): Itinerary {
  * (rule 4) and not yet in its window, has no live booking (the partial
  * unique index `Booking_one_live_per_empty_leg` is the backstop), the price
  * is the offer's (rule 3; labelled `QUOTE`, the operator's own price, until
- * the operator accepts it), Flyviman's cancellation tiers are the version
+ * the operator accepts it; stored as a calculation split into tax,
+ * commission and operator payable, `PricingService.priceEmptyLeg`), Flyviman's cancellation tiers are the version
  * shown (rule 9), and the aircraft is held over the departure window. The
  * booking then moves as any request does: `OPERATOR_PENDING`, which tells
  * the operator. Idempotent (rule 5).
@@ -112,6 +114,7 @@ export class EmptyLegBookingsService {
     private readonly categories: CategoryConfigService,
     private readonly customers: CustomersService,
     private readonly cancellationTerms: CancellationTermsService,
+    private readonly pricing: PricingService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
   ) {}
@@ -257,6 +260,18 @@ export class EmptyLegBookingsService {
       );
     }
 
+    // The offer's price is the customer's tax-inclusive total (lead
+    // decision): stored split into tax, commission and operator payable, so
+    // settlements and reports read it as any other price.
+    const { calculationId } = await this.pricing.priceEmptyLeg(tx, {
+      aircraftId: offer.aircraft.id,
+      operatorId: offer.operatorId,
+      category: offer.aircraft.category,
+      emptyLegId: offer.id,
+      totalMinor: minorToNumber(offer.priceMinor),
+      validUntil: offer.expiresAt,
+      availabilityCheckedAt: now,
+    });
     const booking = await tx.booking.create({
       data: {
         reference: bookingReference(),
@@ -272,7 +287,7 @@ export class EmptyLegBookingsService {
           offer,
           input.passengerCount,
         ) as unknown as Prisma.InputJsonValue,
-        calculationId: null,
+        calculationId,
         totalMinor: offer.priceMinor,
         currency: offer.currency,
         priceType: offer.priceType,
@@ -327,6 +342,7 @@ export class EmptyLegBookingsService {
           aircraftId: booking.aircraftId,
           emptyLegId: offer.id,
           emptyLegReference: offer.reference,
+          calculationId,
           cancellationTermsRuleId: terms.ruleId,
           cancellationTermsVersion: terms.version,
           totalMinor: minorToNumber(booking.totalMinor),

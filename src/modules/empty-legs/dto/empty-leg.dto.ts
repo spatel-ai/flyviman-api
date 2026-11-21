@@ -405,9 +405,15 @@ export class OperatorEmptyLegResponseDto extends EmptyLegResponseDto {
 
   @ApiProperty({
     description:
-      'Whether withdraw is allowed (draft, under review or published).',
+      'Whether withdraw is allowed (draft, under review or published, with no live booking request).',
   })
   withdrawable: boolean;
+
+  @ApiProperty({
+    description:
+      'A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`).',
+  })
+  hasLiveRequest: boolean;
 
   @ApiProperty({ format: 'date-time' })
   createdAt: string;

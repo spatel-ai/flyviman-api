@@ -1154,6 +1154,8 @@ enum BookingEventType {
   ESCALATED
   /// Operations closed the escalation (M8-C).
   ESCALATION_RESOLVED
+  /// The customer replaced the booking's passengers; counts only (M8-C).
+  PASSENGERS_CHANGED
 }
 
 enum ChangeRequestKind {

@@ -4168,7 +4168,7 @@
         ]
       },
       "patch": {
-        "description": "Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); a change notifies customers following it, or, when review is required, returns it to review. Audited.",
+        "description": "Drafts and published offers. On a published offer the aircraft, origin and destination are locked (409 `EMPTY_LEG_FIELD_LOCKED`); while a customer’s booking request for it is live the price and departure window are fixed (409 `EMPTY_LEG_HAS_LIVE_REQUEST`); a change notifies customers following it, or, when review is required, returns it to review. Audited.",
         "operationId": "OperatorEmptyLegsController_update",
         "parameters": [
           {
@@ -4252,7 +4252,7 @@
     },
     "/api/v1/operator/empty-legs/{id}/withdraw": {
       "post": {
-        "description": "From draft, review or published; final. Customers following a published offer are told. Audited.",
+        "description": "From draft, review or published; final. Not while a customer’s booking request for it is live (409 `EMPTY_LEG_HAS_LIVE_REQUEST`). Customers following a published offer are told. Audited.",
         "operationId": "OperatorEmptyLegsController_withdraw",
         "parameters": [
           {
@@ -14758,7 +14758,11 @@
           },
           "withdrawable": {
             "type": "boolean",
-            "description": "Whether withdraw is allowed (draft, under review or published)."
+            "description": "Whether withdraw is allowed (draft, under review or published, with no live booking request)."
+          },
+          "hasLiveRequest": {
+            "type": "boolean",
+            "description": "A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`)."
           },
           "createdAt": {
             "type": "string",
@@ -14790,6 +14794,7 @@
           "editable",
           "publishable",
           "withdrawable",
+          "hasLiveRequest",
           "createdAt",
           "updatedAt"
         ]
@@ -14984,7 +14989,11 @@
           },
           "withdrawable": {
             "type": "boolean",
-            "description": "Whether withdraw is allowed (draft, under review or published)."
+            "description": "Whether withdraw is allowed (draft, under review or published, with no live booking request)."
+          },
+          "hasLiveRequest": {
+            "type": "boolean",
+            "description": "A customer’s booking request for the offer is live (M8-C): until it is answered the price and departure window cannot change and the offer cannot be withdrawn (409 `EMPTY_LEG_HAS_LIVE_REQUEST`)."
           },
           "createdAt": {
             "type": "string",
@@ -15020,6 +15029,7 @@
           "editable",
           "publishable",
           "withdrawable",
+          "hasLiveRequest",
           "createdAt",
           "updatedAt",
           "operatorId"
@@ -18681,7 +18691,8 @@
           "CHANGE_REQUESTED",
           "CANCELLATION_REQUESTED",
           "ESCALATED",
-          "ESCALATION_RESOLVED"
+          "ESCALATION_RESOLVED",
+          "PASSENGERS_CHANGED"
         ]
       },
       "AdminBookingEventDto": {
@@ -20118,7 +20129,8 @@
           "QUESTION_ASKED",
           "QUESTION_ANSWERED",
           "CHANGE_REQUESTED",
-          "CHANGE_REQUEST_ANSWERED"
+          "CHANGE_REQUEST_ANSWERED",
+          "PASSENGERS_UPDATED"
         ]
       },
       "BookingEventActor": {

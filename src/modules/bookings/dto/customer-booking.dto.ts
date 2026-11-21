@@ -22,6 +22,7 @@ export const CUSTOMER_EVENT_KINDS = [
   'QUESTION_ANSWERED',
   'CHANGE_REQUESTED',
   'CHANGE_REQUEST_ANSWERED',
+  'PASSENGERS_UPDATED',
 ] as const;
 export type CustomerEventKind = (typeof CUSTOMER_EVENT_KINDS)[number];
 
