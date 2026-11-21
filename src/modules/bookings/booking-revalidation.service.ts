@@ -4,7 +4,11 @@ import { PriceType } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CANCELLABLE } from './booking-transitions.js';
-import { BookingsService } from './bookings.service.js';
+import {
+  BookingsService,
+  UNBOOKABLE,
+  type UnbookableReason,
+} from './bookings.service.js';
 import type {
   BookingRevalidationDto,
   UnavailableReason,
@@ -16,9 +20,9 @@ import type {
  * Flyviman's business with the operator, not the customer's: it falls
  * through to the generic `UNAVAILABLE`, as does any reason not listed.
  */
-const REASONS: Record<string, UnavailableReason> = {
-  'the trip has departed': 'DEPARTED',
-  'the aircraft time is no longer free': 'TIME_TAKEN',
+const REASONS: Partial<Record<UnbookableReason, UnavailableReason>> = {
+  [UNBOOKABLE.DEPARTED]: 'DEPARTED',
+  [UNBOOKABLE.TIME_TAKEN]: 'TIME_TAKEN',
 };
 
 /** A time already past: the hold is checked, never extended or written. */
