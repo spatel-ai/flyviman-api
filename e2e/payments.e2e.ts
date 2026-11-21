@@ -100,6 +100,11 @@ test.describe('POST /bookings/:reference/payments', () => {
         provider: 'mock',
         keyId: 'rzp_mock_key',
         orderId: expect.stringMatching(/^order_mock_[0-9a-f]{8}_\d{6}$/),
+        // The customer's own details for the checkout form.
+        prefill: expect.objectContaining({
+          name: expect.any(String),
+          email: expect.any(String),
+        }),
       },
       paidAt: null,
       createdAt: expect.any(String),

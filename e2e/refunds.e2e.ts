@@ -624,6 +624,7 @@ test.describe('Model C balance', () => {
       currency: 'INR',
       priceType: 'CONFIRMED',
       kind: 'DEPOSIT',
+      overOnlineLimit: false,
     });
     const first = await payInFull(request, customer, reference, deposit);
     expect(first.purpose).toBe('DEPOSIT');
@@ -636,6 +637,7 @@ test.describe('Model C balance', () => {
       currency: 'INR',
       priceType: 'CONFIRMED',
       kind: 'BALANCE',
+      overOnlineLimit: false,
     });
 
     // A goodwill refund of part of the deposit is money returned, not money
@@ -661,6 +663,7 @@ test.describe('Model C balance', () => {
       currency: 'INR',
       priceType: 'CONFIRMED',
       kind: 'BALANCE',
+      overOnlineLimit: false,
     });
 
     // Asking for the deposit again shows the balance due.
