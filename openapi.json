@@ -21415,6 +21415,12 @@
           "reason": {
             "type": "string"
           },
+          "providerRefundId": {
+            "type": "string",
+            "nullable": true,
+            "example": "rfnd_Qk2m9",
+            "description": "The gateway’s own refund id, to trace the refund in its dashboard (and to settle it in development). Null until the gateway has answered."
+          },
           "paymentStatus": {
             "description": "The payment after this refund was recorded.",
             "allOf": [
@@ -21438,6 +21444,7 @@
           "paymentReference",
           "bookingReference",
           "reason",
+          "providerRefundId",
           "paymentStatus",
           "refundableMinor"
         ]

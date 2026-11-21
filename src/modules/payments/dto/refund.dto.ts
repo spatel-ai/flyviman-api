@@ -90,6 +90,15 @@ export class RefundResponseDto extends RefundSummaryDto {
   reason: string;
 
   @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'rfnd_Qk2m9',
+    description:
+      'The gateway’s own refund id, to trace the refund in its dashboard (and to settle it in development). Null until the gateway has answered.',
+  })
+  providerRefundId: string | null;
+
+  @ApiProperty({
     enum: PaymentStatus,
     enumName: 'PaymentStatus',
     description: 'The payment after this refund was recorded.',
