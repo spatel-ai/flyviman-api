@@ -474,9 +474,7 @@ export class SettlementsService implements OnModuleInit {
       // Marking a record paid that is not due, stored or now, says why
       // (D-198), even from a stale Due screen.
       const notDue =
-        to === SettlementStatus.PAID
-          ? paidNotDueReason(row.status, why)
-          : null;
+        to === SettlementStatus.PAID ? paidNotDueReason(row.status, why) : null;
       if (notDue !== null) {
         throw new AppException(
           'SETTLEMENT_NOT_DUE',

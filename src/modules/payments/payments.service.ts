@@ -8,10 +8,7 @@ import {
 import { minorToNumber } from '../../common/money.js';
 import { paymentReference } from '../../common/reference.js';
 import type { Prisma } from '../../generated/prisma/client.js';
-import {
-  PaymentStatus,
-  PriceType,
-} from '../../generated/prisma/enums.js';
+import { PaymentStatus, PriceType } from '../../generated/prisma/enums.js';
 import {
   PaymentGatewayError,
   PaymentGatewayProvider,
