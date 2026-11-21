@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IdempotencyClaim } from '../../common/idempotency/idempotency.store.js';
-import type {
-  GatewayRefund,
-  PaymentGatewayProvider,
+import {
+  type GatewayRefund,
+  type PaymentGatewayProvider,
+  PaymentGatewayError,
 } from '../../integrations/payment/payment-gateway.provider.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
@@ -16,7 +17,10 @@ import { RefundsService } from './refunds.service.js';
  * booking, refunded in full; the gateway answers the refund with `answer`.
  * One in-memory store stands for the database and its transactions.
  */
-async function refundWith(answer: Partial<GatewayRefund>) {
+async function refundWith(
+  answer: Partial<GatewayRefund>,
+  refusal?: PaymentGatewayError,
+) {
   const refunds: Record<string, unknown>[] = [];
   const payment = {
     id: 'p-1',
@@ -99,6 +103,7 @@ async function refundWith(answer: Partial<GatewayRefund>) {
       ...answer,
     }),
   };
+  if (refusal) gateway.createRefund.mockRejectedValue(refusal);
   const events = { notifyBooking: vi.fn() };
   const service = new RefundsService(
     db as unknown as PrismaService,
@@ -132,13 +137,8 @@ describe('RefundsService.start with an answer settled at once', () => {
     });
     expect(payment.status).toBe('REFUNDED');
     expect(flags).toEqual([]);
-    // Told once it is recorded, and once the money is back.
+    // Settled at once: the customer hears only that it is completed.
     expect(notified).toEqual([
-      {
-        key: 'refund.initiated',
-        bookingId: 'b-1',
-        variables: { refundReference: response.reference },
-      },
       {
         key: 'refund.completed',
         bookingId: 'b-1',
@@ -147,23 +147,39 @@ describe('RefundsService.start with an answer settled at once', () => {
     ]);
   });
 
-  it('tells operations, not the customer, of a refund the gateway answered as failed', async () => {
+  it('tells the customer nothing of a refund the gateway refused, and finance of the failure', async () => {
+    const { response, notified } = await refundWith(
+      {},
+      new PaymentGatewayError('INVALID_REQUEST', 'refused'),
+    );
+    expect(response.status).toBe('FAILED');
+    expect(notified.map((n) => n.key)).toEqual(['refund.failed']);
+  });
+
+  it('tells nobody while the gateway could not be reached', async () => {
+    const { response, notified } = await refundWith(
+      {},
+      new PaymentGatewayError('UNAVAILABLE', 'down'),
+    );
+    expect(response.status).toBe('REQUESTED');
+    expect(notified).toEqual([]);
+  });
+
+  it('tells finance, and not the customer, of a refund the gateway answered as failed', async () => {
     const { response, notified } = await refundWith({ status: 'failed' });
     expect(response.status).toBe('FAILED');
-    expect(notified.map((n) => n.key)).toEqual([
-      'refund.initiated',
-      'refund.failed',
-    ]);
+    expect(notified.map((n) => n.key)).toEqual(['refund.failed']);
   });
 
   it('leaves a refund answered for another amount or currency REQUESTED, audited for finance', async () => {
     for (const answer of [{ amountMinor: 9_000 }, { currency: 'USD' }]) {
-      const { response, payment, flags } = await refundWith(answer);
+      const { response, payment, flags, notified } = await refundWith(answer);
       expect(response).toMatchObject({
         status: 'REQUESTED',
         providerRefundId: null,
       });
       expect(payment.status).toBe('REFUND_PENDING');
+      expect(notified).toEqual([]);
       expect(flags).toHaveLength(1);
       expect(flags[0].after).toMatchObject({
         flagged: 'AMOUNT_MISMATCH',

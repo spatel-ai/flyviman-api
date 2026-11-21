@@ -171,12 +171,38 @@ async function refundNotices(customer: APIRequestContext) {
     .reverse();
 }
 
-/** Sends the queued email and text messages now. */
-async function dispatch(request: APIRequestContext) {
-  const response = await request.post('dev/jobs/notification-outbox', {
-    headers: await csrfHeaders(request),
+/** A staff member's in-app `refund.failed` messages about one refund. */
+async function failedNotices(
+  staffMember: APIRequestContext,
+  refundReference: string,
+) {
+  const response = await staffMember.get('me/notifications', {
+    params: { pageSize: 100 },
   });
   expect(response.status()).toBe(200);
+  return (
+    (await response.json()).data as {
+      templateKey: string;
+      body: string;
+      href: string | null;
+    }[]
+  ).filter(
+    (n) =>
+      n.templateKey === 'refund.failed' && n.body.includes(refundReference),
+  );
+}
+
+/** Sends the queued email and text messages now. */
+async function dispatch(request: APIRequestContext) {
+  // One run sends a batch of 20 (OUTBOX_BATCH): repeat until the queue is
+  // drained, so messages queued by other tests do not crowd ours out.
+  for (let run = 0; run < 20; run += 1) {
+    const response = await request.post('dev/jobs/notification-outbox', {
+      headers: await csrfHeaders(request),
+    });
+    expect(response.status()).toBe(200);
+    if ((await response.json()).data.sent < 20) return;
+  }
 }
 
 async function bookingOf(customer: APIRequestContext, reference: string) {
@@ -402,22 +428,14 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     expect(await bookingOf(customer, reference)).toMatchObject({
       paymentStatus: 'PAID',
     });
-    // A failure is for operations: the customer heard only that it started.
+    // A failure is for finance: the customer heard only that it started.
     expect((await refundNotices(customer)).map((n) => n.templateKey)).toEqual([
       'refund.initiated',
     ]);
-    const opsInbox = (
-      await (await ops.get('me/notifications?pageSize=100')).json()
-    ).data as { templateKey: string; body: string; href: string }[];
-    expect(
-      opsInbox.filter(
-        (n) =>
-          n.templateKey === 'refund.failed' &&
-          n.body.includes(failed.reference),
-      ),
-    ).toEqual([
-      expect.objectContaining({ href: `/admin/bookings/${reference}` }),
+    expect(await failedNotices(finance, failed.reference)).toEqual([
+      expect.objectContaining({ href: '/admin/refunds' }),
     ]);
+    expect(await failedNotices(ops, failed.reference)).toEqual([]);
 
     const full = await refund(finance, payment.reference, totalMinor);
     expect(full.status()).toBe(201);
@@ -439,6 +457,37 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     expect(await bookingOf(customer, reference)).toMatchObject({
       paymentStatus: 'REFUNDED',
     });
+  });
+
+  test('a refund the gateway refuses tells the customer nothing and finance of the failure', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { customer, reference, totalMinor } =
+      await bookingAwaitingPayment(contexts);
+    const payment = await payInFull(request, customer, reference, totalMinor);
+    const finance = await staff(contexts, 'finance');
+    // The gateway no longer knows the payment, so it refuses the refund.
+    await withPrisma((prisma) =>
+      prisma.payment.update({
+        where: { reference: payment.reference },
+        data: { providerPaymentId: `pay_unknown_${randomUUID()}` },
+      }),
+    );
+
+    const refused = await refund(finance, payment.reference, totalMinor);
+    expect(refused.status()).toBe(201);
+    const row = (await refused.json()).data as {
+      reference: string;
+      status: string;
+    };
+    expect(row.status).toBe('FAILED');
+    expect(await refundNotices(customer)).toEqual([]);
+    expect(await failedNotices(finance, row.reference)).toEqual([
+      expect.objectContaining({ href: '/admin/refunds' }),
+    ]);
   });
 
   test('a payment whose money never arrived is not refundable', async ({

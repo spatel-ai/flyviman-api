@@ -97,12 +97,13 @@ export class RefundsService {
    * 1. In one transaction, under the booking's lock: the remainder is
    *    re-checked, the refund recorded `REQUESTED` with the idempotency key
    *    (both the header's and the stored one), and the payment and booking
-   *    summary moved to `REFUND_PENDING`; the customer's `refund.initiated`
-   *    is queued in the outbox.
+   *    summary moved to `REFUND_PENDING`.
    * 2. The gateway is asked, outside any transaction, with the refund's
    *    reference as its receipt.
    * 3. Its answer is recorded: `PENDING` (or settled at once), `FAILED` for
-   *    a definite refusal, which frees the amount again. A gateway that
+   *    a definite refusal, which frees the amount again. The customer is
+   *    told only now (`move`): `refund.initiated` once accepted, or just
+   *    `refund.completed`; a refusal tells finance, not the customer. A gateway that
    *    could not be reached leaves the refund `REQUESTED`: whether money
    *    moved is unknown, so it is never retried automatically and its
    *    notice still settles it (matched by the receipt).
@@ -209,11 +210,6 @@ export class RefundsService {
             tx,
           );
           await this.settle(tx, payment.id, booking, created.reference);
-          // Queued with the record, so the customer is told if and only if
-          // the refund exists (a gateway refusal goes to operations).
-          await this.events.notifyBooking(tx, 'refund.initiated', booking.id, {
-            refundReference: created.reference,
-          });
           return created;
         });
         break;
@@ -555,7 +551,7 @@ export class RefundsService {
    * Moves a refund on (only out of `REQUESTED` or `PENDING`, and only
    * forward: `REQUESTED` → `PENDING` → `COMPLETED` or `FAILED`), keeps the
    * gateway's refund id, audits, re-derives the payment and booking, and
-   * raises `refund.completed` or `refund.failed` for a move that happened.
+   * raises `refundStatusEvent`'s event for a move that happened.
    */
   private async move(
     tx: Prisma.TransactionClient,

@@ -12,10 +12,10 @@ import type { NotificationChannel } from '../../generated/prisma/enums.js';
  * to emergency services.
  */
 
-export type Audience = 'CUSTOMER' | 'OPERATOR' | 'OPERATIONS';
+export type Audience = 'CUSTOMER' | 'OPERATOR' | 'OPERATIONS' | 'FINANCE';
 
 /** Where the message's link leads. */
-export type Subject = 'BOOKING' | 'AIR_AMBULANCE' | 'SETTLEMENT';
+export type Subject = 'BOOKING' | 'AIR_AMBULANCE' | 'SETTLEMENT' | 'REFUND';
 
 export interface NotificationRule {
   /** The event; also the template key of its messages. */
@@ -23,7 +23,8 @@ export interface NotificationRule {
   /**
    * Customer: the booker. Operator: administrators and staff who manage
    * bookings on that aircraft. Operations: operations users, and the
-   * operations inbox for email.
+   * operations inbox for email. Finance: finance and super administrators
+   * in-app, and the operations inbox for email.
    */
   audience: Audience;
   subject: Subject;
@@ -85,11 +86,11 @@ export const NOTIFICATION_MATRIX: readonly NotificationRule[] = [
   // Payments (rule 2: a payment notice is not a confirmation).
   rule('payment.succeeded', 'CUSTOMER', 'BOOKING', URGENT, true),
   rule('payment.failed', 'CUSTOMER', 'BOOKING', URGENT, true),
-  // Refunds: the customer is told when one starts and when the money is
-  // back; a failure is for operations to follow up, not the customer.
+  // Refunds: the customer is told once the gateway accepts one and when the
+  // money is back; a failure is for finance to act on, not the customer.
   rule('refund.initiated', 'CUSTOMER', 'BOOKING', BASIC, true),
   rule('refund.completed', 'CUSTOMER', 'BOOKING', BASIC, true),
-  rule('refund.failed', 'OPERATIONS', 'BOOKING', BASIC, true),
+  rule('refund.failed', 'FINANCE', 'REFUND', BASIC, true),
   // An existing settlement's payable changed (a refund after the trip):
   // the operator's administrators only (no aircraft given).
   rule('settlement.updated', 'OPERATOR', 'SETTLEMENT', BASIC, false),
@@ -152,6 +153,7 @@ export function hrefFor(
 ): string {
   const ref = encodeURIComponent(reference);
   if (rule.subject === 'SETTLEMENT') return '/operator/settlements';
+  if (rule.subject === 'REFUND') return '/admin/refunds';
   if (rule.subject === 'AIR_AMBULANCE') {
     return rule.audience === 'OPERATIONS'
       ? `/admin/air-ambulance/${ref}`
@@ -212,11 +214,14 @@ export function bookingStatusEvents(
 }
 
 /**
- * The event a refund's forward move raises, if any (`RefundsService.move`
- * calls it only for a move that happened, so a redelivered notice raises
- * nothing). `refund.initiated` is raised where the refund is recorded.
+ * The event a refund's forward move raises (`RefundsService.move` calls it
+ * only for a move that happened, so a redelivered notice raises nothing).
+ * `PENDING` is reached only from `REQUESTED`: the gateway accepted it. A
+ * refund settled at once tells the customer only that it is completed; a
+ * refusal tells finance, never the customer.
  */
 export function refundStatusEvent(to: string): string | null {
+  if (to === 'PENDING') return 'refund.initiated';
   if (to === 'COMPLETED') return 'refund.completed';
   if (to === 'FAILED') return 'refund.failed';
   return null;
