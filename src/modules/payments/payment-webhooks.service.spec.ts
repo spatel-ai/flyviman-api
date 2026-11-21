@@ -528,3 +528,125 @@ describe('PaymentWebhooksService status sweep', () => {
     });
   });
 });
+
+describe('PaymentWebhooksService settling right after a checkout result', () => {
+  const pending = {
+    id: 'p-1',
+    bookingId: 'b-1',
+    providerOrderId: 'order_1',
+    providerPaymentId: 'pay_1',
+  };
+  const reported = (overrides: Record<string, unknown> = {}) => ({
+    providerPaymentId: 'pay_1',
+    providerOrderId: 'order_1',
+    amountMinor: 10_000,
+    currency: 'INR',
+    status: 'captured',
+    amountRefundedMinor: 0,
+    method: 'upi',
+    ...overrides,
+  });
+  function world(row: Record<string, unknown> | null = pending) {
+    const built = paymentWorld({
+      status: 'PENDING',
+      providerPaymentId: 'pay_1',
+    });
+    const findUnique = vi.fn().mockResolvedValue(row);
+    Object.assign(built.prisma.payment, { findUnique });
+    return { ...built, findUnique };
+  }
+
+  it("applies the gateway's own capture at once, through the sweep's path", async () => {
+    const settle = world();
+    settle.gateway.fetchPayment.mockResolvedValue(reported());
+
+    expect(await settle.service.settleFromGateway('p-1', 'pay_1')).toBe(true);
+    expect(settle.gateway.fetchPayment).toHaveBeenCalledWith('pay_1');
+    expect(settle.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_1',
+      method: 'upi',
+    });
+    expect(settle.audit.record.mock.calls[0][0].after).toMatchObject({
+      status: 'SUCCEEDED',
+      source: 'checkout-fetch',
+    });
+    // The booking moves only through the confirmation rule (rule 2).
+    expect(settle.bookings.recordPaymentStatus).toHaveBeenCalledTimes(1);
+
+    // The same capture again (a repeated checkout result, then its notice)
+    // changes nothing more (rule 5).
+    settle.audit.record.mockClear();
+    expect(await settle.service.settleFromGateway('p-1', 'pay_1')).toBe(false);
+    expect(settle.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('applies a failure the gateway reports', async () => {
+    const settle = world();
+    settle.gateway.fetchPayment.mockResolvedValue(
+      reported({ status: 'failed' }),
+    );
+    expect(await settle.service.settleFromGateway('p-1', 'pay_1')).toBe(true);
+    expect(settle.payment.status).toBe('FAILED');
+  });
+
+  it('leaves the payment PENDING when the capture is still to come, the gateway is down, or it reports another order', async () => {
+    for (const answer of [
+      () => Promise.resolve(reported({ status: 'authorized' })),
+      () => Promise.resolve(reported({ status: 'created' })),
+      () =>
+        Promise.reject(
+          new PaymentGatewayError('UNAVAILABLE', 'The gateway is down.'),
+        ),
+      () => Promise.resolve(reported({ providerOrderId: 'order_other' })),
+    ]) {
+      const settle = world();
+      settle.gateway.fetchPayment.mockImplementation(answer);
+      expect(await settle.service.settleFromGateway('p-1', 'pay_1')).toBe(
+        false,
+      );
+      expect(settle.payment.status).toBe('PENDING');
+      expect(settle.prisma.$transaction).not.toHaveBeenCalled();
+    }
+  });
+
+  it('asks about the checkout payment after a failed attempt in the same order', async () => {
+    const settle = world({ ...pending, providerPaymentId: 'pay_failed' });
+    Object.assign(settle.payment, {
+      status: 'FAILED',
+      providerPaymentId: 'pay_failed',
+    });
+    settle.gateway.fetchPayment.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === 'pay_ok'
+          ? reported({ providerPaymentId: 'pay_ok' })
+          : reported({ providerPaymentId: 'pay_failed', status: 'failed' }),
+      ),
+    );
+
+    expect(await settle.service.settleFromGateway('p-1', 'pay_ok')).toBe(true);
+    expect(settle.gateway.fetchPayment).toHaveBeenCalledWith('pay_ok');
+    expect(settle.payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: 'pay_ok',
+    });
+  });
+
+  it('never throws: an unknown payment or a failing database settles nothing', async () => {
+    expect(await world(null).service.settleFromGateway('p-x', 'pay_1')).toBe(
+      false,
+    );
+    const broken = world();
+    broken.findUnique.mockRejectedValue(
+      new Error('connection reset for pay_1'),
+    );
+    const error = vi.fn();
+    (broken.service as unknown as { logger: Pick<Logger, 'error'> }).logger = {
+      error,
+    };
+    expect(await broken.service.settleFromGateway('p-1', 'pay_1')).toBe(false);
+    expect(error).toHaveBeenCalledWith(
+      'Payment check after checkout failed: Error',
+    );
+  });
+});

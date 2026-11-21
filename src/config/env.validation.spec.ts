@@ -271,15 +271,15 @@ describe('validateEnv', () => {
       /Invalid environment configuration/,
     );
   });
-  it('accepts only the mock payment gateway and manual settlement', () => {
+  it('defaults to the mock payment gateway, accepts only mock or razorpay, and only manual settlement', () => {
     const env = validateEnv(valid);
     expect(env.PAYMENT_PROVIDER).toBe('mock');
     expect(env.SETTLEMENT_MODE).toBe('manual');
 
-    for (const provider of ['razorpay', 'stripe', '']) {
+    for (const provider of ['stripe', '']) {
       expect(() =>
         validateEnv({ ...valid, PAYMENT_PROVIDER: provider }),
-      ).toThrow(/PAYMENT_PROVIDER must be mock/);
+      ).toThrow(/PAYMENT_PROVIDER must be mock or razorpay/);
     }
     expect(() =>
       validateEnv({ ...valid, SETTLEMENT_MODE: 'razorpay_route' }),
@@ -317,5 +317,115 @@ describe('validateEnv', () => {
     expect(() =>
       validateEnv({ ...valid, PAYMENT_WEBHOOK_SECRET: 'short' }),
     ).toThrow(/PAYMENT_WEBHOOK_SECRET/);
+  });
+
+  describe('Razorpay', () => {
+    const keys = {
+      RAZORPAY_KEY_ID: 'rzp_test_AbC123xyz',
+      RAZORPAY_KEY_SECRET: 's'.repeat(24),
+    };
+
+    it('refuses razorpay without both API key values', () => {
+      for (const missing of [
+        {},
+        { RAZORPAY_KEY_ID: keys.RAZORPAY_KEY_ID },
+        { RAZORPAY_KEY_SECRET: keys.RAZORPAY_KEY_SECRET },
+        { ...keys, RAZORPAY_KEY_SECRET: '' },
+      ]) {
+        expect(() =>
+          validateEnv({ ...valid, PAYMENT_PROVIDER: 'razorpay', ...missing }),
+        ).toThrow(/PAYMENT_PROVIDER=razorpay needs RAZORPAY_KEY_ID/);
+      }
+    });
+
+    it('accepts razorpay with its keys; the webhook secret is optional', () => {
+      const env = validateEnv({
+        ...valid,
+        PAYMENT_PROVIDER: 'razorpay',
+        ...keys,
+      });
+      expect(env.PAYMENT_PROVIDER).toBe('razorpay');
+      expect(env.RAZORPAY_WEBHOOK_SECRET).toBeUndefined();
+      expect(
+        validateEnv({
+          ...valid,
+          PAYMENT_PROVIDER: 'razorpay',
+          ...keys,
+          RAZORPAY_WEBHOOK_SECRET: 'h'.repeat(20),
+        }).RAZORPAY_WEBHOOK_SECRET,
+      ).toBe('h'.repeat(20));
+    });
+
+    it('refuses a malformed key ID and short secrets', () => {
+      for (const bad of [
+        { RAZORPAY_KEY_ID: 'key_123' },
+        { RAZORPAY_KEY_ID: 'rzp_test_' },
+        { RAZORPAY_KEY_SECRET: 'short' },
+        { RAZORPAY_WEBHOOK_SECRET: 'short' },
+      ]) {
+        expect(() =>
+          validateEnv({
+            ...valid,
+            PAYMENT_PROVIDER: 'razorpay',
+            ...keys,
+            ...bad,
+          }),
+        ).toThrow(/Invalid environment configuration/);
+      }
+    });
+
+    it('in production needs the Razorpay keys, not the mock secrets', () => {
+      const production = {
+        ...valid,
+        NODE_ENV: 'production',
+        WEB_ORIGIN: 'https://flyviman-web.example.com',
+        MESSAGING_PROVIDER: 'sink',
+        STORAGE_PROVIDER: 'local',
+        API_PUBLIC_URL: 'https://flyviman-api.example.com',
+        PAYMENT_PROVIDER: 'razorpay',
+      };
+      expect(validateEnv({ ...production, ...keys }).PAYMENT_PROVIDER).toBe(
+        'razorpay',
+      );
+      expect(() => validateEnv(production)).toThrow(/RAZORPAY_KEY_ID/);
+    });
+
+    it('refuses a live key unless ALLOW_LIVE_PAYMENTS=true (Hard gate)', () => {
+      const live = {
+        ...valid,
+        PAYMENT_PROVIDER: 'razorpay',
+        ...keys,
+        RAZORPAY_KEY_ID: 'rzp_live_AbC123xyz',
+      };
+      expect(validateEnv(valid).ALLOW_LIVE_PAYMENTS).toBe(false);
+      for (const flag of [undefined, 'false', '1', 'yes']) {
+        expect(() =>
+          validateEnv({ ...live, ALLOW_LIVE_PAYMENTS: flag }),
+        ).toThrow(/live key.*ALLOW_LIVE_PAYMENTS=true.*Hard gate/);
+      }
+      expect(
+        validateEnv({ ...live, ALLOW_LIVE_PAYMENTS: 'true' }).RAZORPAY_KEY_ID,
+      ).toBe('rzp_live_AbC123xyz');
+      // A test key needs no flag; the mock ignores a live key it never uses.
+      expect(
+        validateEnv({ ...valid, PAYMENT_PROVIDER: 'razorpay', ...keys })
+          .PAYMENT_PROVIDER,
+      ).toBe('razorpay');
+      expect(
+        validateEnv({ ...valid, RAZORPAY_KEY_ID: 'rzp_live_AbC123xyz' })
+          .PAYMENT_PROVIDER,
+      ).toBe('mock');
+    });
+
+    it('ignores blank Razorpay values while the mock is in use', () => {
+      const env = validateEnv({
+        ...valid,
+        RAZORPAY_KEY_ID: '',
+        RAZORPAY_KEY_SECRET: '',
+        RAZORPAY_WEBHOOK_SECRET: '',
+      });
+      expect(env.PAYMENT_PROVIDER).toBe('mock');
+      expect(env.RAZORPAY_KEY_ID).toBeUndefined();
+    });
   });
 });

@@ -500,6 +500,71 @@ test.describe('POST /payments/:reference/verify', () => {
     expect((await competing.json()).error.code).toBe('BOOKING_UNAVAILABLE');
     expect((await searchFor(request, trip)).result).toBeUndefined();
   });
+  test("a checkout result is settled at once from the gateway's own status; its later notice changes nothing (rules 2 and 5)", async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference, totalMinor } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const order = await created(customer, reference, totalMinor);
+    const simulated = await request.post(
+      `dev/payments/orders/${order.checkout.orderId}/simulate`,
+      { headers: await csrfHeaders(request), data: { outcome: 'success' } },
+    );
+    expect(simulated.status()).toBe(200);
+    const { checkout, webhook } = (await simulated.json()).data as {
+      checkout: Record<string, string>;
+      webhook: { body: string; headers: Record<string, string> };
+    };
+
+    // The server asks the gateway itself, so the answer is already paid.
+    const verified = await customer.post(`payments/${order.reference}/verify`, {
+      headers: await csrfHeaders(customer),
+      data: checkout,
+    });
+    expect(verified.status()).toBe(200);
+    expect((await verified.json()).data.status).toBe('SUCCEEDED');
+    const payment = await paymentRow(order.reference);
+    expect(payment).toMatchObject({
+      status: 'SUCCEEDED',
+      providerPaymentId: checkout.providerPaymentId,
+      reviewReason: null,
+    });
+    expect(await bookingOf(customer, reference)).toMatchObject({
+      status: 'CONFIRMED',
+      paymentStatus: 'PAID',
+    });
+
+    // The notice, then the same result again: one success, recorded once.
+    const notice = await request.post('webhooks/payments/mock', {
+      data: webhook.body,
+      headers: webhook.headers,
+    });
+    expect(notice.status()).toBe(200);
+    const again = await customer.post(`payments/${order.reference}/verify`, {
+      headers: await csrfHeaders(customer),
+      data: checkout,
+    });
+    expect((await again.json()).data.status).toBe('SUCCEEDED');
+    const successes = await withPrisma((prisma) =>
+      prisma.auditLog.findMany({
+        where: {
+          entityId: payment.id,
+          action: 'payment.status',
+          after: { path: ['status'], equals: 'SUCCEEDED' },
+        },
+      }),
+    );
+    expect(successes).toHaveLength(1);
+    expect(successes[0].after).toMatchObject({
+      status: 'SUCCEEDED',
+      source: 'checkout-fetch',
+    });
+  });
 });
 
 test.describe('POST /webhooks/payments/:provider applies verified notices', () => {
@@ -1140,7 +1205,7 @@ test.describe('POST /webhooks/payments/:provider applies verified notices', () =
 });
 
 test.describe('POST /dev/jobs/payment-sweep', () => {
-  test("settles a payment whose notice never came from the gateway's own status", async ({
+  test("settles a payment whose checkout result and notice were both lost, from the gateway's own status", async ({
     request,
     playwright,
     baseURL,
@@ -1151,23 +1216,19 @@ test.describe('POST /dev/jobs/payment-sweep', () => {
       baseURL,
     });
     const order = await created(customer, reference, totalMinor);
-    // The customer pays in the gateway's checkout; its notice is lost.
+    // The customer pays in the gateway's checkout; neither the checkout
+    // result nor the notice reaches us. (A checkout result that does is
+    // settled at once: POST /payments/:reference/verify.)
     const simulated = await request.post(
       `dev/payments/orders/${order.checkout.orderId}/simulate`,
       { headers: await csrfHeaders(request), data: { outcome: 'success' } },
     );
     expect(simulated.status()).toBe(200);
     const { checkout } = (await simulated.json()).data;
-    const verified = await customer.post(`payments/${order.reference}/verify`, {
-      headers: await csrfHeaders(customer),
-      data: checkout,
-    });
-    expect(verified.status()).toBe(200);
-    expect((await paymentRow(order.reference)).status).toBe('PENDING');
 
     // Not yet due: changed moments ago.
     await runSweep(request);
-    expect((await paymentRow(order.reference)).status).toBe('PENDING');
+    expect((await paymentRow(order.reference)).status).toBe('INITIATED');
 
     await withPrisma(
       (prisma) => prisma.$executeRaw`

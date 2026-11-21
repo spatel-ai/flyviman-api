@@ -165,6 +165,7 @@ describe('MockPaymentGatewayProvider', () => {
           providerPaymentId: paid.checkout!.providerPaymentId,
           amountMinor: 1_250_000,
           currency: 'INR',
+          status: 'captured',
           method: 'upi',
         },
       });
@@ -452,6 +453,7 @@ describe('MockPaymentGatewayProvider', () => {
           receipt: 'FLY-RF-ABCDEF',
           amountMinor: 1_250_000,
           currency: 'INR',
+          status: 'processed',
         },
       });
       expect(() =>

@@ -12,11 +12,14 @@ import {
   GatewayRefund,
   PaymentGatewayError,
   PaymentGatewayProvider,
-  WebhookEvent,
-  WebhookEventType,
   WebhookParseResult,
 } from './payment-gateway.provider.js';
 import { hmacSha256Hex, signatureMatches } from './payment-signature.js';
+import {
+  parseRazorpayWebhook,
+  RAZORPAY_EVENT_ID_HEADER,
+  RAZORPAY_SIGNATURE_HEADER,
+} from './razorpay-webhook.js';
 
 /**
  * The mock's public key ID, and the development secrets it signs with when
@@ -41,8 +44,8 @@ export interface MockPaymentGatewayOptions {
 }
 
 /** Header names as Razorpay sends them, so the mock is a faithful stand-in. */
-export const MOCK_SIGNATURE_HEADER = 'x-razorpay-signature';
-export const MOCK_EVENT_ID_HEADER = 'x-razorpay-event-id';
+export const MOCK_SIGNATURE_HEADER = RAZORPAY_SIGNATURE_HEADER;
+export const MOCK_EVENT_ID_HEADER = RAZORPAY_EVENT_ID_HEADER;
 
 /** Razorpay's smallest order: one rupee. Only INR (open decision 13). */
 const MIN_AMOUNT_MINOR = 100;
@@ -142,20 +145,7 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
     rawBody: Buffer,
     headers: IncomingHttpHeaders,
   ): WebhookParseResult {
-    const signature = headers[MOCK_SIGNATURE_HEADER];
-    const expected = hmacSha256Hex(this.options.webhookSecret, rawBody);
-    if (
-      typeof signature !== 'string' ||
-      !signatureMatches(expected, signature)
-    ) {
-      return { ok: false, reason: 'signature' };
-    }
-    const eventId = headers[MOCK_EVENT_ID_HEADER];
-    if (typeof eventId !== 'string' || eventId.length === 0) {
-      return { ok: false, reason: 'payload' };
-    }
-    const event = toEvent(eventId, rawBody);
-    return event ? { ok: true, event } : { ok: false, reason: 'payload' };
+    return parseRazorpayWebhook(rawBody, headers, this.options.webhookSecret);
   }
 
   async createRefund(input: CreateRefundInput): Promise<GatewayRefund> {
@@ -358,94 +348,4 @@ export class MockPaymentGatewayProvider extends PaymentGatewayProvider {
     const run = this.options.runId ? `${this.options.runId}_` : '';
     return `${prefix}_mock_${run}${String(this.sequence).padStart(6, '0')}`;
   }
-}
-
-const KNOWN_EVENTS = new Set<WebhookEventType>([
-  'payment.captured',
-  'payment.failed',
-  'refund.processed',
-  'refund.failed',
-]);
-
-/** A method type or refund receipt as we keep it: short, plain. */
-const METHOD = /^[a-z_]{1,20}$/;
-const RECEIPT = /^[A-Za-z0-9_-]{1,40}$/;
-
-/**
- * Reads only the references and amounts out of a verified body, in
- * Razorpay's shape. Anything else in it (email, contact, card) is ignored.
- * Null when the body is not a well-formed event.
- */
-function toEvent(
-  providerEventId: string,
-  rawBody: Buffer,
-): WebhookEvent | null {
-  let body: unknown;
-  try {
-    body = JSON.parse(rawBody.toString('utf8'));
-  } catch {
-    return null;
-  }
-  if (!isRecord(body) || typeof body.event !== 'string') return null;
-
-  const type = KNOWN_EVENTS.has(body.event as WebhookEventType)
-    ? (body.event as WebhookEventType)
-    : 'other';
-  const event: WebhookEvent = { providerEventId, type };
-  if (type === 'other') return event;
-
-  const payload = isRecord(body.payload) ? body.payload : {};
-  const payment = entityOf(payload.payment);
-  const refund = entityOf(payload.refund);
-  if (type === 'refund.processed' || type === 'refund.failed') {
-    if (!refund || typeof refund.id !== 'string') return null;
-    event.providerRefundId = refund.id;
-    if (typeof refund.payment_id === 'string') {
-      event.providerPaymentId = refund.payment_id;
-    }
-    if (typeof refund.receipt === 'string' && RECEIPT.test(refund.receipt)) {
-      event.receipt = refund.receipt;
-    }
-    return withAmount(event, refund);
-  }
-  if (
-    !payment ||
-    typeof payment.id !== 'string' ||
-    typeof payment.order_id !== 'string'
-  ) {
-    return null;
-  }
-  event.providerPaymentId = payment.id;
-  event.providerOrderId = payment.order_id;
-  // The method type only; card, bank and wallet details are never read.
-  if (typeof payment.method === 'string' && METHOD.test(payment.method)) {
-    event.method = payment.method;
-  }
-  return withAmount(event, payment);
-}
-
-function withAmount(
-  event: WebhookEvent,
-  entity: Record<string, unknown>,
-): WebhookEvent | null {
-  const { amount, currency } = entity;
-  if (
-    typeof amount !== 'number' ||
-    !Number.isInteger(amount) ||
-    amount < 0 ||
-    typeof currency !== 'string'
-  ) {
-    return null;
-  }
-  event.amountMinor = amount;
-  event.currency = currency;
-  return event;
-}
-
-function entityOf(value: unknown): Record<string, unknown> | null {
-  return isRecord(value) && isRecord(value.entity) ? value.entity : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

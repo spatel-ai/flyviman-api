@@ -24,6 +24,7 @@ import {
   paymentStatusFromRefunds,
   refundableRemainderMinor,
   reviewOnSuccess,
+  storedEventPayload,
 } from './payment-rules.js';
 
 const NOW = new Date('2026-11-20T00:00:00.000Z');
@@ -686,4 +687,86 @@ describe('hasOpenGatewayFlag', () => {
       );
     },
   );
+});
+
+describe('storedEventPayload', () => {
+  it("keeps the allowlisted fields at the top level, for the sweep's JSON-path lookup", () => {
+    const event = {
+      providerEventId: 'evt_1',
+      type: 'payment.captured' as const,
+      providerOrderId: 'order_1',
+      providerPaymentId: 'pay_1',
+      amountMinor: 1_250_000,
+      currency: 'INR',
+      status: 'captured',
+      method: 'upi',
+      createdAt: '2026-11-21T10:00:00.000Z',
+    };
+    expect(storedEventPayload(event)).toEqual(event);
+  });
+
+  it("keeps a refund notice's refund id and our receipt", () => {
+    expect(
+      storedEventPayload({
+        providerEventId: 'evt_2',
+        type: 'refund.processed',
+        providerRefundId: 'rfnd_1',
+        providerPaymentId: 'pay_1',
+        receipt: 'FLY-RF-ABCDEF',
+        amountMinor: 500,
+        currency: 'INR',
+      }),
+    ).toEqual({
+      providerEventId: 'evt_2',
+      type: 'refund.processed',
+      providerRefundId: 'rfnd_1',
+      providerPaymentId: 'pay_1',
+      receipt: 'FLY-RF-ABCDEF',
+      amountMinor: 500,
+      currency: 'INR',
+    });
+  });
+
+  it('drops anything else an event carries: contact, VPA, card, nested objects', () => {
+    const event = {
+      providerEventId: 'evt_3',
+      type: 'payment.captured' as const,
+      providerOrderId: 'order_1',
+      email: 'asha@example.com',
+      contact: '+919800000000',
+      vpa: 'asha@upi',
+      card: { last4: '1111' },
+      notes: { name: 'Asha' },
+    };
+    const stored = storedEventPayload(event);
+    expect(stored).toEqual({
+      providerEventId: 'evt_3',
+      type: 'payment.captured',
+      providerOrderId: 'order_1',
+    });
+    const text = JSON.stringify(stored);
+    for (const value of ['asha', '9800000000', '1111']) {
+      expect(text).not.toContain(value);
+    }
+  });
+
+  it('keeps no inherited or non-scalar value', () => {
+    const inherited = Object.create({ providerOrderId: 'order_x' }) as {
+      providerEventId: string;
+      type: 'other';
+    };
+    inherited.providerEventId = 'evt_4';
+    inherited.type = 'other';
+    expect(storedEventPayload(inherited)).toEqual({
+      providerEventId: 'evt_4',
+      type: 'other',
+    });
+    expect(
+      storedEventPayload({
+        providerEventId: 'evt_5',
+        type: 'other',
+        currency: { code: 'INR' } as unknown as string,
+      }),
+    ).toEqual({ providerEventId: 'evt_5', type: 'other' });
+  });
 });

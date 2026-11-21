@@ -37,9 +37,9 @@ import type {
   RefundDueItemDto,
   RefundResponseDto,
 } from './dto/refund.dto.js';
-import { providerOf } from './payments.service.js';
 import {
   bookingPaymentSummary,
+  providerOf,
   paymentStatusFromRefunds,
   REFUNDABLE,
   refundableRemainderMinor,

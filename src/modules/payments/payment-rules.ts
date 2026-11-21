@@ -2,13 +2,18 @@ import {
   BookingPaymentStatus,
   BookingStatus,
   PaymentModel,
+  PaymentProvider,
   PaymentPurpose,
   PaymentReviewReason,
   PaymentStatus,
   PriceType,
   RefundStatus,
 } from '../../generated/prisma/enums.js';
-import type { GatewayPaymentStatus } from '../../integrations/payment/payment-gateway.provider.js';
+import type {
+  GatewayPaymentStatus,
+  PaymentGatewayProvider,
+  WebhookEvent,
+} from '../../integrations/payment/payment-gateway.provider.js';
 import { EXTRA_MONEY } from '../bookings/paid-amount.js';
 
 /**
@@ -16,6 +21,13 @@ import { EXTRA_MONEY } from '../bookings/paid-amount.js';
  * owes now, and how a gateway outcome moves a payment and the booking's
  * payment summary. Never a booking's own status (rule 2).
  */
+
+/** The stored provider of a configured gateway. */
+export function providerOf(gateway: PaymentGatewayProvider): PaymentProvider {
+  return gateway.name === 'mock'
+    ? PaymentProvider.MOCK
+    : PaymentProvider.RAZORPAY;
+}
 
 /** What the amount due is decided on, read with the booking. */
 export interface PayableBooking {
@@ -446,4 +458,42 @@ export function hasOpenGatewayFlag(payment: {
     RESOLVABLE_FLAGS.includes(payment.reviewReason) &&
     payment.reviewResolvedAt === null
   );
+}
+
+// --- Stored webhook events --------------------------------------------------
+
+/**
+ * What `PaymentEvent.payload` keeps of a verified event: these fields and
+ * nothing else, whatever an adapter's event carries. The table is
+ * append-only, so nothing personal (email, contact, VPA, card) may ever
+ * reach it. `providerOrderId` and `providerPaymentId` stay top-level keys:
+ * the status sweep reads them (`payload #> '{providerOrderId}'`, index
+ * `PaymentEvent_early_notice_order_idx`).
+ */
+export const STORED_EVENT_FIELDS = [
+  'providerEventId',
+  'type',
+  'providerOrderId',
+  'providerPaymentId',
+  'providerRefundId',
+  'receipt',
+  'amountMinor',
+  'currency',
+  'status',
+  'method',
+  'createdAt',
+] as const satisfies readonly (keyof WebhookEvent)[];
+
+export function storedEventPayload(
+  event: WebhookEvent,
+): Record<string, string | number> {
+  const stored: Record<string, string | number> = {};
+  for (const field of STORED_EVENT_FIELDS) {
+    if (!Object.hasOwn(event, field)) continue;
+    const value: unknown = event[field];
+    if (typeof value === 'string' || typeof value === 'number') {
+      stored[field] = value;
+    }
+  }
+  return stored;
 }
