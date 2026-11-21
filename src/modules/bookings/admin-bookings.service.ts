@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AvailabilityService } from '../availability/availability.service.js';
+import { BOOKING_ENDED } from '../empty-legs/empty-leg-rules.js';
 import { QuotesService } from '../quotes/quotes.service.js';
 import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
@@ -322,6 +323,7 @@ export class AdminBookingsService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
       const row = await lockByReference(tx, reference);
       const now = new Date();
+      await assertOfferFree(tx, row, input.status);
       if (input.status === BookingStatus.CANCELLED) {
         const quote = await this.trips.quoteForCancellation(tx, row, now);
         await this.trips.applyCancellation(tx, row, quote, now, {
@@ -392,6 +394,40 @@ export class AdminBookingsService {
     return stored === null || !isEncrypted(stored)
       ? stored
       : this.cipher.decrypt(stored);
+  }
+}
+
+/**
+ * Reviving an ended empty-leg booking (M8-C) needs its offer free: another
+ * live booking of the offer is 409 `BOOKING_UNAVAILABLE`, not the partial
+ * unique index's failure.
+ */
+async function assertOfferFree(
+  tx: Prisma.TransactionClient,
+  row: Prisma.BookingGetPayload<object>,
+  to: BookingStatus,
+): Promise<void> {
+  if (
+    row.emptyLegId === null ||
+    !BOOKING_ENDED.includes(row.status) ||
+    BOOKING_ENDED.includes(to)
+  ) {
+    return;
+  }
+  const other = await tx.booking.findFirst({
+    where: {
+      emptyLegId: row.emptyLegId,
+      id: { not: row.id },
+      status: { notIn: BOOKING_ENDED },
+    },
+    select: { id: true },
+  });
+  if (other) {
+    throw new AppException(
+      'BOOKING_UNAVAILABLE',
+      'Another booking holds this empty leg, so this one cannot be reopened.',
+      HttpStatus.CONFLICT,
+    );
   }
 }
 
