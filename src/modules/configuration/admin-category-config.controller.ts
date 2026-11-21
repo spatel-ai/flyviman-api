@@ -60,7 +60,7 @@ export class AdminCategoryConfigController {
   @ApiOperation({
     summary: 'Change a service category configuration',
     description:
-      'Changes whether a category is offered, its platform booking mode, payment model and Model C deposit percent; fields left out stay as they are. `reason` is required and the change is audited with before and after (`category_config.update`). 409 `CATEGORY_CONFIG_CHANGED` when the row changed since `expectedUpdatedAt` (its current `updatedAt` in `details`); 422 `CATEGORY_CONFIG_INVALID` for air ambulance on `INSTANT` (business rule 7); 404 for an unknown row. A disabled category is hidden from search and takes no new bookings or requests. New bookings use the new booking mode and payment model; bookings already made keep theirs. The deposit percent is read when a payment is due, so a change also applies to model C bookings not yet paid. A change sending the current values writes nothing.',
+      'Changes whether a category is offered, its platform booking mode, payment model and Model C deposit percent; fields left out stay as they are. `reason` is required and the change is audited with before and after (`category_config.update`). 409 `CATEGORY_CONFIG_CHANGED` when the row changed since `expectedUpdatedAt` (its current `updatedAt` in `details`); 422 `CATEGORY_CONFIG_INVALID` for air ambulance on `INSTANT` (business rule 7); 404 for an unknown row. A disabled category is hidden from search and takes no new bookings or requests. New bookings use the new booking mode, payment model and deposit percent; each is saved on the booking, so bookings already made keep theirs. A change sending the current values writes nothing.',
   })
   @ApiOkResponse({ type: CategoryConfigResponseDto })
   async update(

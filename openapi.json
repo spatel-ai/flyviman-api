@@ -4537,7 +4537,7 @@
     },
     "/api/v1/admin/category-config/{id}": {
       "patch": {
-        "description": "Changes whether a category is offered, its platform booking mode, payment model and Model C deposit percent; fields left out stay as they are. `reason` is required and the change is audited with before and after (`category_config.update`). 409 `CATEGORY_CONFIG_CHANGED` when the row changed since `expectedUpdatedAt` (its current `updatedAt` in `details`); 422 `CATEGORY_CONFIG_INVALID` for air ambulance on `INSTANT` (business rule 7); 404 for an unknown row. A disabled category is hidden from search and takes no new bookings or requests. New bookings use the new booking mode and payment model; bookings already made keep theirs. The deposit percent is read when a payment is due, so a change also applies to model C bookings not yet paid. A change sending the current values writes nothing.",
+        "description": "Changes whether a category is offered, its platform booking mode, payment model and Model C deposit percent; fields left out stay as they are. `reason` is required and the change is audited with before and after (`category_config.update`). 409 `CATEGORY_CONFIG_CHANGED` when the row changed since `expectedUpdatedAt` (its current `updatedAt` in `details`); 422 `CATEGORY_CONFIG_INVALID` for air ambulance on `INSTANT` (business rule 7); 404 for an unknown row. A disabled category is hidden from search and takes no new bookings or requests. New bookings use the new booking mode, payment model and deposit percent; each is saved on the booking, so bookings already made keep theirs. A change sending the current values writes nothing.",
         "operationId": "AdminCategoryConfigController_update",
         "parameters": [
           {
@@ -9248,7 +9248,7 @@
     },
     "/api/v1/admin/air-ambulance/requests/{reference}/quote": {
       "post": {
-        "description": "From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation and needs `revisionReason` (400 `VALIDATION_ERROR` without it; shown in the request’s `events`, encrypted at rest). 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.",
+        "description": "From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation and needs `revisionReason` (400 `VALIDATION_ERROR` without it; shown in the request’s `events` to its assigned owner and a super administrator only, encrypted at rest). 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.",
         "operationId": "AdminAirAmbulanceController_quote",
         "parameters": [
           {
@@ -22643,7 +22643,7 @@
           "payload": {
             "type": "object",
             "nullable": true,
-            "description": "What the step recorded (`kind`: ASSIGNMENT, FEASIBILITY or QUOTE; a QUOTE that replaced one already sent carries its `revisionReason`). Never medical or contact data."
+            "description": "What the step recorded (`kind`: ASSIGNMENT, FEASIBILITY or QUOTE; a QUOTE that replaced one already sent carries its `revisionReason`, which only the request’s assigned owner and a super administrator read: for anyone else it is null). Never medical or contact data."
           },
           "at": {
             "type": "string",
