@@ -256,12 +256,19 @@ export class ReconciliationService {
         totals.bookingsKeptMinor += kept;
       }
 
+      // The summary rule is what writes the status once refunds exist; before
+      // that, a second payment (extra money) leaves the status as the first
+      // made it, so such a booking is not compared.
+      const refunded = booking.payments.some((p) => p.refunds.length > 0);
+      const extra = booking.payments.some(
+        (p) => p.reviewReason !== null && EXTRA_MONEY.includes(p.reviewReason),
+      );
       const summary = bookingPaymentSummary(
         booking.totalMinor,
         booking.payments,
         booking.status,
       );
-      if (summary !== booking.paymentStatus) {
+      if ((refunded || !extra) && summary !== booking.paymentStatus) {
         flag(
           'PAYMENT_SUMMARY_MISMATCH',
           `The booking shows ${booking.paymentStatus}; its payments say ${summary}.`,

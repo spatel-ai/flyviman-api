@@ -182,10 +182,17 @@ export class SettlementsService {
         });
         for (const row of rows) {
           checked += 1;
-          const changed = await this.prisma.$transaction((tx) =>
-            this.syncBooking(tx, row.id),
-          );
-          if (changed) written += 1;
+          // One booking's failure never stops the others; its name only.
+          try {
+            const changed = await this.prisma.$transaction((tx) =>
+              this.syncBooking(tx, row.id),
+            );
+            if (changed) written += 1;
+          } catch (error) {
+            this.logger.error(
+              `Settlement sync failed for a booking: ${error instanceof Error ? error.name : 'unknown error'}`,
+            );
+          }
         }
         if (rows.length < SYNC_BATCH) break;
         after = rows[rows.length - 1].id;
