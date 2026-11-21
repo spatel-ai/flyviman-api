@@ -21,6 +21,7 @@ import {
 } from './generated/prisma/enums.js';
 import { hashPassword } from './common/crypto/password.js';
 import { emptyLegReference } from './common/reference.js';
+import type { StaffPermissions } from './modules/operators/operator-access.js';
 
 try {
   process.loadEnvFile();
@@ -284,6 +285,23 @@ async function ensureAircraft(
   return aircraft;
 }
 
+/**
+ * Partial rights for the demo staff member, so staff limits can be tried:
+ * bookings and availability on the two jets, not the helicopter or the air
+ * ambulance. Set on every run, so a re-run resets them.
+ */
+async function ensureStaffPermissions(staffId: string, aircraftIds: string[]) {
+  const permissions: StaffPermissions = {
+    capabilities: ['MANAGE_BOOKINGS', 'MANAGE_AVAILABILITY'],
+    allAircraft: false,
+    aircraftIds,
+  };
+  await prisma.operatorMember.update({
+    where: { userId: staffId },
+    data: { permissions: { ...permissions } },
+  });
+}
+
 async function ensurePromotion() {
   if (await prisma.promotion.findUnique({ where: { code: 'DEMO10' } })) return;
   await prisma.promotion.create({
@@ -372,6 +390,8 @@ try {
   for (const spec of AIRCRAFT) {
     made.push(await ensureAircraft(operator.id, opAdmin.id, spec));
   }
+  // VT-DJT and VT-DJU.
+  await ensureStaffPermissions(opStaff.id, [made[0].id, made[1].id]);
   await ensurePromotion();
   await ensureEmptyLeg(operator.id, made[0].id, opAdmin.id);
   console.log('demo data ready: see docs/testing/manual-test-guide.md');
