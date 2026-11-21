@@ -14,6 +14,7 @@ import { OperatorAirAmbulanceController } from './operator-air-ambulance.control
 import { AirAmbulanceController } from './air-ambulance.controller.js';
 import { AirAmbulanceService } from './air-ambulance.service.js';
 import { AirAmbulanceWorkflowService } from './air-ambulance-workflow.service.js';
+import { AirAmbulanceErasureService } from './air-ambulance-erasure.service.js';
 import { AirAmbulanceReportsService } from './air-ambulance-reports.service.js';
 
 /** Owns AirAmbulanceRequest, AirAmbulanceMedical, its timeline and documents. */
@@ -36,8 +37,13 @@ import { AirAmbulanceReportsService } from './air-ambulance-reports.service.js';
     AirAmbulanceService,
     AirAmbulanceWorkflowService,
     AirAmbulanceReportsService,
+    AirAmbulanceErasureService,
     FieldCipher,
   ],
-  exports: [AirAmbulanceService, AirAmbulanceReportsService],
+  exports: [
+    AirAmbulanceService,
+    AirAmbulanceReportsService,
+    AirAmbulanceErasureService,
+  ],
 })
 export class AirAmbulanceModule {}

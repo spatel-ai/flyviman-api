@@ -232,6 +232,18 @@ export class EnvironmentVariables {
   BOOKING_HOLD_HOURS: number = 48;
 
   /**
+   * Days after the last change to any of a customer's bookings or air
+   * ambulance requests during which their personal data is not erased
+   * (W5-8b), so a dispute or chargeback can still be answered. 0 erases at
+   * once; the business has not set data retention yet (open-decisions.md).
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  ERASURE_HOLD_DAYS: number = 0;
+
+  /**
    * Payment gateway notifications (`POST /webhooks/payments/:provider`) per
    * minute, per address. Generous: the gateway retries and bursts.
    */

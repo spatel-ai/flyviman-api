@@ -211,6 +211,36 @@ export class DocumentsService {
     });
   }
 
+  /**
+   * Erasure (privacy module): deletes the metadata of every file the user
+   * owns, in the caller's transaction, and returns their storage keys for
+   * `deleteStored` once it commits. The records the files were attached to
+   * must already be gone (each link is RESTRICT).
+   */
+  async forgetOwnedFiles(
+    ownerId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<string[]> {
+    const files = await tx.storedFile.findMany({
+      where: { ownerId },
+      select: { storageKey: true },
+    });
+    await tx.storedFile.deleteMany({ where: { ownerId } });
+    return files.map((file) => file.storageKey);
+  }
+
+  /**
+   * Deletes files from storage after their metadata is gone. Never throws:
+   * the keys that could not be deleted are returned (a storage key is ours,
+   * never a file name, so it may be logged).
+   */
+  async deleteStored(keys: string[]): Promise<string[]> {
+    const results = await Promise.allSettled(
+      keys.map((key) => this.storage.delete(key)),
+    );
+    return keys.filter((_, index) => results[index].status === 'rejected');
+  }
+
   async remove(fileId: string): Promise<void> {
     const file = await this.prisma.storedFile.findUnique({
       where: { id: fileId },

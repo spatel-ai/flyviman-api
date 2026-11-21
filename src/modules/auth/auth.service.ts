@@ -134,6 +134,52 @@ export class AuthService {
   }
 
   /**
+   * Deletes every session row of a user, inside the caller's transaction:
+   * for an erasure, which keeps no sign-in history (address, browser).
+   */
+  async deleteAllSessions(
+    userId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
+    const { count } = await tx.session.deleteMany({ where: { userId } });
+    return count;
+  }
+
+  /**
+   * Confirms a signed-in user's own password before an irreversible action
+   * (erasing the account). Failures count towards the sign-in lockout for
+   * the account's email, so this cannot be used to guess the password. A
+   * wrong password answers `AUTH_INVALID_CREDENTIALS`, never
+   * `UNAUTHENTICATED`, which the web client would treat as an expired
+   * session and repeat.
+   */
+  async confirmPassword(
+    userId: string,
+    password: string,
+    ipAddress: string | null,
+  ): Promise<void> {
+    const wrong = () =>
+      new AppException(
+        'AUTH_INVALID_CREDENTIALS',
+        'The password is not correct.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    const account = await this.users.findAccount(userId);
+    if (!account?.email) throw wrong();
+    await this.failures.assertNotLocked(account.email, ipAddress);
+    const credentials = await this.users.findCredentialsByEmail(account.email);
+    const matches =
+      credentials?.id === userId &&
+      !!credentials.passwordHash &&
+      (await verifyPassword(credentials.passwordHash, password));
+    if (!matches) {
+      await this.failures.record(account.email, ipAddress);
+      throw wrong();
+    }
+    await this.failures.clear(account.email, ipAddress);
+  }
+
+  /**
    * Exchanges a refresh token for a new pair. Each token works once; a
    * request that loses a race for it within the grace period receives the
    * same pair as the winner (`RefreshSuccessors`).

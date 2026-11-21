@@ -49,6 +49,7 @@ import { SettlementsService } from './settlements.service.js';
     SettlementsService,
     ReconciliationService,
   ],
-  exports: [PaymentReportsService],
+  // RefundsService: the refunds still due to a customer, for erasure.
+  exports: [PaymentReportsService, RefundsService],
 })
 export class PaymentsModule {}

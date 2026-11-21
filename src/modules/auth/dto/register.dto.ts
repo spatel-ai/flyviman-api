@@ -82,7 +82,7 @@ export class VerificationSentResponseDto {
   expiresInSeconds: number;
 }
 
-const VERIFICATION_ID = /^[A-Za-z0-9_-]{20,64}$/;
+export const VERIFICATION_ID = /^[A-Za-z0-9_-]{20,64}$/;
 
 export class RequestOtpDto {
   @ApiPropertyOptional({

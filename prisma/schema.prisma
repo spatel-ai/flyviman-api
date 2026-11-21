@@ -25,6 +25,9 @@ enum UserStatus {
   PENDING_VERIFICATION
   ACTIVE
   SUSPENDED
+  /// The customer's personal data was erased (DPDP erasure, W5-8b). Final:
+  /// no email, phone or password is left, so nothing can sign in to it.
+  ERASED
 }
 
 /// Who suspended an account: Flyviman (an administrator) or the operator the
@@ -47,6 +50,9 @@ model User {
   emailVerifiedAt DateTime?         @db.Timestamptz
   phoneVerifiedAt DateTime?         @db.Timestamptz
   lastLoginAt     DateTime?         @db.Timestamptz
+  /// When the personal data was erased; set only with status ERASED (CHECK
+  /// `User_erased_scrubbed`).
+  erasedAt        DateTime?         @db.Timestamptz
   createdAt       DateTime          @default(now()) @db.Timestamptz
   updatedAt       DateTime          @updatedAt @db.Timestamptz
 

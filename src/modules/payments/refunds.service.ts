@@ -337,11 +337,18 @@ export class RefundsService {
    * booking or a second payment for a paid one is due in full. Payments
    * flagged `AMOUNT_MISMATCH` or `DUPLICATE_CAPTURE` are not here: their
    * extra money is not on a payment we can refund (the gateway's dashboard).
+   * With `customerId`, only that customer's bookings, read with `db` (an
+   * erasure checks it inside its own transaction, W5-8b).
    */
   async due(
     page: number,
     pageSize: number,
+    scope: { customerId?: string; db?: Prisma.TransactionClient } = {},
   ): Promise<{ items: RefundDueItemDto[]; total: number }> {
+    const db = scope.db ?? this.prisma;
+    const ofCustomer = scope.customerId
+      ? { booking: { customerId: scope.customerId } }
+      : {};
     const items: RefundDueItemDto[] = [];
     const paymentSelect = {
       reference: true,
@@ -357,8 +364,11 @@ export class RefundsService {
       },
     } as const;
 
-    for (const cancellation of await cancellationsWithRefundDue(this.prisma)) {
-      const payments = await this.prisma.payment.findMany({
+    for (const cancellation of await cancellationsWithRefundDue(
+      db,
+      scope.customerId,
+    )) {
+      const payments = await db.payment.findMany({
         where: {
           bookingId: cancellation.bookingId,
           status: { in: [...MONEY_IN] },
@@ -396,10 +406,11 @@ export class RefundsService {
       }
     }
 
-    const flagged = await this.prisma.payment.findMany({
+    const flagged = await db.payment.findMany({
       where: {
         reviewReason: { in: [...EXTRA_MONEY] },
         status: { in: [...REFUNDABLE] },
+        ...ofCustomer,
       },
       select: paymentSelect,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],

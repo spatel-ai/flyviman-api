@@ -43,6 +43,7 @@ import { EnquiriesModule } from './modules/enquiries/enquiries.module.js';
 import { ReportsModule } from './modules/reports/reports.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { ComplianceModule } from './modules/compliance/compliance.module.js';
+import { PrivacyModule } from './modules/privacy/privacy.module.js';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module.js';
     EnquiriesModule,
     ReportsModule,
     AuditModule,
+    PrivacyModule,
   ],
   controllers: [DevIdempotencyController],
   providers: [

@@ -570,6 +570,20 @@ export class EmptyLegsService {
     });
   }
 
+  /**
+   * Erasure (privacy module): forgets every offer the customer asked to be
+   * alerted about, in the caller's transaction.
+   */
+  async forgetInterests(
+    userId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
+    const { count } = await tx.emptyLegInterest.deleteMany({
+      where: { userId },
+    });
+    return count;
+  }
+
   // --- Operator ------------------------------------------------------------
 
   private async scope(

@@ -8,5 +8,7 @@ import { EnquiriesService } from './enquiries.service.js';
   imports: [NotificationsModule],
   controllers: [EnquiriesController, AdminEnquiriesController],
   providers: [EnquiriesService],
+  // For erasure (privacy module).
+  exports: [EnquiriesService],
 })
 export class EnquiriesModule {}
