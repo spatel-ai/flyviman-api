@@ -63,13 +63,6 @@ function world(status: string, settles = false, maxOrderMinor?: number) {
         }),
       ),
     },
-    user: {
-      findUnique: vi.fn().mockResolvedValue({
-        email: 'asha@example.com',
-        phone: null,
-        customerProfile: { firstName: 'Asha', lastName: 'Rao' },
-      }),
-    },
     $transaction: vi.fn((work: (t: typeof tx) => unknown) => work(tx)),
   };
   const gateway = {
@@ -226,11 +219,8 @@ describe('PaymentsService.createOrder', () => {
     expect(gateway.createOrder).toHaveBeenCalledTimes(1);
   });
 
-  it('an amount at the limit goes ahead, with the owner’s own details to fill the checkout', async () => {
-    const { service, gateway, open, row, prisma } = ordering(
-      50_000_000n,
-      50_000_000,
-    );
+  it('an amount at the limit goes ahead, its answer holding references only (stored for replay, D-128)', async () => {
+    const { service, gateway, open, row } = ordering(50_000_000n, 50_000_000);
     open.mockResolvedValue(row);
 
     const answer = await service.createOrder(
@@ -241,21 +231,12 @@ describe('PaymentsService.createOrder', () => {
       'k',
     );
 
-    expect(prisma.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: customer.id } }),
-    );
-    // No phone on file: no contact.
-    expect(answer.checkout.prefill).toEqual({
-      name: 'Asha Rao',
-      email: 'asha@example.com',
-      contact: null,
+    // No name, email or phone: the idempotency store keeps this answer.
+    expect(answer.checkout).toEqual({
+      provider: 'razorpay',
+      keyId: 'rzp_test_key',
+      orderId: 'order_1',
     });
     expect(gateway.createOrder).not.toHaveBeenCalled();
-  });
-
-  it('verify never carries the prefill', async () => {
-    const { service } = world('INITIATED', false);
-    const answer = await service.verify(customer, 'FLY-PY-AAAAAA', result);
-    expect(answer.checkout).not.toHaveProperty('prefill');
   });
 });

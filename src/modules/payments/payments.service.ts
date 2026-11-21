@@ -26,7 +26,6 @@ import { readCreditedMinor } from '../bookings/paid-amount.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import type {
   CreatePaymentDto,
-  PaymentPrefillDto,
   PaymentResponseDto,
   VerifyPaymentDto,
 } from './dto/payment.dto.js';
@@ -144,11 +143,8 @@ export class PaymentsService {
     ) {
       throw overLimitError();
     }
-    // The caller is the booking's owner (`forPayment` by customer).
-    const prefill = await this.prefill(user);
-
     const open = await this.openPayment(this.prisma, booking.id, due);
-    if (open) return this.toResponse(open, booking.reference, prefill);
+    if (open) return this.toResponse(open, booking.reference);
 
     let order: { providerOrderId: string };
     try {
@@ -172,7 +168,7 @@ export class PaymentsService {
           if (!locked) throw notFound('Booking');
           const now = await this.due(tx, locked, input);
           const again = await this.openPayment(tx, locked.id, now);
-          if (again) return this.toResponse(again, locked.reference, prefill);
+          if (again) return this.toResponse(again, locked.reference);
           const reused = await tx.payment.findUnique({
             where: { idempotencyKey: storedKey },
             select: { id: true },
@@ -215,7 +211,7 @@ export class PaymentsService {
             },
             tx,
           );
-          return this.toResponse(payment, locked.reference, prefill);
+          return this.toResponse(payment, locked.reference);
         });
       } catch (error) {
         const clash =
@@ -387,28 +383,6 @@ export class PaymentsService {
     return due;
   }
 
-  /**
-   * The caller's own name, email and phone for the gateway's checkout form,
-   * so the customer does not type them again. Null where not on file (no
-   * phone: no contact). Never logged or audited.
-   */
-  private async prefill(user: AuthUser): Promise<PaymentPrefillDto> {
-    const row = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        email: true,
-        phone: true,
-        customerProfile: { select: { firstName: true, lastName: true } },
-      },
-    });
-    const profile = row?.customerProfile;
-    return {
-      name: profile ? `${profile.firstName} ${profile.lastName}`.trim() : null,
-      email: row?.email ?? null,
-      contact: row?.phone ?? null,
-    };
-  }
-
   private openPayment(
     db: Pick<Prisma.TransactionClient, 'payment'>,
     bookingId: string,
@@ -431,7 +405,6 @@ export class PaymentsService {
   private toResponse(
     payment: PaymentRow,
     bookingReference: string,
-    prefill?: PaymentPrefillDto,
   ): PaymentResponseDto {
     return {
       reference: payment.reference,
@@ -447,7 +420,6 @@ export class PaymentsService {
         provider: this.gateway.name,
         keyId: this.gateway.checkoutKeyId,
         orderId: payment.providerOrderId ?? '',
-        ...(prefill ? { prefill } : {}),
       },
       paidAt: payment.paidAt?.toISOString() ?? null,
       createdAt: payment.createdAt.toISOString(),

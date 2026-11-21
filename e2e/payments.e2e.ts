@@ -100,11 +100,6 @@ test.describe('POST /bookings/:reference/payments', () => {
         provider: 'mock',
         keyId: 'rzp_mock_key',
         orderId: expect.stringMatching(/^order_mock_[0-9a-f]{8}_\d{6}$/),
-        // The customer's own details for the checkout form.
-        prefill: expect.objectContaining({
-          name: expect.any(String),
-          email: expect.any(String),
-        }),
       },
       paidAt: null,
       createdAt: expect.any(String),
@@ -114,6 +109,24 @@ test.describe('POST /bookings/:reference/payments', () => {
     expect(replay.status()).toBe(201);
     expect(replay.headers()['idempotent-replayed']).toBe('true');
     expect((await replay.json()).data).toEqual(payment);
+
+    // The answer kept for replay holds references only (D-128): none of the
+    // customer's own name, email or phone.
+    const me = (await (await customer.get('me')).json()).data;
+    const stored = await withPrisma((prisma) =>
+      prisma.idempotencyKey.findMany({ where: { key } }),
+    );
+    expect(stored).toHaveLength(1);
+    expect(stored[0].responseBody).toEqual(payment);
+    const kept = JSON.stringify(stored[0].responseBody);
+    for (const value of [
+      me.email,
+      me.phone,
+      me.profile?.firstName,
+      me.profile?.lastName,
+    ]) {
+      if (value) expect(kept).not.toContain(value);
+    }
 
     // Another tab: the open order again, not a second one.
     const again = await pay(customer, reference, totalMinor);
