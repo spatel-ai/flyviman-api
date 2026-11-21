@@ -140,7 +140,7 @@ describe('validateEnv', () => {
       }).API_PUBLIC_URL,
     ).toBe('https://flyviman-api.onrender.com');
     // Only the known providers.
-    expect(() => validateEnv({ ...poc, MESSAGING_PROVIDER: 'smtp' })).toThrow(
+    expect(() => validateEnv({ ...poc, MESSAGING_PROVIDER: 'twilio' })).toThrow(
       /MESSAGING_PROVIDER/,
     );
   });
@@ -167,6 +167,68 @@ describe('validateEnv', () => {
         API_PUBLIC_URL: 'https://flyviman-api.example.com',
       }),
     ).not.toThrow();
+  });
+
+  it('sends email by SMTP only with the account and its password', () => {
+    const smtp = {
+      ...valid,
+      MESSAGING_PROVIDER: 'smtp',
+      USER_EMAIL: 'owner@gmail.com',
+      USER_EMAIL_PASSWORD: 'app-password',
+    };
+    const env = validateEnv(smtp);
+    expect(env.SMTP_HOST).toBe('smtp.gmail.com');
+    expect(env.SMTP_PORT).toBe(465);
+    expect(env.EMAIL_FROM_NAME).toBe('Flyviman');
+    expect(env.EMAIL_REDIRECT_TO).toBeUndefined();
+    for (const name of ['USER_EMAIL', 'USER_EMAIL_PASSWORD']) {
+      for (const value of [undefined, '']) {
+        expect(() => validateEnv({ ...smtp, [name]: value })).toThrow(
+          /USER_EMAIL and USER_EMAIL_PASSWORD/,
+        );
+      }
+    }
+    expect(() => validateEnv({ ...smtp, EMAIL_REDIRECT_TO: 'nope' })).toThrow(
+      /EMAIL_REDIRECT_TO/,
+    );
+    // Empty placeholders copied from .env.example do not break other providers.
+    expect(() =>
+      validateEnv({
+        ...valid,
+        USER_EMAIL: '',
+        USER_EMAIL_PASSWORD: '',
+        EMAIL_REDIRECT_TO: '',
+      }),
+    ).not.toThrow();
+  });
+
+  it('counts smtp as really sending: production needs the real operations inbox', () => {
+    const production = {
+      ...valid,
+      ...PAYMENT_SECRETS,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'smtp',
+      STORAGE_PROVIDER: 'local',
+      API_PUBLIC_URL: 'https://flyviman-api.example.com',
+      USER_EMAIL: 'owner@gmail.com',
+      USER_EMAIL_PASSWORD: 'app-password',
+    };
+    expect(() => validateEnv(production)).toThrow(/OPERATIONS_INBOX_EMAIL/);
+    expect(() =>
+      validateEnv({
+        ...production,
+        OPERATIONS_INBOX_EMAIL: 'ops@flyviman.com',
+      }),
+    ).not.toThrow();
+    // Never every customer's email into one inbox in production.
+    expect(() =>
+      validateEnv({
+        ...production,
+        OPERATIONS_INBOX_EMAIL: 'ops@flyviman.com',
+        EMAIL_REDIRECT_TO: 'owner@gmail.com',
+      }),
+    ).toThrow(/EMAIL_REDIRECT_TO must not be set in production/);
   });
 
   it('gives enquiries their own limit, not the sign-in one', () => {
