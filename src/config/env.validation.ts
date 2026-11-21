@@ -609,6 +609,22 @@ export function validateEnv(
       'Invalid environment configuration: PAYMENT_PROVIDER=razorpay needs RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
     );
   }
+  // The development secrets are in the repository: anyone could sign a
+  // checkout result or a webhook with them.
+  if (validated.PAYMENT_PROVIDER === 'razorpay') {
+    const publicSecrets = [DEV_PAYMENT_KEY_SECRET, DEV_PAYMENT_WEBHOOK_SECRET];
+    for (const name of [
+      'RAZORPAY_KEY_SECRET',
+      'RAZORPAY_WEBHOOK_SECRET',
+    ] as const) {
+      const value = validated[name];
+      if (value !== undefined && publicSecrets.includes(value)) {
+        throw new Error(
+          `Invalid environment configuration: ${name} must not be a public development secret.`,
+        );
+      }
+    }
+  }
   // The Hard gate: a live key moves real money.
   if (
     validated.PAYMENT_PROVIDER === 'razorpay' &&

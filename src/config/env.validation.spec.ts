@@ -374,6 +374,37 @@ describe('validateEnv', () => {
       }
     });
 
+    it('refuses the public development secrets as Razorpay secrets', () => {
+      for (const name of ['RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) {
+        for (const secret of [
+          DEV_PAYMENT_KEY_SECRET,
+          DEV_PAYMENT_WEBHOOK_SECRET,
+        ]) {
+          expect(() =>
+            validateEnv({
+              ...valid,
+              PAYMENT_PROVIDER: 'razorpay',
+              ...keys,
+              [name]: secret,
+            }),
+          ).toThrow(
+            new RegExp(`${name} must not be a public development secret`),
+          );
+        }
+      }
+    });
+
+    it('needs a webhook secret of at least 16 characters', () => {
+      const razorpay = { ...valid, PAYMENT_PROVIDER: 'razorpay', ...keys };
+      expect(() =>
+        validateEnv({ ...razorpay, RAZORPAY_WEBHOOK_SECRET: 'h'.repeat(15) }),
+      ).toThrow(/RAZORPAY_WEBHOOK_SECRET/);
+      expect(
+        validateEnv({ ...razorpay, RAZORPAY_WEBHOOK_SECRET: 'h'.repeat(16) })
+          .RAZORPAY_WEBHOOK_SECRET,
+      ).toBe('h'.repeat(16));
+    });
+
     it('in production needs the Razorpay keys, not the mock secrets', () => {
       const production = {
         ...valid,
