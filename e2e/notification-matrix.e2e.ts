@@ -29,10 +29,15 @@ interface Inbox {
 
 /** Sends what is queued now rather than waiting for the dispatcher. */
 async function dispatch(request: APIRequestContext) {
-  const response = await request.post('dev/jobs/notification-outbox', {
-    headers: await csrfHeaders(request),
-  });
-  expect(response.status()).toBe(200);
+  // One run sends a batch of 20 (OUTBOX_BATCH): repeat until the queue is
+  // drained, so messages queued by other tests do not crowd ours out.
+  for (let run = 0; run < 20; run += 1) {
+    const response = await request.post('dev/jobs/notification-outbox', {
+      headers: await csrfHeaders(request),
+    });
+    expect(response.status()).toBe(200);
+    if ((await response.json()).data.sent < 20) return;
+  }
 }
 
 async function inApp(request: APIRequestContext): Promise<Inbox[]> {

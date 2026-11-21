@@ -124,6 +124,33 @@ describe('NotificationEventsService', () => {
     expect(JSON.stringify(sent())).not.toMatch(/patient|medical/i);
   });
 
+  it('tells finance and super administrators of a failed refund in-app, not operations, with one email to the inbox', async () => {
+    const { service, users, sent } = build();
+    users.contactsByRole.mockImplementation((role: string) =>
+      Promise.resolve(
+        role === 'FINANCE_ADMIN'
+          ? [{ id: 'f1', email: 'f1@flyviman.test', phone: null }]
+          : role === 'SUPER_ADMIN'
+            ? [{ id: 's1', email: 's1@flyviman.test', phone: null }]
+            : [{ id: 'p1', email: 'ops1@flyviman.test', phone: null }],
+      ),
+    );
+    await service.notify(tx, 'refund.failed', {
+      reference: 'FV-1',
+      variables: { refundReference: 'FLY-RF-AAAAAA' },
+    });
+    expect(users.contactsByRole.mock.calls.map(([role]) => role)).toEqual([
+      'FINANCE_ADMIN',
+      'SUPER_ADMIN',
+    ]);
+    expect(sent().map((m) => [m.userId, m.channel, m.to])).toEqual([
+      ['f1', 'IN_APP', undefined],
+      ['s1', 'IN_APP', undefined],
+      [undefined, 'EMAIL', 'ops@flyviman.test'],
+    ]);
+    expect(sent()[0].variables).toMatchObject({ href: '/admin/refunds' });
+  });
+
   it('queues nothing for a recipient that is missing', async () => {
     const { service, enqueue } = build();
     await service.notify(tx, 'booking.quote_sent', { reference: 'FV-1' });

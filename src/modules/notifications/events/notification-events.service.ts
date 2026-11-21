@@ -123,8 +123,8 @@ export class NotificationEventsService {
   /**
    * Where a channel goes for a contact: `null` for in-app (no address),
    * `undefined` when the contact has none or the channel is not theirs.
-   * Operations users get in-app and phone messages; email goes to the
-   * shared inbox only, so a request is not mailed to everyone.
+   * Operations and finance users get in-app and phone messages; email goes
+   * to the shared inbox only, so a request is not mailed to everyone.
    */
   private addressFor(
     channel: NotificationChannel,
@@ -134,7 +134,9 @@ export class NotificationEventsService {
     const inbox = contact.userId === null;
     if (channel === 'IN_APP') return inbox ? undefined : null;
     if (channel === 'EMAIL') {
-      if (audience === 'OPERATIONS' && !inbox) return undefined;
+      if ((audience === 'OPERATIONS' || audience === 'FINANCE') && !inbox) {
+        return undefined;
+      }
       return contact.email ?? undefined;
     }
     return inbox ? undefined : (contact.phone ?? undefined);
@@ -156,8 +158,15 @@ export class NotificationEventsService {
       );
       return this.accounts(await this.users.contacts(ids));
     }
+    const staff =
+      audience === 'FINANCE'
+        ? [
+            ...(await this.users.contactsByRole(Role.FINANCE_ADMIN)),
+            ...(await this.users.contactsByRole(Role.SUPER_ADMIN)),
+          ]
+        : await this.users.contactsByRole(Role.OPS);
     return [
-      ...this.accounts(await this.users.contactsByRole(Role.OPS)),
+      ...this.accounts(staff),
       {
         userId: null,
         email: this.config.getOrThrow<string>('OPERATIONS_INBOX_EMAIL'),

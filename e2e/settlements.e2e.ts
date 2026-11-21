@@ -620,6 +620,19 @@ test.describe('PATCH /admin/settlements/:id', () => {
     expect(after!.commissionMinor + after!.taxMinor + after!.payableMinor).toBe(
       booking.totalMinor - part,
     );
+    // The operator's administrator (`request`) is told once, without figures.
+    const told = (
+      (await (await request.get('me/notifications?pageSize=100')).json())
+        .data as { templateKey: string; body: string; href: string }[]
+    ).filter(
+      (n) =>
+        n.templateKey === 'settlement.updated' &&
+        n.body.includes(booking.reference),
+    );
+    expect(told).toEqual([
+      expect.objectContaining({ href: '/operator/settlements' }),
+    ]);
+    expect(told[0].body).not.toContain(String(after!.payableMinor));
 
     // The payable finance saw before the refund is now wrong.
     const stale = await change(finance, row.id, {

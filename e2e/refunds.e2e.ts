@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { APIRequestContext, expect, test } from '@playwright/test';
-import { registerCustomer } from './support/data.js';
+import { outbox, registerCustomer } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
@@ -38,7 +38,7 @@ async function bookingAwaitingPayment(
   expect(rate.status()).toBe(200);
   const searched = await searchFor(request, trip);
   const customer = await newContext(contexts);
-  await registerCustomer(customer);
+  const { email: customerEmail } = await registerCustomer(customer);
   const booked = await customer.post('bookings', {
     headers: {
       ...(await csrfHeaders(customer)),
@@ -67,6 +67,7 @@ async function bookingAwaitingPayment(
   );
   return {
     customer,
+    customerEmail,
     reference,
     totalMinor: searched.result.price.amountMinor as number,
   };
@@ -152,6 +153,58 @@ async function settleInGateway(
   return (await simulated.json()).data as Signed;
 }
 
+/** The customer's in-app messages about a refund, oldest first. */
+async function refundNotices(customer: APIRequestContext) {
+  const response = await customer.get('me/notifications', {
+    params: { pageSize: 100 },
+  });
+  expect(response.status()).toBe(200);
+  return (
+    (await response.json()).data as {
+      templateKey: string;
+      title: string;
+      body: string;
+      href: string | null;
+    }[]
+  )
+    .filter((n) => n.templateKey.startsWith('refund.'))
+    .reverse();
+}
+
+/** A staff member's in-app `refund.failed` messages about one refund. */
+async function failedNotices(
+  staffMember: APIRequestContext,
+  refundReference: string,
+) {
+  const response = await staffMember.get('me/notifications', {
+    params: { pageSize: 100 },
+  });
+  expect(response.status()).toBe(200);
+  return (
+    (await response.json()).data as {
+      templateKey: string;
+      body: string;
+      href: string | null;
+    }[]
+  ).filter(
+    (n) =>
+      n.templateKey === 'refund.failed' && n.body.includes(refundReference),
+  );
+}
+
+/** Sends the queued email and text messages now. */
+async function dispatch(request: APIRequestContext) {
+  // One run sends a batch of 20 (OUTBOX_BATCH): repeat until the queue is
+  // drained, so messages queued by other tests do not crowd ours out.
+  for (let run = 0; run < 20; run += 1) {
+    const response = await request.post('dev/jobs/notification-outbox', {
+      headers: await csrfHeaders(request),
+    });
+    expect(response.status()).toBe(200);
+    if ((await response.json()).data.sent < 20) return;
+  }
+}
+
 async function bookingOf(customer: APIRequestContext, reference: string) {
   const response = await customer.get(`bookings/${reference}`);
   expect(response.status()).toBe(200);
@@ -168,7 +221,7 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     baseURL,
   }) => {
     const contexts = { request, playwright, baseURL };
-    const { customer, reference, totalMinor } =
+    const { customer, customerEmail, reference, totalMinor } =
       await bookingAwaitingPayment(contexts);
     const payment = await payInFull(request, customer, reference, totalMinor);
     const finance = await staff(contexts, 'finance');
@@ -218,6 +271,27 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
       paymentStatus: 'REFUND_PENDING',
     });
 
+    // The customer is told once, in-app and by email, with both references
+    // and no amount.
+    const initiated = await refundNotices(customer);
+    expect(initiated).toEqual([
+      expect.objectContaining({
+        templateKey: 'refund.initiated',
+        href: `/account/trips/${reference}`,
+      }),
+    ]);
+    expect(initiated[0].body).toContain(reference);
+    expect(initiated[0].body).toContain(started.reference);
+    expect(initiated[0].body).toContain('few working days');
+    expect(initiated[0].body).not.toContain(String(part));
+    await dispatch(request);
+    const mailed = (await outbox(request, customerEmail)).filter((m) =>
+      m.body.includes(started.reference),
+    );
+    expect(mailed).toHaveLength(1);
+    expect(mailed[0]).toMatchObject({ channel: 'EMAIL' });
+    expect(mailed[0].body).toContain(`/account/trips/${reference}`);
+
     // The rest is refundable; more than the rest is not.
     const tooMuch = await refund(
       finance,
@@ -263,6 +337,17 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
       expect.arrayContaining(['PENDING', 'COMPLETED']),
     );
     expect(audits).toHaveLength(2);
+    // Three deliveries of the notice, one message that the refund is done.
+    expect((await refundNotices(customer)).map((n) => n.templateKey)).toEqual([
+      'refund.initiated',
+      'refund.completed',
+    ]);
+    await dispatch(request);
+    expect(
+      (await outbox(request, customerEmail)).filter((m) =>
+        m.body.includes(started.reference),
+      ),
+    ).toHaveLength(2);
     const created = await withPrisma((prisma) =>
       prisma.auditLog.findFirstOrThrow({
         where: { entityId: completed.id, action: 'refund.create' },
@@ -324,6 +409,7 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
       await bookingAwaitingPayment(contexts);
     const payment = await payInFull(request, customer, reference, totalMinor);
     const finance = await staff(contexts, 'finance');
+    const ops = await staff(contexts, 'ops');
 
     const failed = (
       await (await refund(finance, payment.reference, totalMinor)).json()
@@ -342,6 +428,14 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     expect(await bookingOf(customer, reference)).toMatchObject({
       paymentStatus: 'PAID',
     });
+    // A failure is for finance: the customer heard only that it started.
+    expect((await refundNotices(customer)).map((n) => n.templateKey)).toEqual([
+      'refund.initiated',
+    ]);
+    expect(await failedNotices(finance, failed.reference)).toEqual([
+      expect.objectContaining({ href: '/admin/refunds' }),
+    ]);
+    expect(await failedNotices(ops, failed.reference)).toEqual([]);
 
     const full = await refund(finance, payment.reference, totalMinor);
     expect(full.status()).toBe(201);
@@ -363,6 +457,37 @@ test.describe('POST /admin/payments/:reference/refunds', () => {
     expect(await bookingOf(customer, reference)).toMatchObject({
       paymentStatus: 'REFUNDED',
     });
+  });
+
+  test('a refund the gateway refuses tells the customer nothing and finance of the failure', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { customer, reference, totalMinor } =
+      await bookingAwaitingPayment(contexts);
+    const payment = await payInFull(request, customer, reference, totalMinor);
+    const finance = await staff(contexts, 'finance');
+    // The gateway no longer knows the payment, so it refuses the refund.
+    await withPrisma((prisma) =>
+      prisma.payment.update({
+        where: { reference: payment.reference },
+        data: { providerPaymentId: `pay_unknown_${randomUUID()}` },
+      }),
+    );
+
+    const refused = await refund(finance, payment.reference, totalMinor);
+    expect(refused.status()).toBe(201);
+    const row = (await refused.json()).data as {
+      reference: string;
+      status: string;
+    };
+    expect(row.status).toBe('FAILED');
+    expect(await refundNotices(customer)).toEqual([]);
+    expect(await failedNotices(finance, row.reference)).toEqual([
+      expect.objectContaining({ href: '/admin/refunds' }),
+    ]);
   });
 
   test('a payment whose money never arrived is not refundable', async ({

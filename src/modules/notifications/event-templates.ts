@@ -5,7 +5,7 @@ import { NOTIFICATION_MATRIX } from './matrix.js';
  * The wording of the matrix events (M10), kept as one short copy per event
  * and turned into a template for each channel the event uses. Variables are
  * system-derived only: `reference`, `link`, `validUntil`, `decision`,
- * `passengerCount`. No
+ * `passengerCount`, `refundReference`. No
  * amount, passenger, medical or free-text value ever appears, so a message
  * is safe on a lock screen (rule 8) and an estimate is never read as a
  * final price (rule 1).
@@ -116,6 +116,22 @@ const COPY: Record<string, Copy> = {
     text: 'Your payment for {{reference}} did not go through. Open the booking on Flyviman to try again.',
     short: 'your payment did not go through. Open the booking to try again.',
   },
+  'refund.initiated': {
+    title: 'Refund {{refundReference}} started for {{reference}}',
+    text: 'Flyviman has started a refund for your booking {{reference}}. Your refund reference is {{refundReference}}. It can take a few working days to reach your account. Open the booking on Flyviman to follow it.',
+  },
+  'refund.completed': {
+    title: 'Refund {{refundReference}} processed for {{reference}}',
+    text: 'Your refund {{refundReference}} for booking {{reference}} has been processed. It can take a few working days to show in your account, depending on your bank.',
+  },
+  'refund.failed': {
+    title: 'Refund {{refundReference}} failed for {{reference}}',
+    text: 'The payment gateway could not process refund {{refundReference}} for booking {{reference}}. The amount is refundable again: finance should start a new refund from refunds due, and the customer may need to be told.',
+  },
+  'settlement.updated': {
+    title: 'Settlement updated for booking {{reference}}',
+    text: 'The settlement for booking {{reference}} has changed after a refund or payment update. Open settlements in the operator portal to see the amount payable now.',
+  },
   'air_ambulance.received': {
     title: 'New air ambulance request {{reference}}',
     text: 'A new air ambulance request {{reference}} needs an owner. Open the operations queue to assign and verify it. It is not confirmed until operations and the operator verify the mission.',
@@ -145,6 +161,7 @@ export const EVENT_VARIABLES: ReadonlySet<string> = new Set([
   'validUntil',
   'decision',
   'passengerCount',
+  'refundReference',
 ]);
 
 /**

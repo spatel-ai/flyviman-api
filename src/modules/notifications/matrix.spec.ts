@@ -5,6 +5,7 @@ import {
   hrefFor,
   NOTIFICATION_MATRIX,
   optedOutChannels,
+  refundStatusEvent,
   ruleFor,
 } from './matrix.js';
 
@@ -56,6 +57,26 @@ describe('NOTIFICATION_MATRIX', () => {
     }
   });
 
+  it('tells the customer of a refund started and completed, finance of a failure, and only the operator administrators of a settlement change', () => {
+    for (const key of ['refund.initiated', 'refund.completed']) {
+      expect(ruleFor(key), key).toMatchObject({
+        audience: 'CUSTOMER',
+        channels: ['IN_APP', 'EMAIL'],
+        mandatory: true,
+      });
+    }
+    expect(ruleFor('refund.failed')).toMatchObject({
+      audience: 'FINANCE',
+      subject: 'REFUND',
+      channels: ['IN_APP', 'EMAIL'],
+    });
+    expect(ruleFor('settlement.updated')).toMatchObject({
+      audience: 'OPERATOR',
+      subject: 'SETTLEMENT',
+      channels: ['IN_APP', 'EMAIL'],
+    });
+  });
+
   it('refuses an unknown event', () => {
     expect(() => ruleFor('nope')).toThrow(/No notification rule/);
   });
@@ -105,6 +126,22 @@ describe('hrefFor', () => {
     expect(hrefFor(ruleFor('air_ambulance.received'), 'AA-1')).toBe(
       '/admin/air-ambulance/AA-1',
     );
+    expect(hrefFor(ruleFor('refund.completed'), 'FV-1')).toBe(
+      '/account/trips/FV-1',
+    );
+    expect(hrefFor(ruleFor('refund.failed'), 'FV-1')).toBe('/admin/refunds');
+    expect(hrefFor(ruleFor('settlement.updated'), 'FV-1')).toBe(
+      '/operator/settlements',
+    );
+  });
+});
+
+describe('refundStatusEvent', () => {
+  it('tells the customer once the gateway accepts or completes a refund, and finance of a failure', () => {
+    expect(refundStatusEvent('PENDING')).toBe('refund.initiated');
+    expect(refundStatusEvent('COMPLETED')).toBe('refund.completed');
+    expect(refundStatusEvent('FAILED')).toBe('refund.failed');
+    expect(refundStatusEvent('REQUESTED')).toBeNull();
   });
 });
 

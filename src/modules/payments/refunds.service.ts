@@ -31,6 +31,8 @@ import {
   REFUND_HOLDS,
 } from '../bookings/paid-amount.js';
 import { cancellationsWithRefundDue } from '../bookings/refund-due.js';
+import { refundStatusEvent } from '../notifications/matrix.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import type {
   AdminRefundsQueryDto,
   CreateRefundDto,
@@ -87,6 +89,7 @@ export class RefundsService {
     private readonly audit: AuditService,
     private readonly bookings: BookingsService,
     private readonly gateway: PaymentGatewayProvider,
+    private readonly events: NotificationEventsService,
   ) {}
 
   /**
@@ -98,7 +101,9 @@ export class RefundsService {
    * 2. The gateway is asked, outside any transaction, with the refund's
    *    reference as its receipt.
    * 3. Its answer is recorded: `PENDING` (or settled at once), `FAILED` for
-   *    a definite refusal, which frees the amount again. A gateway that
+   *    a definite refusal, which frees the amount again. The customer is
+   *    told only now (`move`): `refund.initiated` once accepted, or just
+   *    `refund.completed`; a refusal tells finance, not the customer. A gateway that
    *    could not be reached leaves the refund `REQUESTED`: whether money
    *    moved is unknown, so it is never retried automatically and its
    *    notice still settles it (matched by the receipt).
@@ -545,7 +550,8 @@ export class RefundsService {
   /**
    * Moves a refund on (only out of `REQUESTED` or `PENDING`, and only
    * forward: `REQUESTED` → `PENDING` → `COMPLETED` or `FAILED`), keeps the
-   * gateway's refund id, audits, and re-derives the payment and booking.
+   * gateway's refund id, audits, re-derives the payment and booking, and
+   * raises `refundStatusEvent`'s event for a move that happened.
    */
   private async move(
     tx: Prisma.TransactionClient,
@@ -595,6 +601,12 @@ export class RefundsService {
       tx,
     );
     await this.settle(tx, refund.paymentId, booking, refund.reference);
+    const event = refundStatusEvent(to);
+    if (event) {
+      await this.events.notifyBooking(tx, event, booking.id, {
+        refundReference: refund.reference,
+      });
+    }
   }
 
   /**

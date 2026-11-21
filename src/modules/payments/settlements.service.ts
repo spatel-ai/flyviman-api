@@ -31,6 +31,7 @@ import {
   netPaidMinor,
 } from '../bookings/paid-amount.js';
 import type { DashboardSettlementsDto } from '../operators/dto/operator-dashboard.dto.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import type {
@@ -151,6 +152,7 @@ export class SettlementsService implements OnModuleInit {
     private readonly pricing: PricingService,
     private readonly operators: OperatorsService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly events: NotificationEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -385,7 +387,26 @@ export class SettlementsService implements OnModuleInit {
       },
       tx,
     );
+    if (existing.payableMinor !== figures.payableMinor) {
+      await this.tellOperator(tx, existing.operatorId, booking.reference);
+    }
     return true;
+  }
+
+  /**
+   * `settlement.updated` to the operator's administrators (no aircraft, so
+   * not its staff), when an existing record's payable changed.
+   */
+  private tellOperator(
+    tx: Prisma.TransactionClient,
+    operatorId: string,
+    reference: string,
+  ): Promise<string[]> {
+    return this.events.notify(tx, 'settlement.updated', {
+      reference,
+      operatorId,
+      aircraftId: null,
+    });
   }
 
   // --- Finance ---------------------------------------------------------------
@@ -562,6 +583,10 @@ export class SettlementsService implements OnModuleInit {
         },
         tx,
       );
+      // Releasing a hold takes the figures the rules give now.
+      if (basis && updated.payableMinor !== row.payableMinor) {
+        await this.tellOperator(tx, row.operatorId, basis.booking.reference);
+      }
     });
 
     return toAdminDto(
