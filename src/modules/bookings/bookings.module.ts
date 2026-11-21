@@ -14,7 +14,11 @@ import { AdminBookingsController } from './admin-bookings.controller.js';
 import { AdminBookingsService } from './admin-bookings.service.js';
 import { AdminChangeRequestsController } from './admin-change-requests.controller.js';
 import { AdminPriceOverrideController } from './admin-price-override.controller.js';
+import { BookingPassengersService } from './booking-passengers.service.js';
 import { BookingRequestsService } from './booking-requests.service.js';
+import { BookingRevalidationService } from './booking-revalidation.service.js';
+import { BookingSelfServiceController } from './booking-self-service.controller.js';
+import { BookingTimelineService } from './booking-timeline.service.js';
 import { BookingsController } from './bookings.controller.js';
 import { BookingsService } from './bookings.service.js';
 import { ChangeRequestListsService } from './change-request-lists.service.js';
@@ -59,6 +63,7 @@ import { TripsService } from './trips.service.js';
     CustomerQuotesController,
     OperatorBookingRequestsController,
     DevBookingJobsController,
+    BookingSelfServiceController,
   ],
   providers: [
     BookingsService,
@@ -67,6 +72,9 @@ import { TripsService } from './trips.service.js';
     AdminBookingsService,
     ChangeRequestListsService,
     FieldCipher,
+    BookingTimelineService,
+    BookingPassengersService,
+    BookingRevalidationService,
   ],
   exports: [BookingsService],
 })

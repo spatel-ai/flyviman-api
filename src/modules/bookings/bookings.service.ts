@@ -792,12 +792,15 @@ export class BookingsService implements OnApplicationBootstrap {
   /**
    * Rules 3 and 4 at confirmation, as at acceptance: the trip is still
    * ahead, the operator and aircraft still approved and the aircraft in
-   * service, and the held time still free (kept from now until the trip
-   * ends). Why the booking cannot be confirmed, or null.
+   * service, and the held time still free (kept from now until `keepUntil`,
+   * the trip's end by default; a time already past checks without writing,
+   * as `POST /bookings/:reference/revalidate` does). Why the booking cannot
+   * be confirmed, or null.
    */
-  private async unbookable(
+  async unbookable(
     tx: Prisma.TransactionClient,
     row: Prisma.BookingGetPayload<object>,
+    keepUntil: Date = END_OF_TIME,
   ): Promise<string | null> {
     const departure = parseItinerary(row.itinerary).legs[0].departureAt;
     if (Date.parse(departure) <= Date.now()) return 'the trip has departed';
@@ -819,7 +822,7 @@ export class BookingsService implements OnApplicationBootstrap {
     ) {
       return 'the aircraft is not approved or not in service';
     }
-    return (await this.availability.recheckBookingHold(tx, row.id, END_OF_TIME))
+    return (await this.availability.recheckBookingHold(tx, row.id, keepUntil))
       ? null
       : 'the aircraft time is no longer free';
   }
