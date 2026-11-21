@@ -157,7 +157,11 @@ export async function adminDetail(
       toStatus: event.toStatus,
       actorId: event.actorId,
       actorRole: event.actorRole,
-      payload: service.eventPayloadForOperations(event.payload),
+      payload: service.eventPayloadForOperations(
+        event.payload,
+        actor,
+        view.assignedToId,
+      ),
       at: event.createdAt.toISOString(),
     })),
   };

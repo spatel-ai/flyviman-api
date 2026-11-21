@@ -166,7 +166,7 @@ export class AdminAirAmbulanceController {
   @ApiOperation({
     summary: 'Send the customer a quotation',
     description:
-      'From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation and needs `revisionReason` (400 `VALIDATION_ERROR` without it; shown in the request’s `events`, encrypted at rest). 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.',
+      'From an approved operator (409 `OPERATOR_NOT_APPROVED`; 404 for an unknown operator) with an approved air ambulance aircraft (409 `AIR_AMBULANCE_OPERATOR_NOT_ELIGIBLE`; `GET /admin/air-ambulance/operators` lists them), labelled `QUOTE`. FEASIBILITY_CHECK to QUOTED; while QUOTED it replaces the last quotation and needs `revisionReason` (400 `VALIDATION_ERROR` without it; shown in the request’s `events` to its assigned owner and a super administrator only, encrypted at rest). 409 `AIR_AMBULANCE_INVALID_TRANSITION` in any other status. Audited with the amount and operator.',
   })
   @ApiOkResponse({ type: AdminAirAmbulanceSummaryDto })
   async quote(

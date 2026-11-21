@@ -118,7 +118,7 @@ export class AdminTimelineEntryDto {
     type: Object,
     nullable: true,
     description:
-      'What the step recorded (`kind`: ASSIGNMENT, FEASIBILITY or QUOTE; a QUOTE that replaced one already sent carries its `revisionReason`). Never medical or contact data.',
+      'What the step recorded (`kind`: ASSIGNMENT, FEASIBILITY or QUOTE; a QUOTE that replaced one already sent carries its `revisionReason`, which only the request’s assigned owner and a super administrator read: for anyone else it is null). Never medical or contact data.',
   })
   payload: Record<string, unknown> | null;
 

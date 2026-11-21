@@ -557,3 +557,45 @@ describe('AirAmbulanceService.eligibleOperators', () => {
     ]);
   });
 });
+
+describe('AirAmbulanceService.eventPayloadForOperations', () => {
+  const revised = {
+    kind: 'QUOTE',
+    revisionReason: cipher.encrypt('Patient now needs a ventilator'),
+  };
+  const row = {
+    requesterId: REQUESTER,
+    assignedToId: OPS_OWNER,
+    selectedOperatorId: null,
+    status: AirAmbulanceStatus.QUOTED,
+  };
+
+  it.each([
+    [{ id: OPS_OWNER, role: Role.OPS }, 'Patient now needs a ventilator'],
+    [{ id: 'u-sa', role: Role.SUPER_ADMIN }, 'Patient now needs a ventilator'],
+    [{ id: 'u-ops-2', role: Role.OPS }, null],
+  ] as [AirAmbulanceActor, string | null][])(
+    'decrypts the revision reason only for a reader of the medical details (%o)',
+    (actor, expected) => {
+      const { service } = setup();
+      expect(
+        service.eventPayloadForOperations(revised, actor, OPS_OWNER),
+      ).toEqual({ kind: 'QUOTE', revisionReason: expected });
+      expect(expected !== null).toBe(readAccess(row, actor, null).medical);
+    },
+  );
+
+  it('hides the reason when the request has no owner, and leaves other entries as stored', () => {
+    const { service } = setup();
+    const ops = { id: 'u-ops-2', role: Role.OPS };
+    expect(service.eventPayloadForOperations(revised, ops, null)).toEqual({
+      kind: 'QUOTE',
+      revisionReason: null,
+    });
+    const assignment = { kind: 'ASSIGNMENT', assignedToId: OPS_OWNER };
+    expect(service.eventPayloadForOperations(assignment, ops, null)).toBe(
+      assignment,
+    );
+    expect(service.eventPayloadForOperations(null, ops, null)).toBeNull();
+  });
+});

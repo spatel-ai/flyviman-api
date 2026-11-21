@@ -654,16 +654,34 @@ export class AirAmbulanceService implements OnModuleInit {
   }
 
   /**
-   * A timeline entry's payload for operations (`adminDetail`): the revision
-   * reason of a replaced quotation decrypted, everything else as stored.
+   * A timeline entry's payload for operations (`adminDetail`), everything
+   * as stored except the revision reason of a replaced quotation. That can
+   * describe the patient, so it is decrypted only for the operations readers
+   * `readAccess` gives the medical details (the request's assigned owner and
+   * the super administrator); anyone else gets `revisionReason: null`, and
+   * the entry still shows that the quotation was revised.
    */
-  eventPayloadForOperations(payload: unknown): Record<string, unknown> | null {
+  eventPayloadForOperations(
+    payload: unknown,
+    actor: AirAmbulanceActor,
+    assignedToId: string | null,
+  ): Record<string, unknown> | null {
     if (typeof payload !== 'object' || payload === null) return null;
     const entry = payload as Record<string, unknown>;
+    if (!('revisionReason' in entry)) return entry;
     const reason = entry.revisionReason;
-    return typeof reason === 'string' && isEncrypted(reason)
-      ? { ...entry, revisionReason: this.cipher.decrypt(reason) }
-      : entry;
+    const mayRead =
+      actor.role === Role.SUPER_ADMIN ||
+      (actor.role === Role.OPS && assignedToId === actor.id);
+    if (!mayRead || typeof reason !== 'string') {
+      return { ...entry, revisionReason: null };
+    }
+    return {
+      ...entry,
+      revisionReason: isEncrypted(reason)
+        ? this.cipher.decrypt(reason)
+        : reason,
+    };
   }
 
   /**
