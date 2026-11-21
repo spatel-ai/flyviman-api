@@ -9,6 +9,7 @@ import { DevEmptyLegsController } from './dev-empty-legs.controller.js';
 import { EmptyLegsController } from './empty-legs.controller.js';
 import { EmptyLegsService } from './empty-legs.service.js';
 import { OperatorEmptyLegsController } from './operator-empty-legs.controller.js';
+import { EmptyLegReportsService } from './empty-leg-reports.service.js';
 
 /** Empty-leg offers, review, listing, interest and expiry (M7). */
 @Module({
@@ -25,7 +26,7 @@ import { OperatorEmptyLegsController } from './operator-empty-legs.controller.js
     AdminEmptyLegsController,
     DevEmptyLegsController,
   ],
-  providers: [EmptyLegsService],
-  exports: [EmptyLegsService],
+  providers: [EmptyLegsService, EmptyLegReportsService],
+  exports: [EmptyLegsService, EmptyLegReportsService],
 })
 export class EmptyLegsModule {}

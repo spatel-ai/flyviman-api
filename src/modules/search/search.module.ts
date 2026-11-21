@@ -10,6 +10,7 @@ import { ScheduledSearchController } from './scheduled-search.controller.js';
 import { ScheduledSearchService } from './scheduled-search.service.js';
 import { SearchController } from './search.controller.js';
 import { SearchService } from './search.service.js';
+import { SearchReportsService } from './search-reports.service.js';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { SearchService } from './search.service.js';
   ],
   // Scheduled first, so `search/scheduled/…` never reaches `search/:searchId`.
   controllers: [ScheduledSearchController, SearchController],
-  providers: [SearchService, ScheduledSearchService],
-  exports: [SearchService],
+  providers: [SearchService, ScheduledSearchService, SearchReportsService],
+  exports: [SearchService, SearchReportsService],
 })
 export class SearchModule {}

@@ -77,7 +77,7 @@ const REFERENCE_ATTEMPTS = 5;
  * question waiting for the customer still holds it, so it counts too;
  * answering it moves between two open statuses and never adds one.
  */
-const OPEN_STATUSES: BookingStatus[] = [
+export const OPEN_STATUSES: BookingStatus[] = [
   BookingStatus.REQUESTED,
   BookingStatus.OPERATOR_PENDING,
   BookingStatus.CLARIFICATION_REQUESTED,

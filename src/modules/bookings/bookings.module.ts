@@ -27,6 +27,7 @@ import { MeBookingsController } from './me-bookings.controller.js';
 import { OperatorBookingRequestsController } from './operator-booking-requests.controller.js';
 import { OperatorChangeRequestsController } from './operator-change-requests.controller.js';
 import { TripsService } from './trips.service.js';
+import { BookingReportsService } from './booking-reports.service.js';
 
 /**
  * Bookings (M8): creation from a search result and the customer's reads;
@@ -66,8 +67,9 @@ import { TripsService } from './trips.service.js';
     BookingRequestsService,
     AdminBookingsService,
     ChangeRequestListsService,
+    BookingReportsService,
     FieldCipher,
   ],
-  exports: [BookingsService],
+  exports: [BookingsService, BookingReportsService],
 })
 export class BookingsModule {}
