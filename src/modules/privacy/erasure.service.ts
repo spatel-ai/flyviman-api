@@ -134,6 +134,9 @@ export class ErasureService {
       // finishes first and is seen below; one after it finds the account
       // erased (`UsersService.lockLiveCustomer`).
       await this.users.lockCustomer(id, tx);
+      // Before the records: a payment or cancellation marks its key, then
+      // locks its booking. Rolled back with the rest if refused below.
+      const idempotencyKeys = await forgetIdempotencyKeys(tx, id);
       await this.bookings.lockAll(id, tx);
       await this.airAmbulance.lockAll(id, tx);
       const account = await this.users.lockForErasure(id, tx);
@@ -162,7 +165,6 @@ export class ErasureService {
       const notifications = await this.notifications.eraseFor(id, tx);
       const enquiries = await this.enquiries.eraseFrom(account, tx);
       const emptyLegAlerts = await this.emptyLegs.forgetInterests(id, tx);
-      const idempotencyKeys = await forgetIdempotencyKeys(tx, id);
       const sessions = await this.auth.deleteAllSessions(id, tx);
       await this.users.anonymise(id, now, tx);
       // Counts only: nothing that was erased is copied into the audit log.
