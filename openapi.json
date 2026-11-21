@@ -1716,6 +1716,34 @@
         ]
       }
     },
+    "/api/v1/operator/dashboard": {
+      "get": {
+        "description": "Open booking requests, quotes sent and expiring, confirmed trips in the next 14 days, fleet and document status, and live empty legs. Staff get only the sections their capabilities open, counted over the aircraft in their reach; other sections are `null`. Counts only: no passenger or medical data.",
+        "operationId": "OperatorDashboardController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDashboardResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Counts for the operator dashboard",
+        "tags": [
+          "operator"
+        ]
+      }
+    },
     "/api/v1/operator/staff": {
       "get": {
         "operationId": "OperatorStaffController_list",
@@ -10346,6 +10374,239 @@
           "fileId"
         ]
       },
+      "DashboardRequestsDto": {
+        "type": "object",
+        "properties": {
+          "open": {
+            "type": "number",
+            "description": "Booking requests waiting in the inbox (`OPERATOR_PENDING`, `CLARIFICATION_REQUESTED`)."
+          }
+        },
+        "required": [
+          "open"
+        ]
+      },
+      "DashboardQuotesDto": {
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "number",
+            "description": "Quotes sent and not yet answered or expired."
+          },
+          "expiringSoon": {
+            "type": "number",
+            "description": "Of those, valid for less than 48 hours more."
+          }
+        },
+        "required": [
+          "sent",
+          "expiringSoon"
+        ]
+      },
+      "BookingStatus": {
+        "type": "string",
+        "enum": [
+          "REQUESTED",
+          "OPERATOR_PENDING",
+          "CLARIFICATION_REQUESTED",
+          "PRICE_CONFIRMED",
+          "AWAITING_PAYMENT",
+          "CONFIRMED",
+          "SCHEDULED",
+          "COMPLETED",
+          "OPERATOR_UNAVAILABLE",
+          "QUOTE_DECLINED",
+          "EXPIRED",
+          "CANCELLED"
+        ]
+      },
+      "BookingPaymentStatus": {
+        "type": "string",
+        "enum": [
+          "UNPAID",
+          "PARTIALLY_PAID",
+          "PAID",
+          "REFUND_PENDING",
+          "REFUNDED"
+        ]
+      },
+      "DashboardTripDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "description": "ISO 8601 UTC."
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "paymentStatus",
+          "originName",
+          "destinationName",
+          "departureAt"
+        ]
+      },
+      "DashboardTripsDto": {
+        "type": "object",
+        "properties": {
+          "upcomingCount": {
+            "type": "number",
+            "description": "Confirmed trips departing in the next 14 days."
+          },
+          "upcoming": {
+            "description": "The next five, soonest first. No passenger data.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardTripDto"
+            }
+          }
+        },
+        "required": [
+          "upcomingCount",
+          "upcoming"
+        ]
+      },
+      "DashboardFleetDto": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "number"
+          },
+          "pendingReview": {
+            "type": "number"
+          },
+          "other": {
+            "type": "number",
+            "description": "Draft, rejected or suspended listings."
+          },
+          "documentsPending": {
+            "type": "number",
+            "description": "Aircraft documents waiting for verification."
+          },
+          "documentsExpiring": {
+            "type": "number",
+            "description": "Aircraft documents (not rejected) expiring within 30 days."
+          },
+          "documentsExpired": {
+            "type": "number",
+            "description": "Aircraft documents (not rejected) past expiry."
+          }
+        },
+        "required": [
+          "approved",
+          "pendingReview",
+          "other",
+          "documentsPending",
+          "documentsExpiring",
+          "documentsExpired"
+        ]
+      },
+      "DashboardEmptyLegsDto": {
+        "type": "object",
+        "properties": {
+          "live": {
+            "type": "number",
+            "description": "Published and not yet expired."
+          },
+          "expiringSoon": {
+            "type": "number",
+            "description": "Of those, expiring within 48 hours."
+          }
+        },
+        "required": [
+          "live",
+          "expiringSoon"
+        ]
+      },
+      "OperatorDashboardResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "requests": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DashboardRequestsDto"
+              }
+            ]
+          },
+          "quotes": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DashboardQuotesDto"
+              }
+            ]
+          },
+          "trips": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DashboardTripsDto"
+              }
+            ]
+          },
+          "fleet": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DashboardFleetDto"
+              }
+            ]
+          },
+          "emptyLegs": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DashboardEmptyLegsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "requests",
+          "quotes",
+          "trips",
+          "fleet",
+          "emptyLegs"
+        ]
+      },
       "StaffStatus": {
         "type": "string",
         "enum": [
@@ -16033,33 +16294,6 @@
           "resultId",
           "currency",
           "cancellationTermsVersion"
-        ]
-      },
-      "BookingStatus": {
-        "type": "string",
-        "enum": [
-          "REQUESTED",
-          "OPERATOR_PENDING",
-          "CLARIFICATION_REQUESTED",
-          "PRICE_CONFIRMED",
-          "AWAITING_PAYMENT",
-          "CONFIRMED",
-          "SCHEDULED",
-          "COMPLETED",
-          "OPERATOR_UNAVAILABLE",
-          "QUOTE_DECLINED",
-          "EXPIRED",
-          "CANCELLED"
-        ]
-      },
-      "BookingPaymentStatus": {
-        "type": "string",
-        "enum": [
-          "UNPAID",
-          "PARTIALLY_PAID",
-          "PAID",
-          "REFUND_PENDING",
-          "REFUNDED"
         ]
       },
       "BookingPriceDto": {
