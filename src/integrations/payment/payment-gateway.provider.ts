@@ -8,7 +8,8 @@ import type { IncomingHttpHeaders } from 'node:http';
  * carries gateway references, amounts and statuses only.
  *
  * Money is integer minor units (paise) with an ISO 4217 code, as Razorpay
- * itself takes it. Only the mock exists in this build (PAYMENT_PROVIDER).
+ * itself takes it. Implementations: the mock (default, every test) and
+ * Razorpay (PAYMENT_PROVIDER).
  */
 export abstract class PaymentGatewayProvider {
   /** The `:provider` segment of `POST /webhooks/payments/:provider`. */
@@ -138,6 +139,10 @@ export interface WebhookEvent {
   currency?: string;
   /** A payment's method type only (see `GatewayPayment.method`). */
   method?: string;
+  /** The payment's or refund's status as the gateway reported it. */
+  status?: string;
+  /** When the gateway raised the event (ISO 8601, UTC). */
+  createdAt?: string;
 }
 
 export type WebhookParseResult =

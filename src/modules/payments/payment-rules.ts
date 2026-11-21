@@ -8,7 +8,10 @@ import {
   PriceType,
   RefundStatus,
 } from '../../generated/prisma/enums.js';
-import type { GatewayPaymentStatus } from '../../integrations/payment/payment-gateway.provider.js';
+import type {
+  GatewayPaymentStatus,
+  WebhookEvent,
+} from '../../integrations/payment/payment-gateway.provider.js';
 import { EXTRA_MONEY } from '../bookings/paid-amount.js';
 
 /**
@@ -425,4 +428,42 @@ export function bookingPaymentSummary(
   return received - extraReturned >= totalMinor
     ? BookingPaymentStatus.PAID
     : BookingPaymentStatus.PARTIALLY_PAID;
+}
+
+// --- Stored webhook events --------------------------------------------------
+
+/**
+ * What `PaymentEvent.payload` keeps of a verified event: these fields and
+ * nothing else, whatever an adapter's event carries. The table is
+ * append-only, so nothing personal (email, contact, VPA, card) may ever
+ * reach it. `providerOrderId` and `providerPaymentId` stay top-level keys:
+ * the status sweep reads them (`payload #> '{providerOrderId}'`, index
+ * `PaymentEvent_early_notice_order_idx`).
+ */
+export const STORED_EVENT_FIELDS = [
+  'providerEventId',
+  'type',
+  'providerOrderId',
+  'providerPaymentId',
+  'providerRefundId',
+  'receipt',
+  'amountMinor',
+  'currency',
+  'status',
+  'method',
+  'createdAt',
+] as const satisfies readonly (keyof WebhookEvent)[];
+
+export function storedEventPayload(
+  event: WebhookEvent,
+): Record<string, string | number> {
+  const stored: Record<string, string | number> = {};
+  for (const field of STORED_EVENT_FIELDS) {
+    if (!Object.hasOwn(event, field)) continue;
+    const value: unknown = event[field];
+    if (typeof value === 'string' || typeof value === 'number') {
+      stored[field] = value;
+    }
+  }
+  return stored;
 }

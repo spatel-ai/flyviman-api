@@ -38,6 +38,7 @@ import {
   nextPaymentStatus,
   outcomeOfGatewayStatus,
   reviewOnSuccess,
+  storedEventPayload,
 } from './payment-rules.js';
 import { providerOf } from './payments.service.js';
 import { RefundsService } from './refunds.service.js';
@@ -178,15 +179,15 @@ export class PaymentWebhooksService {
       ? await this.bookings.forPayment({ id: found.bookingId }, tx)
       : null;
 
-    // References and amounts only: the parsed event, never the raw body,
-    // which can carry card and contact details (rule 10).
+    // References and amounts only: an allowlist of the parsed event, never
+    // the raw body, which can carry card and contact details (rule 10).
     const { count } = await tx.paymentEvent.createMany({
       data: {
         paymentId: found?.id ?? null,
         provider,
         providerEventId: event.providerEventId,
         type: event.type,
-        payload: event as unknown as Prisma.InputJsonValue,
+        payload: storedEventPayload(event),
         signatureValid: true,
         processedAt: found ? new Date() : null,
       },
@@ -256,7 +257,7 @@ export class PaymentWebhooksService {
         provider,
         providerEventId: event.providerEventId,
         type: event.type,
-        payload: event as unknown as Prisma.InputJsonValue,
+        payload: storedEventPayload(event),
         signatureValid: true,
         processedAt: paymentId ? new Date() : null,
       },
