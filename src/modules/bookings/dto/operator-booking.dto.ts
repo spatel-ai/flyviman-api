@@ -153,6 +153,28 @@ export class OperatorBookingDetailDto extends OperatorBookingSummaryDto {
   updatedAt: string;
 }
 
+/**
+ * What the operator's cancellation answers: references, statuses and times
+ * only, since an idempotent answer is kept for replay (D-128).
+ * `GET /operator/bookings/:reference` has the details.
+ */
+export class OperatorBookingCancelledDto {
+  @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
+  reference: string;
+
+  @ApiProperty({ enum: BookingStatus, enumName: 'BookingStatus' })
+  status: BookingStatus;
+
+  @ApiProperty({ enum: BookingPaymentStatus, enumName: 'BookingPaymentStatus' })
+  paymentStatus: BookingPaymentStatus;
+
+  @ApiProperty({ format: 'date-time' })
+  cancelledAt: string;
+
+  @ApiProperty({ format: 'date-time' })
+  updatedAt: string;
+}
+
 /** The moves an operator makes on a confirmed booking. */
 export const OPERATOR_STATUS_MOVES = [
   BookingStatus.SCHEDULED,

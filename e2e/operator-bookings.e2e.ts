@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
+import type { ConfigService } from '@nestjs/config';
 import { APIRequestContext, expect, test } from '@playwright/test';
+import { FieldCipher } from '../src/common/crypto/field-cipher.js';
 import {
   latestLinkToken,
   outbox,
@@ -595,6 +597,31 @@ test.describe('POST /operator/bookings/:reference/cancel', () => {
       status: 'CONFIRMED',
       paymentStatus: 'PAID',
     });
+    // A traveller and a special request, which the answer must not repeat.
+    // Stored encrypted, as the API stores them.
+    const cipher = new FieldCipher({
+      getOrThrow: () => process.env.DATA_ENCRYPTION_KEY,
+    } as unknown as ConfigService);
+    await withPrisma(async (prisma) => {
+      const row = await prisma.booking.update({
+        where: { reference },
+        data: {
+          specialRequests: cipher.encrypt('Wheelchair at the steps for Meera'),
+        },
+      });
+      await prisma.bookingPassenger.create({
+        data: {
+          bookingId: row.id,
+          firstName: 'Meera',
+          lastName: 'Kapoor',
+          dateOfBirth: new Date('1980-06-01'),
+          nationality: 'IN',
+          documentType: 'PASSPORT',
+          documentNumber: cipher.encrypt('ZZ1122334'),
+          documentExpiry: new Date('2032-01-01'),
+        },
+      });
+    });
 
     // The reason is required, 3 to 500 characters of plain text.
     for (const data of [
@@ -630,15 +657,31 @@ test.describe('POST /operator/bookings/:reference/cancel', () => {
     const key = randomUUID();
     const first = await cancel(request, reference, { reason }, key);
     expect(first.status()).toBe(200);
-    expect((await first.json()).data).toMatchObject({
+    // References, statuses and times only: the answer is kept for replay (D-128).
+    const answer = (await first.json()).data;
+    expect(answer).toEqual({
       reference,
       status: 'CANCELLED',
       paymentStatus: 'PAID',
-      actions: { cancel: false },
+      cancelledAt: expect.any(String),
+      updatedAt: expect.any(String),
     });
     const replay = await cancel(request, reference, { reason }, key);
     expect(replay.status()).toBe(200);
     expect(replay.headers()['idempotent-replayed']).toBe('true');
+    expect((await replay.json()).data).toEqual(answer);
+    // The stored answer holds no passenger name and no special request.
+    const kept = await withPrisma((prisma) =>
+      prisma.idempotencyKey.findMany({ where: { key } }),
+    );
+    expect(kept).toHaveLength(1);
+    expect(kept[0].responseBody).toEqual(answer);
+    for (const text of ['Meera', 'Kapoor', 'Wheelchair'])
+      expect(JSON.stringify(kept[0].responseBody)).not.toContain(text);
+    // The detail is read again for the screen.
+    expect(
+      (await (await request.get(`operator/bookings/${reference}`)).json()).data,
+    ).toMatchObject({ status: 'CANCELLED', actions: { cancel: false } });
     // A new key on a cancelled booking is refused.
     const second = await cancel(request, reference, { reason });
     expect(second.status()).toBe(409);

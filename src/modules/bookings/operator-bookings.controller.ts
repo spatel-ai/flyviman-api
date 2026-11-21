@@ -27,6 +27,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import { BookingReferencePipe } from './booking-reference.pipe.js';
 import {
   CancelOperatorBookingDto,
+  OperatorBookingCancelledDto,
   OperatorBookingDetailDto,
   OperatorBookingQueryDto,
   OperatorBookingSummaryDto,
@@ -96,7 +97,7 @@ export class OperatorBookingsController {
   @ApiOperation({
     summary: 'Cancel a booking you cannot fly, with a reason',
     description:
-      'From any status before `COMPLETED`. Moves the booking to `CANCELLED` at once, releases the aircraft’s hold, closes any open quote and change request, and records a completed cancellation with no charge: everything the customer paid is recorded as due back, for Flyviman finance to refund (nothing is refunded here). The reason is kept for you and Flyviman, stored encrypted; the customer is told the booking was cancelled. 409 `BOOKING_NOT_CANCELLABLE` once completed or closed; 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s final answer. Audited. A repeat with the same `Idempotency-Key` and body returns the first answer.',
+      'From any status before `COMPLETED`. Moves the booking to `CANCELLED` at once, releases the aircraft’s hold, closes any open quote and change request, and records a completed cancellation with no charge: everything the customer paid is recorded as due back, for Flyviman finance to refund (nothing is refunded here). The reason is kept for you and Flyviman, stored encrypted; the customer is told the booking was cancelled. 409 `BOOKING_NOT_CANCELLABLE` once completed or closed; 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s final answer. Audited. Answers references, statuses and times only (`GET /operator/bookings/:reference` has the details). A repeat with the same `Idempotency-Key` and body returns the first answer.',
   })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -104,13 +105,13 @@ export class OperatorBookingsController {
     description: 'A UUID, new for each cancellation and reused on retry.',
     schema: { type: 'string', format: 'uuid' },
   })
-  @ApiOkResponse({ type: OperatorBookingDetailDto })
+  @ApiOkResponse({ type: OperatorBookingCancelledDto })
   cancel(
     @CurrentUser() user: AuthUser,
     @Param('reference', BookingReferencePipe) reference: string,
     @Body() body: CancelOperatorBookingDto,
     @IdempotencyClaimParam() claim: IdempotencyClaim,
-  ): Promise<OperatorBookingDetailDto> {
+  ): Promise<OperatorBookingCancelledDto> {
     return this.bookings.cancel(user, reference, body.reason, claim);
   }
 }

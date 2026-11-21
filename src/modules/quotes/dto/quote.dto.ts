@@ -153,6 +153,25 @@ export class QuoteResponseDto {
   updatedAt: string;
 }
 
+/**
+ * What accepting a quote answers: references, status and time only, since an
+ * idempotent answer is kept for replay (D-128); the operator's inclusions and
+ * exclusions are free text. `GET /quotes/:reference` has the details.
+ */
+export class QuoteAcceptedDto {
+  @ApiProperty({ example: 'FLY-QT-7K2M9Q' })
+  reference: string;
+
+  @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
+  bookingReference: string;
+
+  @ApiProperty({ enum: QuoteStatus, enumName: 'QuoteStatus' })
+  status: QuoteStatus;
+
+  @ApiProperty({ format: 'date-time' })
+  updatedAt: string;
+}
+
 /** The operator's own price for its quote; never in a customer's view (D-099). */
 export class OperatorQuotePriceDto {
   @ApiProperty({

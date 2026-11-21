@@ -32,6 +32,7 @@ import { BookingReferencePipe } from './booking-reference.pipe.js';
 import { BookingRequestsService } from './booking-requests.service.js';
 import {
   BookingMessageInputDto,
+  BookingRequestAcceptedDto,
   BookingNoteDto,
   BookingNoteInputDto,
   OperatorBookingRequestDetailDto,
@@ -93,15 +94,15 @@ export class OperatorBookingRequestsController {
   @ApiOperation({
     summary: 'Accept the request at its proposed price',
     description:
-      'Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED` and at once on to `AWAITING_PAYMENT` (every payment model asks for payment then): the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.',
+      'Moves `OPERATOR_PENDING` to `PRICE_CONFIRMED` and at once on to `AWAITING_PAYMENT` (every payment model asks for payment then): the price becomes `CONFIRMED` on the terms the customer was shown, and your acceptance is recorded. Checks first that your company and the aircraft are still approved (409 `OPERATOR_NOT_APPROVED`, `AIRCRAFT_NOT_APPROVED`) and the held time still free and ahead (409 `BOOKING_UNAVAILABLE`); the hold is kept another 48 hours (`BOOKING_HOLD_HOURS`). 409 `BOOKING_INVALID_TRANSITION` from another status, for a request priced on request (send a quote) or while a quote waits for the customer. Answers the reference, status and time only (`GET /operator/booking-requests/:reference` has the details). A repeat with the same `Idempotency-Key` returns the first answer. Audited; the customer is notified.',
   })
   @ApiHeader(IDEMPOTENCY_HEADER)
-  @ApiOkResponse({ type: OperatorBookingRequestDetailDto })
+  @ApiOkResponse({ type: BookingRequestAcceptedDto })
   accept(
     @CurrentUser() user: AuthUser,
     @Param('reference', BookingReferencePipe) reference: string,
     @IdempotencyClaimParam() claim: IdempotencyClaim,
-  ): Promise<OperatorBookingRequestDetailDto> {
+  ): Promise<BookingRequestAcceptedDto> {
     return this.requests.accept(user, reference, claim);
   }
 

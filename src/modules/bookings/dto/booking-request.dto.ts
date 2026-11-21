@@ -160,6 +160,22 @@ export class OperatorBookingRequestDto {
   updatedAt: string;
 }
 
+/**
+ * What accepting a request answers: references, status and time only, since
+ * an idempotent answer is kept for replay (D-128).
+ * `GET /operator/booking-requests/:reference` has the details.
+ */
+export class BookingRequestAcceptedDto {
+  @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
+  reference: string;
+
+  @ApiProperty({ enum: BookingStatus, enumName: 'BookingStatus' })
+  status: BookingStatus;
+
+  @ApiProperty({ format: 'date-time' })
+  updatedAt: string;
+}
+
 export class OperatorBookingRequestDetailDto extends OperatorBookingRequestDto {
   @ApiProperty({ type: ItineraryDto })
   itinerary: ItineraryDto;
