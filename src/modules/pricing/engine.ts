@@ -2,6 +2,7 @@ import type {
   AircraftCategory,
   AircraftPricingModel,
 } from '../../generated/prisma/enums.js';
+import type { PriceAssumption, PriceWarning } from './notes.js';
 import type { OperatorRate, ResolvedRules, RuleRow } from './rules.js';
 
 /**
@@ -151,9 +152,11 @@ export interface EngineResult {
   currency: 'INR';
   validUntil: Date;
   appliedRules: AppliedRule[];
-  assumptions: string[];
+  /** Full internal wording; customers see `customerAssumptions` of it. */
+  assumptions: PriceAssumption[];
   exclusions: string[];
-  warnings: string[];
+  /** Internal: never shown to customers. */
+  warnings: PriceWarning[];
 }
 
 const DEFAULT_VALIDITY_MINUTES = 60;
@@ -339,17 +342,36 @@ function strategyAssumption(
   outcome: Outcome,
   ferryFits: boolean,
   names: { base: string | null; destination: string; nights: number },
-): string {
+): PriceAssumption {
   const { base, destination, nights } = names;
   if (strategy === 'RETURN_TO_BASE') {
     if (outcome === 'ONLY') {
-      return `Round trip: the aircraft stays at its base, ${destination}, between the flights`;
+      return {
+        code: 'ROUND_TRIP_AT_BASE',
+        text: `Round trip: the aircraft stays at its base, ${destination}, between the flights`,
+      };
     }
     const ferry = `Round trip: the aircraft returns to ${base} between the flights and comes back for the return`;
-    return outcome === 'CHEAPER'
-      ? `${ferry}, priced below waiting at ${destination}`
-      : `${ferry}; waiting at ${destination} could not be fully priced`;
+    return {
+      code: 'ROUND_TRIP_RETURN_TO_BASE',
+      text:
+        outcome === 'CHEAPER'
+          ? `${ferry}, priced below waiting at ${destination}`
+          : `${ferry}; waiting at ${destination} could not be fully priced`,
+    };
   }
+  return {
+    code: 'ROUND_TRIP_WAIT',
+    text: waitWording(outcome, ferryFits, names),
+  };
+}
+
+function waitWording(
+  outcome: Outcome,
+  ferryFits: boolean,
+  names: { base: string | null; destination: string; nights: number },
+): string {
+  const { base, destination, nights } = names;
   const stay =
     nights > 0
       ? `${nights} night${nights === 1 ? '' : 's'} at ${destination}`
@@ -409,9 +431,9 @@ function priceTrip(
 ): { result: EngineResult; strategy: RoundTripStrategy; missing: string[] } {
   const { rules, aircraft, origin, destination } = input;
   const missing: string[] = [];
-  const assumptions: string[] = [];
+  const assumptions: PriceAssumption[] = [];
   const exclusions: string[] = [];
-  const warnings: string[] = [];
+  const warnings: PriceWarning[] = [];
   const used: RuleRow[] = [];
   const use = <T>(entry: { rule: RuleRow; config: T } | undefined) => {
     if (entry) used.push(entry.rule);
@@ -420,9 +442,10 @@ function priceTrip(
 
   const factor = use(rules.ROUTING_FACTOR)?.factor ?? 1;
   use(rules.TIME_ALLOWANCE);
-  assumptions.push(
-    `Great-circle distance with routing factor ${factor.toFixed(2)}`,
-  );
+  assumptions.push({
+    code: 'ROUTING',
+    text: `Great-circle distance with routing factor ${factor.toFixed(2)}`,
+  });
 
   const leg = legMetrics(
     rules,
@@ -458,11 +481,12 @@ function priceTrip(
       if (back.distanceKm > free) {
         position.back = back.minutes ?? 0;
         position.backKm = back.distanceKm;
-        assumptions.push(
-          turn
+        assumptions.push({
+          code: 'REPOSITIONING',
+          text: turn
             ? `Aircraft returns to ${aircraft.base.name} after the return flight`
             : `Aircraft returns to ${aircraft.base.name} after drop-off`,
-        );
+        });
       }
     }
   }
@@ -497,7 +521,7 @@ function priceTrip(
       appliedRules: applied(used),
       assumptions,
       exclusions,
-      warnings: [...warnings, reason],
+      warnings: [...warnings, { code: 'NOT_PRICED', text: reason }],
     } satisfies EngineResult,
   });
 
@@ -545,6 +569,32 @@ function priceTrip(
   const commission = use(rules.COMMISSION);
   const tax = use(rules.TAX);
 
+  // A rate's inclusive flag with nothing to take out is ignored: the amount
+  // is used as it is, and finance is told (once per flag) on the stored
+  // calculation.
+  const checkFlags = (rate: OperatorRate) => {
+    const flag = (code: PriceWarning['code'], text: string) => {
+      if (!warnings.some((warning) => warning.code === code)) {
+        warnings.push({ code, text });
+      }
+    };
+    if (rate.taxInclusive && !tax) {
+      flag(
+        'TAX_INCLUSIVE_IGNORED',
+        'An operator rate is marked tax-inclusive, but no tax rule is in force; the flag was ignored.',
+      );
+    }
+    if (rate.commissionInclusive && commission?.mode !== 'ADD_ON') {
+      flag(
+        'COMMISSION_INCLUSIVE_IGNORED',
+        commission
+          ? "An operator rate is marked commission-inclusive, but commission is deducted from the operator's payable; the flag was ignored."
+          : 'An operator rate is marked commission-inclusive, but no commission rule is in force; the flag was ignored.',
+      );
+    }
+  };
+  checkFlags(flight.rate);
+
   // Operator rates normalised to tax- and commission-exclusive amounts, so
   // commission and tax are each added exactly once (pricing-engine.md, step 6).
   const exclusive = (rate: OperatorRate) => {
@@ -560,7 +610,10 @@ function priceTrip(
       ? exclusive(hourly.config)
       : null;
   const useHourly = () => {
-    if (hourly) used.push(hourly.rule);
+    if (hourly) {
+      used.push(hourly.rule);
+      checkFlags(hourly.config);
+    }
   };
 
   const breakdown: LineItem[] = [];
@@ -629,10 +682,16 @@ function priceTrip(
 
   if (position.out || position.back) {
     if (!positioning) {
-      warnings.push('No positioning rate is set; positioning is not included.');
+      warnings.push({
+        code: 'RATE_MISSING',
+        text: 'No positioning rate is set; positioning is not included.',
+      });
       exclusions.push('Aircraft positioning');
     } else if (hourlyMinor == null) {
-      warnings.push('No hourly rate is set; positioning is not included.');
+      warnings.push({
+        code: 'RATE_MISSING',
+        text: 'No hourly rate is set; positioning is not included.',
+      });
       exclusions.push('Aircraft positioning');
     } else {
       used.push(rules.POSITIONING!.rule);
@@ -747,7 +806,9 @@ function priceTrip(
     if (amount == null) {
       const warning = `Landing charges at ${point.name} are not on record.`;
       const exclusion = `Landing charges at ${placeName(point)}`;
-      if (!warnings.includes(warning)) warnings.push(warning);
+      if (!warnings.some((entry) => entry.text === warning)) {
+        warnings.push({ code: 'CHARGE_NOT_ON_RECORD', text: warning });
+      }
       if (!exclusions.includes(exclusion)) exclusions.push(exclusion);
       lackFor(ferryArrival(index), exclusion);
     } else landing += amount;
@@ -765,7 +826,12 @@ function priceTrip(
       lackFor(ferryStop(index), exclusion);
     } else handling += amount;
   }
-  if (!handlingKnown) warnings.push('Some handling charges are not on record.');
+  if (!handlingKnown) {
+    warnings.push({
+      code: 'CHARGE_NOT_ON_RECORD',
+      text: 'Some handling charges are not on record.',
+    });
+  }
   const landingHandling = landing + handling;
   if (landingHandling > 0) {
     breakdown.push({
@@ -802,7 +868,10 @@ function priceTrip(
       });
     }
   } else {
-    warnings.push('No commission rule is in force.');
+    warnings.push({
+      code: 'COMMISSION_MISSING',
+      text: 'No commission rule is in force.',
+    });
   }
 
   const markup = use(rules.MARKUP);
@@ -839,7 +908,10 @@ function priceTrip(
   if (capped) {
     // Customers see only that a limit applied; the stored line's basis
     // keeps the detail.
-    assumptions.push(`${discount!.name} applied up to its limit for this trip`);
+    assumptions.push({
+      code: 'DISCOUNT_CAPPED',
+      text: `${discount!.name} applied up to its limit for this trip`,
+    });
   }
   if (discountMinor > 0) {
     breakdown.push({
@@ -861,9 +933,10 @@ function priceTrip(
   );
   if (promotion) {
     if (promotion.capped) {
-      assumptions.push(
-        `${promotion.name} applied up to its limit for this trip`,
-      );
+      assumptions.push({
+        code: 'PROMOTION_CAPPED',
+        text: `${promotion.name} applied up to its limit for this trip`,
+      });
     }
     if (promotion.amountMinor > 0) {
       breakdown.push({
@@ -882,7 +955,10 @@ function priceTrip(
     taxMinor = percentOf(baseMinor + feesMinor - discountsMinor, tax.percent);
     breakdown.push({ code: 'TAX', label: tax.name, amountMinor: taxMinor });
   } else {
-    warnings.push('No tax rule is in force; tax is not included.');
+    warnings.push({
+      code: 'TAX_MISSING',
+      text: 'No tax rule is in force; tax is not included.',
+    });
     exclusions.push('Taxes');
   }
 
@@ -944,13 +1020,13 @@ function turnaroundLines(
   hourlyMinor: number | null,
   useHourly: () => void,
   use: <T>(entry: { rule: RuleRow; config: T } | undefined) => T | undefined,
-  out: { missing: string[]; warnings: string[]; exclusions: string[] },
+  out: { missing: string[]; warnings: PriceWarning[]; exclusions: string[] },
 ): LineItem[] {
   const { rules, aircraft, destination } = input;
   const lines: LineItem[] = [];
   const lack = (what: string, warning: string) => {
     out.missing.push(what);
-    out.warnings.push(warning);
+    out.warnings.push({ code: 'RATE_MISSING', text: warning });
     out.exclusions.push(what);
   };
 
@@ -1063,9 +1139,10 @@ function turnaroundLines(
   // not on record is a warning, not a missing input of the strategy.
   const parking = chargeAt(destination, aircraft.category)?.parkingMinor;
   if (parking == null) {
-    out.warnings.push(
-      `Parking charges at ${destination.name} are not on record.`,
-    );
+    out.warnings.push({
+      code: 'CHARGE_NOT_ON_RECORD',
+      text: `Parking charges at ${destination.name} are not on record.`,
+    });
     out.exclusions.push(`Parking at ${destination.name}`);
   } else if (parking > 0) {
     lines.push({

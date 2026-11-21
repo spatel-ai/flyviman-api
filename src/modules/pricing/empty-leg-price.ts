@@ -1,4 +1,5 @@
 import type { AppliedRule, LineItem } from './engine.js';
+import type { PriceAssumption, PriceWarning } from './notes.js';
 import type { ResolvedRules, RuleRow } from './rules.js';
 
 /**
@@ -25,9 +26,9 @@ export interface EmptyLegPriceResult {
   platformRevenueMinor: number;
   currency: 'INR';
   appliedRules: AppliedRule[];
-  assumptions: string[];
+  assumptions: PriceAssumption[];
   exclusions: string[];
-  warnings: string[];
+  warnings: PriceWarning[];
 }
 
 /** `amount / (1 + percent / 100)`, half up, in whole paise. */
@@ -50,7 +51,7 @@ export function priceEmptyLegTotal(input: {
 }): EmptyLegPriceResult {
   const { rules, totalMinor } = input;
   const used: RuleRow[] = [];
-  const warnings: string[] = [];
+  const warnings: PriceWarning[] = [];
   const exclusions: string[] = [];
 
   const tax = rules.TAX;
@@ -59,7 +60,10 @@ export function priceEmptyLegTotal(input: {
     used.push(tax.rule);
     preTaxMinor = withoutPercent(totalMinor, tax.config.percent);
   } else {
-    warnings.push('No tax rule is in force; no tax is taken out.');
+    warnings.push({
+      code: 'TAX_MISSING',
+      text: 'No tax rule is in force; no tax is taken out.',
+    });
     exclusions.push('Taxes');
   }
   const taxMinor = totalMinor - preTaxMinor;
@@ -79,7 +83,10 @@ export function priceEmptyLegTotal(input: {
         preTaxMinor - percentOf(preTaxMinor, commission.config.percent);
     }
   } else {
-    warnings.push('No commission rule is in force.');
+    warnings.push({
+      code: 'COMMISSION_MISSING',
+      text: 'No commission rule is in force.',
+    });
   }
 
   const breakdown: LineItem[] = [
@@ -122,7 +129,10 @@ export function priceEmptyLegTotal(input: {
       version: rule.version,
     })),
     assumptions: [
-      "The operator's empty-leg price is the customer's total, tax included",
+      {
+        code: 'EMPTY_LEG_PRICE',
+        text: "The operator's empty-leg price is the customer's total, tax included",
+      },
     ],
     exclusions,
     warnings,

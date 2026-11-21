@@ -5,6 +5,7 @@ import {
   percentOf,
   type PromotionInput,
 } from './engine.js';
+import type { PriceAssumption, PriceWarning } from './notes.js';
 import type { ResolvedRules, RuleRow } from './rules.js';
 
 /**
@@ -46,9 +47,9 @@ export interface QuotePriceResult {
   platformRevenueMinor: number;
   currency: 'INR';
   appliedRules: AppliedRule[];
-  assumptions: string[];
+  assumptions: PriceAssumption[];
   exclusions: string[];
-  warnings: string[];
+  warnings: PriceWarning[];
 }
 
 export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
@@ -60,10 +61,13 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
     used.push(entry.rule);
     return entry.config as NonNullable<ResolvedRules[K]>['config'];
   };
-  const warnings: string[] = [];
+  const warnings: PriceWarning[] = [];
   const exclusions: string[] = [];
-  const assumptions = [
-    "The operator's quoted price, before Flyviman's charges and tax",
+  const assumptions: PriceAssumption[] = [
+    {
+      code: 'OPERATOR_QUOTE',
+      text: "The operator's quoted price, before Flyviman's charges and tax",
+    },
   ];
 
   const baseMinor = input.operatorPriceMinor;
@@ -90,7 +94,10 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
       });
     }
   } else {
-    warnings.push('No commission rule is in force.');
+    warnings.push({
+      code: 'COMMISSION_MISSING',
+      text: 'No commission rule is in force.',
+    });
   }
 
   const markup = use('MARKUP');
@@ -122,7 +129,10 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
   const discountMinor = Math.min(offeredMinor, platformMinor);
   const capped = discountMinor > 0 && discountMinor < offeredMinor;
   if (capped) {
-    assumptions.push(`${discount!.name} applied up to its limit for this trip`);
+    assumptions.push({
+      code: 'DISCOUNT_CAPPED',
+      text: `${discount!.name} applied up to its limit for this trip`,
+    });
   }
   if (discountMinor > 0) {
     breakdown.push({
@@ -144,9 +154,10 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
   );
   if (promotion) {
     if (promotion.capped) {
-      assumptions.push(
-        `${promotion.name} applied up to its limit for this trip`,
-      );
+      assumptions.push({
+        code: 'PROMOTION_CAPPED',
+        text: `${promotion.name} applied up to its limit for this trip`,
+      });
     }
     if (promotion.amountMinor > 0) {
       breakdown.push({
@@ -165,7 +176,10 @@ export function priceOperatorQuote(input: QuotePriceInput): QuotePriceResult {
     taxMinor = percentOf(baseMinor + feesMinor - discountsMinor, tax.percent);
     breakdown.push({ code: 'TAX', label: tax.name, amountMinor: taxMinor });
   } else {
-    warnings.push('No tax rule is in force; tax is not included.');
+    warnings.push({
+      code: 'TAX_MISSING',
+      text: 'No tax rule is in force; tax is not included.',
+    });
     exclusions.push('Taxes');
   }
 

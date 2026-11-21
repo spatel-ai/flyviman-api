@@ -37,7 +37,7 @@ import {
   promotionRefusal,
   PromotionsService,
 } from '../pricing/promotions.service.js';
-import { customerBreakdown } from './breakdown.js';
+import { customerAssumptions, customerBreakdown } from './breakdown.js';
 import { EmptyLegsService } from '../empty-legs/empty-legs.service.js';
 import { calendarDepartures, monthInRange } from './calendar.js';
 import type {
@@ -392,7 +392,7 @@ export class SearchService {
           amountMinor: number;
         }[],
       ),
-      assumptions: (calculation?.assumptions ?? []) as string[],
+      assumptions: customerAssumptions(calculation?.assumptions),
       exclusions: (calculation?.exclusions ?? []) as string[],
       bookingMode,
       confirmationRequirements: confirmationRequirements(
@@ -534,7 +534,7 @@ export class SearchService {
             }
           : null,
         breakdown: customerBreakdown(price.breakdown),
-        assumptions: price.assumptions,
+        assumptions: customerAssumptions(price.assumptions),
       },
     };
   }

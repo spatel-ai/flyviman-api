@@ -159,8 +159,11 @@ describe('priceOperatorQuote (D-172 B)', () => {
     });
     expect(result.totalMinor).toBe(100_000);
     expect(result.warnings).toEqual([
-      'No commission rule is in force.',
-      'No tax rule is in force; tax is not included.',
+      { code: 'COMMISSION_MISSING', text: 'No commission rule is in force.' },
+      {
+        code: 'TAX_MISSING',
+        text: 'No tax rule is in force; tax is not included.',
+      },
     ]);
     expect(result.exclusions).toEqual(['Taxes']);
   });

@@ -204,7 +204,11 @@ export class PriceCalculationSummaryDto {
   @ApiProperty({ enum: PriceType, enumName: 'PriceType' })
   priceType!: PriceType;
   @ApiProperty({ format: 'date-time' }) validUntil!: string;
-  @ApiProperty() warningCount!: number;
+  @ApiProperty({
+    description:
+      'Warnings the caller may see: commission and revenue warnings count for finance and super administrators only.',
+  })
+  warningCount!: number;
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
 }
 
@@ -271,7 +275,12 @@ export class PriceCalculationDetailDto extends PriceCalculationSummaryDto {
   appliedRules!: AppliedRuleDto[];
   @ApiProperty({ type: [String] }) assumptions!: string[];
   @ApiProperty({ type: [String] }) exclusions!: string[];
-  @ApiProperty({ type: [String] }) warnings!: string[];
+  @ApiProperty({
+    type: [String],
+    description:
+      'Commission and revenue warnings are for finance and super administrators only; operations see the others.',
+  })
+  warnings!: string[];
   @ApiProperty({ format: 'date-time' }) availabilityCheckedAt!: string;
   @ApiProperty({ type: String, nullable: true }) overrideReason!: string | null;
   @ApiProperty({

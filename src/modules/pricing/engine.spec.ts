@@ -9,6 +9,9 @@ import {
 } from './engine.js';
 import { resolveRules, type RuleRow } from './rules.js';
 
+/** The stored wording of an assumption or warning. */
+const textOf = (note: { text: string }) => note.text;
+
 const point = (
   id: string,
   latitude: number,
@@ -124,13 +127,13 @@ describe('calculatePrice', () => {
     const far = run([RATE, rule('POSITIONING', { rateFactor: 0.5 })], {
       aircraft: { ...AIRCRAFT, base: C },
     });
-    expect(far.assumptions.join(' ')).toMatch(/returns to C/);
+    expect(far.assumptions.map(textOf).join(' ')).toMatch(/returns to C/);
     const near = point('N', 0, 6.3); // 30 km from B, within the free distance
     const free = run(
       [RATE, rule('POSITIONING', { rateFactor: 0.5, freeWithinKm: 50 })],
       { aircraft: { ...AIRCRAFT, base: near }, origin: near },
     );
-    expect(free.assumptions.join(' ')).not.toMatch(/returns to/);
+    expect(free.assumptions.map(textOf).join(' ')).not.toMatch(/returns to/);
   });
 
   it('does not charge positioning within the free distance', () => {
@@ -168,7 +171,7 @@ describe('calculatePrice', () => {
   it('says what it could not include instead of hiding it', () => {
     const result = run([RATE]);
     expect(result.exclusions).toContain('Landing charges at B');
-    expect(result.warnings.join(' ')).toMatch(/not on record/);
+    expect(result.warnings.map(textOf).join(' ')).toMatch(/not on record/);
   });
 
   it('raises the operator subtotal to the minimum charge', () => {
@@ -266,7 +269,7 @@ describe('calculatePrice', () => {
       aircraft: { ...AIRCRAFT, cruiseSpeedKmh: null, base: A },
     });
     expect(noSpeed.priced).toBe(false);
-    expect(noSpeed.warnings.join(' ')).toMatch(/cruise speed/);
+    expect(noSpeed.warnings.map(textOf).join(' ')).toMatch(/cruise speed/);
   });
 
   it('stays valid for the configured time', () => {
@@ -313,7 +316,7 @@ describe('round trips', () => {
     expect(result.roundTrip?.nights).toBe(0);
     expect(codes(result).WAITING).toBe(2_500_000);
     expect(codes(result).OVERNIGHT).toBeUndefined();
-    expect(result.assumptions.join(' ')).toMatch(/waits at B/);
+    expect(result.assumptions.map(textOf).join(' ')).toMatch(/waits at B/);
   });
 
   it('charges no waiting within the free hours, and none at zero', () => {
@@ -327,7 +330,7 @@ describe('round trips', () => {
       },
     );
     expect(codes(free).WAITING).toBeUndefined();
-    expect(free.warnings.join(' ')).not.toMatch(/waiting/);
+    expect(free.warnings.map(textOf).join(' ')).not.toMatch(/waiting/);
   });
 
   it('charges overnight and crew per night away, not waiting hours', () => {
@@ -373,7 +376,9 @@ describe('round trips', () => {
       INTERIM_POSITIONING: 5_000_000,
     });
     expect(codes(cheaper).OVERNIGHT).toBeUndefined();
-    expect(cheaper.assumptions.join(' ')).toMatch(/returns to A between/);
+    expect(cheaper.assumptions.map(textOf).join(' ')).toMatch(
+      /returns to A between/,
+    );
     expect(cheaper.totalMinor).toBe(sum(cheaper));
   });
 
@@ -381,10 +386,12 @@ describe('round trips', () => {
     const result = run(ALL, { returnAt: at('2026-12-07T04:00:00Z') });
     // WAIT 50,00,000 × 2 nights = 1,00,00,000 = RETURN_TO_BASE: a tie.
     expect(result.roundTrip?.strategy).toBe('WAIT');
-    expect(result.assumptions.join(' ')).toMatch(
+    expect(result.assumptions.map(textOf).join(' ')).toMatch(
       /waits 2 nights at B until the return flight; returning to A between the flights costs the same, so waiting was kept/,
     );
-    expect(result.assumptions.join(' ')).not.toMatch(/priced below/);
+    expect(result.assumptions.map(textOf).join(' ')).not.toMatch(
+      /priced below/,
+    );
     const cheaper = run(
       [
         RATE,
@@ -396,7 +403,7 @@ describe('round trips', () => {
       { returnAt: at('2026-12-07T04:00:00Z') },
     );
     expect(cheaper.roundTrip?.strategy).toBe('WAIT');
-    expect(cheaper.assumptions.join(' ')).toMatch(
+    expect(cheaper.assumptions.map(textOf).join(' ')).toMatch(
       /waits 2 nights at B until the return flight, priced below returning to A/,
     );
   });
@@ -409,7 +416,9 @@ describe('round trips', () => {
       returnAt: at('2026-12-05T09:00:00Z'),
     });
     expect(result.roundTrip?.options.map((o) => o.strategy)).toEqual(['WAIT']);
-    expect(result.assumptions.join(' ')).toMatch(/not time to return to C/);
+    expect(result.assumptions.map(textOf).join(' ')).toMatch(
+      /not time to return to C/,
+    );
   });
 
   it('a strategy with an input not on record loses to a complete one', () => {
@@ -418,7 +427,7 @@ describe('round trips', () => {
       returnAt: at('2026-12-07T04:00:00Z'),
     });
     expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
-    expect(result.warnings.join(' ')).not.toMatch(/overnight/);
+    expect(result.warnings.map(textOf).join(' ')).not.toMatch(/overnight/);
   });
 
   it('warns and excludes what it cannot price when nothing is complete', () => {
@@ -429,7 +438,7 @@ describe('round trips', () => {
     });
     expect(result.roundTrip?.strategy).toBe('WAIT');
     expect(result.roundTrip?.options[0].complete).toBe(false);
-    expect(result.warnings.join(' ')).toMatch(/No waiting charge/);
+    expect(result.warnings.map(textOf).join(' ')).toMatch(/No waiting charge/);
     expect(result.exclusions).toContain('Waiting at B');
   });
 
@@ -441,7 +450,9 @@ describe('round trips', () => {
     expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
     expect(codes(result).OVERNIGHT).toBeUndefined();
     expect(codes(result).INTERIM_REPOSITIONING).toBeUndefined();
-    expect(result.assumptions.join(' ')).toMatch(/stays at its base, B/);
+    expect(result.assumptions.map(textOf).join(' ')).toMatch(
+      /stays at its base, B/,
+    );
   });
 
   it('lands and handles at both ends of both flights', () => {
@@ -526,7 +537,7 @@ describe('sector and fixed-route pricing (M5 4c)', () => {
 
   it('each model reads only its own rate', () => {
     expect(run([RATE], model('SECTOR')).priced).toBe(false);
-    expect(run([RATE], model('SECTOR')).warnings.join(' ')).toMatch(
+    expect(run([RATE], model('SECTOR')).warnings.map(textOf).join(' ')).toMatch(
       /No sector rate/,
     );
     expect(run([SECTOR, FIXED], model('HOURLY')).priced).toBe(false);
@@ -540,7 +551,7 @@ describe('sector and fixed-route pricing (M5 4c)', () => {
     const C = point('C', 0, 3);
     const other = run([FIXED], { ...model('FIXED_ROUTE'), destination: C });
     expect(other.priced).toBe(false);
-    expect(other.warnings.join(' ')).toMatch(/No fixed price/);
+    expect(other.warnings.map(textOf).join(' ')).toMatch(/No fixed price/);
   });
 
   it('positions at the hourly rate, or says it cannot without one', () => {
@@ -559,7 +570,7 @@ describe('sector and fixed-route pricing (M5 4c)', () => {
     const without = run([SECTOR, positioning], based);
     expect(without.priced).toBe(true);
     expect(without.breakdown.map((l) => l.code)).toEqual(['OPERATING']);
-    expect(without.warnings.join(' ')).toMatch(
+    expect(without.warnings.map(textOf).join(' ')).toMatch(
       /No hourly rate is set; positioning/,
     );
     expect(without.exclusions).toContain('Aircraft positioning');
@@ -802,7 +813,9 @@ describe('trip charges, parking and the per-day minimum (M5 4c)', () => {
         strategy: 'WAIT',
         complete: true,
       });
-      expect(result.warnings.join(' ')).toMatch(/Parking charges at B/);
+      expect(result.warnings.map(textOf).join(' ')).toMatch(
+        /Parking charges at B/,
+      );
       expect(result.exclusions).toContain('Parking at B');
     });
   });
@@ -918,9 +931,10 @@ describe('markup, service fee and discount (M5 4c)', () => {
       totalMinor: 10_620_000,
     });
     expect(result.totalMinor).toBe(sum(result));
-    expect(result.assumptions).toContain(
-      'Big offer applied up to its limit for this trip',
-    );
+    expect(result.assumptions).toContainEqual({
+      code: 'DISCOUNT_CAPPED',
+      text: 'Big offer applied up to its limit for this trip',
+    });
     // The detail stays in the stored line, which customers never see.
     expect(result.breakdown.find((l) => l.code === 'DISCOUNT')?.basis).toMatch(
       /5100000 offered.*limited to Flyviman's charges/,
@@ -931,7 +945,7 @@ describe('markup, service fee and discount (M5 4c)', () => {
       rule('COMMISSION', { percent: 10, mode: 'ADD_ON' }),
       ...PLATFORM,
     ]);
-    expect(small.assumptions.join(' ')).not.toMatch(/its limit/);
+    expect(small.assumptions.map(textOf).join(' ')).not.toMatch(/its limit/);
   });
 
   it('a zero setting adds no line', () => {
@@ -1052,9 +1066,10 @@ describe('promotion codes (M10)', () => {
     ).toBe(-450_000);
     expect(result.platformRevenueMinor).toBe(0);
     expect(result.operatorPayableMinor).toBe(10_000_000);
-    expect(result.assumptions).toContain(
-      'Big code applied up to its limit for this trip',
-    );
+    expect(result.assumptions).toContainEqual({
+      code: 'PROMOTION_CAPPED',
+      text: 'Big code applied up to its limit for this trip',
+    });
     expect(result.totalMinor).toBe(sum(result));
   });
 
@@ -1062,7 +1077,7 @@ describe('promotion codes (M10)', () => {
     const result = run([RATE, gst], { promotion: percentCode });
     expect(result.breakdown.map((l) => l.code)).not.toContain('PROMOTION');
     expect(result.discountMinor).toBe(0);
-    expect(result.assumptions.join(' ')).not.toMatch(/its limit/);
+    expect(result.assumptions.map(textOf).join(' ')).not.toMatch(/its limit/);
   });
 
   it('the same inputs and code give the same price', () => {
@@ -1148,7 +1163,7 @@ describe('pricing review fixes (S2)', () => {
     const noCommission = run([RATE, discount]);
     for (const result of [zeroCommission, noCommission]) {
       expect(result.discountMinor).toBe(0);
-      expect(result.assumptions.join(' ')).not.toMatch(/its limit/);
+      expect(result.assumptions.map(textOf).join(' ')).not.toMatch(/its limit/);
       expect(result.breakdown.map((l) => l.code)).not.toContain('DISCOUNT');
       expect(result.totalMinor).toBe(sum(result));
     }
@@ -1172,7 +1187,7 @@ describe('pricing review fixes (S2)', () => {
       const [wait, ferry] = result.roundTrip!.options;
       expect(ferry.totalMinor).toBeLessThan(wait.totalMinor);
       expect(result.roundTrip?.strategy).toBe('WAIT');
-      const said = result.assumptions.join(' ');
+      const said = result.assumptions.map(textOf).join(' ');
       expect(said).toMatch(
         /waits 2 nights at B until the return flight; returning to C between the flights could not be fully priced/,
       );
@@ -1183,7 +1198,7 @@ describe('pricing review fixes (S2)', () => {
       // No overnight or crew rule: two nights at B cannot be priced.
       const result = run([RATE, POSITIONING, ...ON_RECORD], TWO_NIGHTS);
       expect(result.roundTrip?.strategy).toBe('RETURN_TO_BASE');
-      const said = result.assumptions.join(' ');
+      const said = result.assumptions.map(textOf).join(' ');
       expect(said).toMatch(
         /returns to A between the flights and comes back for the return; waiting at B could not be fully priced/,
       );
@@ -1200,7 +1215,7 @@ describe('pricing review fixes (S2)', () => {
       expect([wait.complete, ferry.complete]).toEqual([false, false]);
       expect(ferry.totalMinor).toBeLessThan(wait.totalMinor);
       expect(result.roundTrip?.strategy).toBe('WAIT');
-      const said = result.assumptions.join(' ');
+      const said = result.assumptions.map(textOf).join(' ');
       expect(said).toMatch(
         /neither waiting nor returning to C between the flights could be fully priced, so waiting was kept/,
       );
@@ -1295,7 +1310,7 @@ describe('pricing review fixes (S2)', () => {
       });
       expect(ferry.totalMinor).toBeLessThan(wait.totalMinor);
       expect(result.roundTrip?.strategy).toBe('WAIT');
-      const said = result.assumptions.join(' ');
+      const said = result.assumptions.map(textOf).join(' ');
       expect(said).not.toMatch(/priced below/);
       expect(said).toMatch(
         /returning to Hidden Field between the flights could not be fully priced/,
@@ -1315,7 +1330,9 @@ describe('pricing review fixes (S2)', () => {
         { ...TWO_NIGHTS, aircraft: { ...AIRCRAFT, base: C } },
       );
       expect(result.roundTrip?.strategy).toBe('WAIT');
-      expect(result.assumptions.join(' ')).not.toMatch(/priced below/);
+      expect(result.assumptions.map(textOf).join(' ')).not.toMatch(
+        /priced below/,
+      );
       expect(result.exclusions.join(' ')).not.toMatch(/Hidden Field/);
       expect(
         result.exclusions.filter((e) => e === 'Landing charges at B'),
@@ -1453,5 +1470,58 @@ describe('pricing review fixes (S2)', () => {
     expect(codes(result).OPERATING).toBe(8_474_576);
     expect(codes(result).MIN_BILLABLE).toBeUndefined();
     expect(result.totalMinor).toBe(sum(result));
+  });
+});
+
+describe('inclusive flags with nothing to take out (FXP)', () => {
+  const hourly = (flags: object) =>
+    rule('HOURLY_RATE', { amountMinor: 10_000_000, currency: 'INR', ...flags });
+  const gst = rule('TAX', { name: 'GST', percent: 18 });
+  const addOn = rule('COMMISSION', { percent: 10, mode: 'ADD_ON' });
+  const deducted = rule('COMMISSION', { percent: 10, mode: 'DEDUCTED' });
+  const codesOf = (result: ReturnType<typeof run>) =>
+    result.warnings.map((warning) => warning.code);
+
+  it('a tax-inclusive rate with no tax in force keeps its amount and warns once', () => {
+    const plain = run([hourly({}), addOn]);
+    const flagged = run([hourly({ taxInclusive: true }), addOn]);
+    expect(flagged.totalMinor).toBe(plain.totalMinor);
+    expect(flagged.breakdown).toEqual(plain.breakdown);
+    expect(
+      codesOf(flagged).filter((code) => code === 'TAX_INCLUSIVE_IGNORED'),
+    ).toHaveLength(1);
+    expect(codesOf(plain)).not.toContain('TAX_INCLUSIVE_IGNORED');
+  });
+
+  it('a commission-inclusive rate under deducted commission keeps its amount and warns', () => {
+    const plain = run([hourly({}), deducted, gst]);
+    const flagged = run([hourly({ commissionInclusive: true }), deducted, gst]);
+    expect(flagged.totalMinor).toBe(plain.totalMinor);
+    expect(flagged.operatorPayableMinor).toBe(plain.operatorPayableMinor);
+    expect(codesOf(flagged)).toContain('COMMISSION_INCLUSIVE_IGNORED');
+    expect(codesOf(plain)).not.toContain('COMMISSION_INCLUSIVE_IGNORED');
+  });
+
+  it('says nothing when the flags are applied', () => {
+    const result = run([
+      hourly({ taxInclusive: true, commissionInclusive: true }),
+      addOn,
+      gst,
+    ]);
+    expect(codesOf(result)).not.toContain('TAX_INCLUSIVE_IGNORED');
+    expect(codesOf(result)).not.toContain('COMMISSION_INCLUSIVE_IGNORED');
+  });
+
+  it('says nothing about an hourly rate the trip does not use', () => {
+    const result = run(
+      [
+        hourly({ taxInclusive: true }),
+        rule('SECTOR_RATE', { amountMinor: 5_000_000, currency: 'INR' }),
+        addOn,
+      ],
+      { aircraft: { ...AIRCRAFT, pricingModel: 'SECTOR', base: null } },
+    );
+    expect(result.priced).toBe(true);
+    expect(codesOf(result)).not.toContain('TAX_INCLUSIVE_IGNORED');
   });
 });

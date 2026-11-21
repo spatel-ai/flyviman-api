@@ -14,6 +14,7 @@ import {
   type EmptyLegPriceResult,
   priceEmptyLegTotal,
 } from './empty-leg-price.js';
+import type { PriceAssumption, PriceWarning } from './notes.js';
 import { priceOperatorQuote, type QuotePriceResult } from './quote-price.js';
 import { resolveRules, type RuleRow } from './rules.js';
 
@@ -143,9 +144,9 @@ export class PricingService {
         priceType: PriceType.QUOTE,
         validUntil: input.validUntil,
         availabilityCheckedAt: input.availabilityCheckedAt,
-        assumptions: result.assumptions,
+        assumptions: result.assumptions as unknown as Prisma.InputJsonValue,
         exclusions: result.exclusions,
-        warnings: result.warnings,
+        warnings: result.warnings as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
@@ -203,9 +204,9 @@ export class PricingService {
         priceType: PriceType.QUOTE,
         validUntil: input.validUntil,
         availabilityCheckedAt: input.availabilityCheckedAt,
-        assumptions: result.assumptions,
+        assumptions: result.assumptions as unknown as Prisma.InputJsonValue,
         exclusions: result.exclusions,
-        warnings: result.warnings,
+        warnings: result.warnings as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
@@ -252,10 +253,17 @@ export class PricingService {
             },
           ]),
     ];
+    // Copied as stored; the new entries are coded, the revenue one for
+    // finance only (`WARNING_AUDIENCE`).
     const warnings = [
       ...(Array.isArray(from.warnings) ? from.warnings : []),
       ...(platformRevenueMinor < 0n
-        ? ['Flyviman earns less than nothing on this trip after the override.']
+        ? [
+            {
+              code: 'REVENUE_NEGATIVE',
+              text: 'Flyviman earns less than nothing on this trip after the override.',
+            } satisfies PriceWarning,
+          ]
         : []),
     ];
     const row = await db.priceCalculation.create({
@@ -288,7 +296,10 @@ export class PricingService {
         availabilityCheckedAt: input.now,
         assumptions: [
           ...(Array.isArray(from.assumptions) ? from.assumptions : []),
-          'Price set by hand by Flyviman; tax was not worked out again',
+          {
+            code: 'PRICE_OVERRIDE',
+            text: 'Price set by hand by Flyviman; tax was not worked out again',
+          } satisfies PriceAssumption,
         ] as Prisma.InputJsonValue,
         exclusions: from.exclusions as Prisma.InputJsonValue,
         warnings: warnings as Prisma.InputJsonValue,
@@ -343,8 +354,8 @@ function calculationRow(
     priceType: PriceType.ESTIMATE,
     validUntil: result.validUntil,
     availabilityCheckedAt: input.availabilityCheckedAt,
-    assumptions: result.assumptions,
+    assumptions: result.assumptions as unknown as Prisma.InputJsonValue,
     exclusions: result.exclusions,
-    warnings: result.warnings,
+    warnings: result.warnings as unknown as Prisma.InputJsonValue,
   };
 }

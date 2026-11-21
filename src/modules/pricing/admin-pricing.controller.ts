@@ -123,9 +123,10 @@ export class AdminPriceCalculationsController {
   @ApiOperation({ summary: 'List stored price calculations, newest first' })
   @ApiOkResponse({ type: [PriceCalculationSummaryDto] })
   async list(
+    @CurrentUser() user: AuthUser,
     @Query() query: ListPriceCalculationsDto,
   ): Promise<Paginated<PriceCalculationSummaryDto>> {
-    const { items, total } = await this.pricing.listCalculations(query);
+    const { items, total } = await this.pricing.listCalculations(user, query);
     return new Paginated(items, query.page, query.pageSize, total);
   }
 
