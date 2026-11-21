@@ -58,42 +58,27 @@ export class PricingService {
   /** Stores a priced result. Immutable from here on. */
   async saveCalculation(
     db: Prisma.TransactionClient,
-    input: {
-      searchId: string;
-      aircraftId: string;
-      operatorId: string;
-      inputs: Prisma.InputJsonValue;
-      result: EngineResult;
-      availabilityCheckedAt: Date;
-    },
+    input: CalculationInput,
   ): Promise<string> {
-    const { result } = input;
     const row = await db.priceCalculation.create({
-      data: {
-        searchId: input.searchId,
-        aircraftId: input.aircraftId,
-        operatorId: input.operatorId,
-        inputs: input.inputs,
-        appliedRules: result.appliedRules as unknown as Prisma.InputJsonValue,
-        breakdown: result.breakdown as unknown as Prisma.InputJsonValue,
-        baseMinor: result.baseMinor,
-        feesMinor: result.feesMinor,
-        taxMinor: result.taxMinor,
-        discountMinor: result.discountMinor,
-        totalMinor: result.totalMinor,
-        operatorPayableMinor: result.operatorPayableMinor,
-        platformRevenueMinor: result.platformRevenueMinor,
-        currency: result.currency,
-        priceType: PriceType.ESTIMATE,
-        validUntil: result.validUntil,
-        availabilityCheckedAt: input.availabilityCheckedAt,
-        assumptions: result.assumptions,
-        exclusions: result.exclusions,
-        warnings: result.warnings,
-      },
+      data: calculationRow(input),
       select: { id: true },
     });
     return row.id;
+  }
+
+  /**
+   * Stores a search's priced results in one insert, each under the id its
+   * result already names. Immutable from here on.
+   */
+  async saveCalculations(
+    db: Prisma.TransactionClient,
+    rows: CalculationRow[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    await db.priceCalculation.createMany({
+      data: rows.map((row) => ({ id: row.id, ...calculationRow(row) })),
+    });
   }
 
   /**
@@ -254,4 +239,48 @@ export class PricingService {
   async calculation(id: string) {
     return this.prisma.priceCalculation.findUnique({ where: { id } });
   }
+}
+
+/** A priced search result as stored. */
+interface CalculationInput {
+  searchId: string;
+  aircraftId: string;
+  operatorId: string;
+  inputs: Prisma.InputJsonValue;
+  result: EngineResult;
+  availabilityCheckedAt: Date;
+}
+
+/** A priced search result with the id it is stored under. */
+export interface CalculationRow extends CalculationInput {
+  id: string;
+}
+
+/** The PriceCalculation columns of a priced search result. */
+function calculationRow(
+  input: CalculationInput,
+): Prisma.PriceCalculationCreateManyInput {
+  const { result } = input;
+  return {
+    searchId: input.searchId,
+    aircraftId: input.aircraftId,
+    operatorId: input.operatorId,
+    inputs: input.inputs,
+    appliedRules: result.appliedRules as unknown as Prisma.InputJsonValue,
+    breakdown: result.breakdown as unknown as Prisma.InputJsonValue,
+    baseMinor: result.baseMinor,
+    feesMinor: result.feesMinor,
+    taxMinor: result.taxMinor,
+    discountMinor: result.discountMinor,
+    totalMinor: result.totalMinor,
+    operatorPayableMinor: result.operatorPayableMinor,
+    platformRevenueMinor: result.platformRevenueMinor,
+    currency: result.currency,
+    priceType: PriceType.ESTIMATE,
+    validUntil: result.validUntil,
+    availabilityCheckedAt: input.availabilityCheckedAt,
+    assumptions: result.assumptions,
+    exclusions: result.exclusions,
+    warnings: result.warnings,
+  };
 }

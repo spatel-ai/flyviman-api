@@ -101,6 +101,9 @@ const OFFER_INCLUDE = {
 
 type OfferRow = Prisma.EmptyLegGetPayload<{ include: typeof OFFER_INCLUDE }>;
 
+/** A trip end as `alternativesFor` compares it. */
+type TripPoint = { id: string; latitude: number; longitude: number };
+
 function notFound(): AppException {
   return new AppException(
     'NOT_FOUND',
@@ -323,13 +326,15 @@ export class EmptyLegsService {
     destinationId: string;
     departureAt: Date;
     passengers: number;
+    /** The trip's ends when the caller has already read them (search). */
+    points?: { origin: TripPoint; destination: TripPoint };
   }): Promise<EmptyLegResponseDto[]> {
-    const places = await this.locations.pricingPoints([
-      trip.originId,
-      trip.destinationId,
-    ]);
-    const origin = places.get(trip.originId);
-    const destination = places.get(trip.destinationId);
+    const places = trip.points
+      ? null
+      : await this.locations.pricingPoints([trip.originId, trip.destinationId]);
+    const origin = trip.points?.origin ?? places?.get(trip.originId);
+    const destination =
+      trip.points?.destination ?? places?.get(trip.destinationId);
     if (!origin || !destination) return [];
     const span = ALTERNATIVE_WINDOW_DAYS * 86_400_000;
     const at = trip.departureAt.getTime();

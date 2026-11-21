@@ -129,21 +129,30 @@ export class QuotesService {
       inclusions: [...input.conditions.inclusions],
       exclusions: [...input.conditions.exclusions],
     };
-    const quote = await tx.quote.create({
-      data: {
-        reference: quoteReference(),
-        bookingId: input.bookingId,
-        calculationId: input.calculationId,
-        operatorId: input.operatorId,
-        totalMinor: BigInt(input.totalMinor),
-        currency: input.currency,
-        priceType: PriceType.QUOTE,
-        conditions: conditions as unknown as Prisma.InputJsonValue,
-        validUntil: input.validUntil,
-        status: QuoteStatus.SENT,
-        createdById: input.createdById,
-      },
-    });
+    const quote = await tx.quote
+      .create({
+        data: {
+          reference: quoteReference(),
+          bookingId: input.bookingId,
+          calculationId: input.calculationId,
+          operatorId: input.operatorId,
+          totalMinor: BigInt(input.totalMinor),
+          currency: input.currency,
+          priceType: PriceType.QUOTE,
+          conditions: conditions as unknown as Prisma.InputJsonValue,
+          validUntil: input.validUntil,
+          status: QuoteStatus.SENT,
+          createdById: input.createdById,
+        },
+      })
+      .catch((error: unknown) => {
+        // Another quote was sent on the booking at the same moment (the
+        // one-open-quote index). Not a reference clash, so never retried.
+        if (violates(error, 'Quote_one_open_per_booking')) {
+          throw refusal('QUOTE_INVALID_TRANSITION');
+        }
+        throw error;
+      });
     await this.audit.record(
       {
         action: 'quote.issue',
@@ -272,6 +281,20 @@ export class QuotesService {
       updatedAt: quote.updatedAt.toISOString(),
     };
   }
+}
+
+/** Whether a write failed on this unique index (P2002 through adapter-pg). */
+function violates(error: unknown, index: string): boolean {
+  const e = error as {
+    code?: unknown;
+    meta?: {
+      driverAdapterError?: { cause?: { constraint?: { index?: unknown } } };
+    };
+  };
+  return (
+    e.code === 'P2002' &&
+    e.meta?.driverAdapterError?.cause?.constraint?.index === index
+  );
 }
 
 export function refusal(

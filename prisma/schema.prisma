@@ -1254,6 +1254,8 @@ model Booking {
   @@index([customerId, createdAt])
   @@index([operatorId, status])
   @@index([status, createdAt])
+  // The admin bookings list: newest first, with no filter.
+  @@index([createdAt, id])
   @@index([aircraftId])
   @@index([calculationId])
   @@index([assignedToId])

@@ -26,7 +26,10 @@ import {
   CancellationTermsService,
   publicTerms,
 } from '../pricing/cancellation-terms.service.js';
-import { PricingService } from '../pricing/pricing.service.js';
+import {
+  type CalculationRow,
+  PricingService,
+} from '../pricing/pricing.service.js';
 import type { PromoPreviewResponseDto } from '../pricing/dto/promotion.dto.js';
 import type { PromotionTrip } from '../pricing/promotions.js';
 import {
@@ -198,7 +201,73 @@ export class SearchService {
     const distance = (a: PricePoint, b: PricePoint) =>
       this.routing.distanceKm(a, b);
 
-    const results = await this.prisma.$transaction(async (tx) => {
+    // Every result is priced and given its calculation's id first, so the
+    // search and all its calculations are stored with two inserts.
+    const calculations: CalculationRow[] = [];
+    const stored: StoredResult[] = candidates.map((candidate) => {
+      const { aircraft } = candidate;
+      const { result, inputs } = priceCandidate(
+        { origin, destination, departureAt, returnAt, tripType, now },
+        dto.passengerCount,
+        candidate,
+        distance,
+      );
+      const calculationId = result.priced ? randomUUID() : null;
+      if (calculationId) {
+        calculations.push({
+          id: calculationId,
+          searchId,
+          aircraftId: aircraft.id,
+          operatorId: aircraft.operatorId,
+          inputs,
+          result,
+          availabilityCheckedAt: now,
+        });
+      }
+      return {
+        resultId: randomUUID(),
+        calculationId,
+        aircraft: {
+          id: aircraft.id,
+          manufacturer: aircraft.manufacturer,
+          model: aircraft.model,
+          category: aircraft.category,
+          passengerCapacity: aircraft.passengerCapacity,
+        },
+        operatorName: candidate.operatorName,
+        distanceKm: result.distanceKm,
+        flightMinutes: result.flightMinutes,
+        tripType,
+        returnAt: returnAt?.toISOString() ?? null,
+        roundTripStrategy: result.roundTrip?.strategy ?? null,
+        price: result.priced
+          ? {
+              priceType: PriceType.ESTIMATE,
+              amountMinor: result.totalMinor,
+              currency: result.currency,
+            }
+          : null,
+        // A list price that leaves things out is marked (pricing-engine.md,
+        // principle 4); the detail says what.
+        incomplete: result.priced && result.exclusions.length > 0,
+        validUntil: result.validUntil.toISOString(),
+        // The engine's reasons (no rate, no cruise speed) are operator
+        // matters; they stay in the logs of pricing, not in front of
+        // customers. Matching's (landing-site permission, night operations
+        // not confirmed) are for the customer.
+        warnings: [
+          ...candidate.warnings,
+          ...(result.priced ? [] : [PRICE_ON_REQUEST]),
+        ],
+      };
+    });
+    // Priced first, cheapest first.
+    stored.sort(
+      (a, b) =>
+        (a.price?.amountMinor ?? Number.MAX_SAFE_INTEGER) -
+        (b.price?.amountMinor ?? Number.MAX_SAFE_INTEGER),
+    );
+    await this.prisma.$transaction(async (tx) => {
       await tx.search.create({
         data: {
           id: searchId,
@@ -210,83 +279,14 @@ export class SearchService {
           preferences: dto.category
             ? { category: dto.category }
             : Prisma.DbNull,
-          results: [],
-          exclusions: exclusions as unknown as Prisma.InputJsonValue,
-          resultCount: 0,
-          durationMs: 0,
-        },
-      });
-      const stored: StoredResult[] = [];
-      for (const candidate of candidates) {
-        const { aircraft } = candidate;
-        const { result, inputs } = priceCandidate(
-          { origin, destination, departureAt, returnAt, tripType, now },
-          dto.passengerCount,
-          candidate,
-          distance,
-        );
-        const calculationId = result.priced
-          ? await this.pricing.saveCalculation(tx, {
-              searchId,
-              aircraftId: aircraft.id,
-              operatorId: aircraft.operatorId,
-              inputs,
-              result,
-              availabilityCheckedAt: now,
-            })
-          : null;
-        stored.push({
-          resultId: randomUUID(),
-          calculationId,
-          aircraft: {
-            id: aircraft.id,
-            manufacturer: aircraft.manufacturer,
-            model: aircraft.model,
-            category: aircraft.category,
-            passengerCapacity: aircraft.passengerCapacity,
-          },
-          operatorName: candidate.operatorName,
-          distanceKm: result.distanceKm,
-          flightMinutes: result.flightMinutes,
-          tripType,
-          returnAt: returnAt?.toISOString() ?? null,
-          roundTripStrategy: result.roundTrip?.strategy ?? null,
-          price: result.priced
-            ? {
-                priceType: PriceType.ESTIMATE,
-                amountMinor: result.totalMinor,
-                currency: result.currency,
-              }
-            : null,
-          // A list price that leaves things out is marked (pricing-engine.md,
-          // principle 4); the detail says what.
-          incomplete: result.priced && result.exclusions.length > 0,
-          validUntil: result.validUntil.toISOString(),
-          // The engine's reasons (no rate, no cruise speed) are operator
-          // matters; they stay in the logs of pricing, not in front of
-          // customers. Matching's (landing-site permission, night operations
-          // not confirmed) are for the customer.
-          warnings: [
-            ...candidate.warnings,
-            ...(result.priced ? [] : [PRICE_ON_REQUEST]),
-          ],
-        });
-      }
-      // Priced first, cheapest first.
-      stored.sort(
-        (a, b) =>
-          (a.price?.amountMinor ?? Number.MAX_SAFE_INTEGER) -
-          (b.price?.amountMinor ?? Number.MAX_SAFE_INTEGER),
-      );
-      await tx.search.update({
-        where: { id: searchId },
-        data: {
           results: stored as unknown as Prisma.InputJsonValue,
+          exclusions: exclusions as unknown as Prisma.InputJsonValue,
           resultCount: stored.length,
+          // Matching and pricing; the two inserts are not counted.
           durationMs: Date.now() - started,
         },
       });
-      return stored;
+      await this.pricing.saveCalculations(tx, calculations);
     });
 
     return {
@@ -296,13 +296,14 @@ export class SearchService {
       legs,
       passengerCount: dto.passengerCount,
       createdAt: now.toISOString(),
-      results: results.map(publicResult),
+      results: stored.map(publicResult),
       emptyLegAlternatives: await this.alternatives(
         category,
         dto.originId,
         dto.destinationId,
         departureAt,
         dto.passengerCount,
+        { origin, destination },
       ),
     };
   }
@@ -314,6 +315,7 @@ export class SearchService {
     destinationId: string,
     departureAt: Date,
     passengers: number,
+    points?: Parameters<EmptyLegsService['alternativesFor']>[0]['points'],
   ): Promise<SearchResponseDto['emptyLegAlternatives']> {
     return category === 'PRIVATE_CHARTER'
       ? this.emptyLegs.alternativesFor({
@@ -321,6 +323,7 @@ export class SearchService {
           destinationId,
           departureAt,
           passengers,
+          points,
         })
       : Promise.resolve([]);
   }
