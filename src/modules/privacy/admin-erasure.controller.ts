@@ -29,7 +29,7 @@ export class AdminErasureController {
   @ApiOperation({
     summary: "Erase a customer's personal data",
     description:
-      'For an erasure request received another way (email, letter). Customer accounts only. Irreversible; needs a reason and is audited as `user.erase` with counts only. The same data is erased and kept as for `POST /me/erasure`, and the same 409 `USER_ERASURE_BLOCKED` applies. 409 `USER_INVALID_TRANSITION` for an internal staff or operator account, or one already erased.',
+      'For an erasure request received another way (email, letter). Customer accounts only. Irreversible; needs a reason and is audited as `user.erase` with counts only. The same data is erased and kept as for `POST /me/erasure`, and the same 409 `USER_ERASURE_BLOCKED` applies. 409 `USER_INVALID_TRANSITION` for an internal staff or operator account, or one already erased. 503 `USER_ERASURE_BUSY` when the account was busy: nothing was erased, send it again.',
   })
   @ApiOkResponse({ type: UserErasedResponseDto })
   async erase(
