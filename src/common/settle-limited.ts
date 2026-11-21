@@ -7,7 +7,7 @@ export async function settleLimited<T, R>(
   limit: number,
   run: (item: T) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  const results: PromiseSettledResult<R>[] = [];
   let next = 0;
   const worker = async () => {
     while (next < items.length) {
