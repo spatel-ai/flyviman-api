@@ -39,6 +39,7 @@ test.describe('GET /admin/category-config', () => {
           'bookingMode',
           'category',
           'depositPercent',
+          'id',
           'isEnabled',
           'paymentModel',
           'region',
