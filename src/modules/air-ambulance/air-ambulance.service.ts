@@ -531,7 +531,12 @@ export class AirAmbulanceService implements OnModuleInit {
     return (await this.operators.names([id])).get(id) ?? null;
   }
 
-  /** The request's timeline, oldest first. Payloads hold no medical data. */
+  /**
+   * The request's timeline, oldest first. Payloads hold no medical data; a
+   * revising QUOTE entry (`revised: true`) gets its reason, still encrypted,
+   * as `revisionReason` (null once erased), for `eventPayloadForOperations`
+   * to gate.
+   */
   async timeline(requestId: string): Promise<
     {
       fromStatus: AirAmbulanceStatus | null;
@@ -542,7 +547,7 @@ export class AirAmbulanceService implements OnModuleInit {
       createdAt: Date;
     }[]
   > {
-    return this.prisma.airAmbulanceRequestEvent.findMany({
+    const rows = await this.prisma.airAmbulanceRequestEvent.findMany({
       where: { requestId },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: {
@@ -552,7 +557,16 @@ export class AirAmbulanceService implements OnModuleInit {
         actorRole: true,
         payload: true,
         createdAt: true,
+        quoteRevision: { select: { reason: true } },
       },
+    });
+    return rows.map(({ quoteRevision, ...event }) => {
+      const payload = event.payload as Record<string, unknown> | null;
+      if (payload?.revised !== true) return event;
+      return {
+        ...event,
+        payload: { ...payload, revisionReason: quoteRevision?.reason ?? null },
+      };
     });
   }
 

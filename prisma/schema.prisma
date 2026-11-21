@@ -1611,13 +1611,14 @@ model AirAmbulanceRequest {
   createdAt             DateTime           @default(now()) @db.Timestamptz
   updatedAt             DateTime           @updatedAt @db.Timestamptz
 
-  requester           User                       @relation(fields: [requesterId], references: [id], onDelete: Restrict)
-  originLocation      Location                   @relation("AirAmbulanceOrigin", fields: [originLocationId], references: [id], onDelete: Restrict)
-  destinationLocation Location                   @relation("AirAmbulanceDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
-  selectedOperator    Operator?                  @relation(fields: [selectedOperatorId], references: [id], onDelete: Restrict)
+  requester           User                        @relation(fields: [requesterId], references: [id], onDelete: Restrict)
+  originLocation      Location                    @relation("AirAmbulanceOrigin", fields: [originLocationId], references: [id], onDelete: Restrict)
+  destinationLocation Location                    @relation("AirAmbulanceDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  selectedOperator    Operator?                   @relation(fields: [selectedOperatorId], references: [id], onDelete: Restrict)
   medical             AirAmbulanceMedical?
   events              AirAmbulanceRequestEvent[]
   documents           AirAmbulanceDocument[]
+  quoteRevisions      AirAmbulanceQuoteRevision[]
 
   @@index([requesterId, createdAt])
   @@index([status, createdAt])
@@ -1654,8 +1655,8 @@ model AirAmbulanceMedical {
 
 /// The request's status timeline. Append-only: a trigger refuses every
 /// update, delete and truncate, so `actorId` is deliberately not a foreign
-/// key. A CONFIRMED entry needs an operations or super administrator actor
-/// (CHECK, rule 7).
+/// key, and nothing erasure must clear may be stored here. A CONFIRMED
+/// entry needs an operations or super administrator actor (CHECK, rule 7).
 model AirAmbulanceRequestEvent {
   id         String              @id @default(uuid()) @db.Uuid
   requestId  String              @db.Uuid
@@ -1663,15 +1664,37 @@ model AirAmbulanceRequestEvent {
   toStatus   AirAmbulanceStatus
   actorId    String?             @db.Uuid
   actorRole  Role?
-  /// What the step recorded, never medical or personal data: the
-  /// feasibility checklist (booleans), a quote's amount and operator, an
-  /// assignee id (W4-5).
+  /// What the step recorded, never free text, medical or personal data: the
+  /// feasibility checklist (booleans), a quote's amount and operator (with
+  /// `revised: true` when it replaced one already sent; its reason is an
+  /// AirAmbulanceQuoteRevision), an assignee id (W4-5).
   payload    Json?
   createdAt  DateTime            @default(now()) @db.Timestamptz
 
-  request AirAmbulanceRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  request       AirAmbulanceRequest        @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  quoteRevision AirAmbulanceQuoteRevision?
 
   @@index([requestId, createdAt])
+}
+
+/// Why a quotation already sent was replaced, one per revising QUOTE
+/// timeline entry. Free text that can describe the patient, so it is
+/// encrypted, read only by the request's assigned owner and a super
+/// administrator, and deleted when the requester's data is erased (the
+/// timeline itself is append-only).
+model AirAmbulanceQuoteRevision {
+  id        String   @id @default(uuid()) @db.Uuid
+  requestId String   @db.Uuid
+  eventId   String   @unique @db.Uuid
+  /// Encrypted (FieldCipher).
+  reason    String
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  request AirAmbulanceRequest      @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  event   AirAmbulanceRequestEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@index([requestId])
 }
 
 /// A medical document attached to a request. The file itself is a

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
@@ -223,8 +224,10 @@ export class AirAmbulanceWorkflowService {
    * Sends the customer a quotation (priceType QUOTE, rule 1) from an
    * approved operator (rule 4), moving FEASIBILITY_CHECK to QUOTED. While
    * QUOTED, a new quotation replaces the last one and needs a revision
-   * reason: kept encrypted in the timeline entry (free text on a medical
-   * mission), and only its existence in the audit record.
+   * reason: free text on a medical mission, so it is kept encrypted in an
+   * AirAmbulanceQuoteRevision row that erasure deletes (the timeline is
+   * append-only and says only `revised: true`), and only its existence goes
+   * in the audit record.
    */
   async quote(
     actor: AirAmbulanceActor,
@@ -277,17 +280,23 @@ export class AirAmbulanceWorkflowService {
           reference: row.reference,
           customerId: row.requesterId,
         });
-        return this.record(tx, row, actor, {
+        const eventId = randomUUID();
+        const view = await this.record(tx, row, actor, {
+          eventId,
           data,
-          payload: {
-            kind: 'QUOTE',
-            ...quote,
-            revisionReason: this.cipher.encrypt(input.revisionReason),
-          },
+          payload: { kind: 'QUOTE', ...quote, revised: true },
           action: 'air_ambulance_request.quote',
           before,
           after: { ...quote, revised: true },
         });
+        await tx.airAmbulanceQuoteRevision.create({
+          data: {
+            requestId: row.id,
+            eventId,
+            reason: this.cipher.encrypt(input.revisionReason),
+          },
+        });
+        return view;
       }
       return this.apply(tx, row, AirAmbulanceStatus.QUOTED, actor, {
         data,
@@ -501,6 +510,8 @@ export class AirAmbulanceWorkflowService {
     row: AirAmbulanceRequest,
     actor: AirAmbulanceActor,
     change: {
+      /** Set when another row must point at the timeline entry. */
+      eventId?: string;
       data: Prisma.AirAmbulanceRequestUpdateManyMutationInput & {
         assignedToId?: string;
         selectedOperatorId?: string;
@@ -521,6 +532,7 @@ export class AirAmbulanceWorkflowService {
     }
     await tx.airAmbulanceRequestEvent.create({
       data: {
+        id: change.eventId,
         requestId: row.id,
         fromStatus: row.status,
         toStatus: row.status,
