@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AircraftModule } from '../aircraft/aircraft.module.js';
+import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { LocationsModule } from '../locations/locations.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OperatorsModule } from '../operators/operators.module.js';
@@ -15,6 +16,7 @@ import { EmptyLegReportsService } from './empty-leg-reports.service.js';
 /** Empty-leg offers, review, listing, interest and expiry (M7). */
 @Module({
   imports: [
+    ConfigurationModule,
     OperatorsModule,
     AircraftModule,
     LocationsModule,

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AircraftModule } from '../aircraft/aircraft.module.js';
+import { ConfigurationModule } from '../configuration/configuration.module.js';
 import { DocumentsModule } from '../documents/documents.module.js';
 import { LocationsModule } from '../locations/locations.module.js';
 import { NotificationEventsModule } from '../notifications/events/notification-events.module.js';
@@ -21,6 +22,7 @@ import { AirAmbulanceReportsService } from './air-ambulance-reports.service.js';
 @Module({
   imports: [
     AircraftModule,
+    ConfigurationModule,
     OperatorsModule,
     LocationsModule,
     DocumentsModule,

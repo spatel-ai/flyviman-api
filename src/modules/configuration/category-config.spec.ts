@@ -5,6 +5,7 @@ import {
   ServiceCategory,
 } from '../../generated/prisma/enums.js';
 import {
+  applyPlatformChange,
   DEFAULT_CATEGORY_CONFIG,
   parseOverride,
   resolveCategoryConfig,
@@ -150,5 +151,69 @@ describe('resolveCategoryConfig', () => {
         paymentModel: 'B_OPERATOR_CONFIRMED',
       });
     }
+  });
+});
+
+describe('applyPlatformChange', () => {
+  const charter = DEFAULT_CATEGORY_CONFIG.PRIVATE_CHARTER;
+
+  it('keeps fields left out and reports a change', () => {
+    expect(
+      applyPlatformChange('PRIVATE_CHARTER', charter, {
+        paymentModel: 'C_DEPOSIT',
+        depositPercent: 30,
+      }),
+    ).toEqual({
+      ok: true,
+      changed: true,
+      next: {
+        isEnabled: true,
+        bookingMode: 'REQUEST',
+        paymentModel: 'C_DEPOSIT',
+        depositPercent: 30,
+      },
+    });
+  });
+
+  it('reports no change for the current values or an empty change', () => {
+    expect(
+      applyPlatformChange('PRIVATE_CHARTER', charter, { isEnabled: true }),
+    ).toMatchObject({ ok: true, changed: false });
+    expect(applyPlatformChange('PRIVATE_CHARTER', charter, {})).toMatchObject({
+      ok: true,
+      changed: false,
+    });
+  });
+
+  it('allows INSTANT for other categories', () => {
+    expect(
+      applyPlatformChange('PRIVATE_CHARTER', charter, {
+        bookingMode: 'INSTANT',
+      }),
+    ).toMatchObject({ ok: true, next: { bookingMode: 'INSTANT' } });
+  });
+
+  it('refuses INSTANT for air ambulance (rule 7)', () => {
+    expect(
+      applyPlatformChange(
+        'AIR_AMBULANCE',
+        DEFAULT_CATEGORY_CONFIG.AIR_AMBULANCE,
+        { bookingMode: 'INSTANT' },
+      ),
+    ).toEqual({
+      ok: false,
+      field: 'bookingMode',
+      issue: 'air ambulance is always booked on request',
+    });
+  });
+
+  it('allows other changes to air ambulance', () => {
+    expect(
+      applyPlatformChange(
+        'AIR_AMBULANCE',
+        DEFAULT_CATEGORY_CONFIG.AIR_AMBULANCE,
+        { isEnabled: false },
+      ),
+    ).toMatchObject({ ok: true, changed: true });
   });
 });

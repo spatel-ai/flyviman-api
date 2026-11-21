@@ -11,6 +11,7 @@ import {
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AircraftService } from '../aircraft/aircraft.service.js';
 import type { AuditService } from '../audit/audit.service.js';
+import type { CategoryConfigService } from '../configuration/category-config.service.js';
 import type { DocumentsService } from '../documents/documents.service.js';
 import type { LocationsService } from '../locations/locations.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
@@ -62,6 +63,7 @@ function setup(
     memberOf?: Record<string, string>;
     activeLocations?: string[];
     suspended?: string[];
+    disabled?: boolean;
   } = {},
 ) {
   const stored: {
@@ -148,6 +150,11 @@ function setup(
     }),
   };
   const users = { lockLiveCustomer: vi.fn(async () => undefined) };
+  const categories = {
+    assertEnabled: vi.fn(async () => {
+      if (options.disabled) throw new Error('CATEGORY_DISABLED');
+    }),
+  };
   const service = new AirAmbulanceService(
     prisma,
     audit as unknown as AuditService,
@@ -158,6 +165,7 @@ function setup(
     { notify: vi.fn() } as unknown as NotificationEventsService,
     aircraft as unknown as AircraftService,
     users as unknown as UsersService,
+    categories as unknown as CategoryConfigService,
   );
   return { service, stored, events, audit, tx, locations, findMany, operators };
 }
@@ -165,6 +173,14 @@ function setup(
 const customer: AirAmbulanceActor = { id: REQUESTER, role: Role.CUSTOMER };
 
 describe('AirAmbulanceService.create', () => {
+  it('stores nothing while the platform has air ambulance switched off', async () => {
+    const { service, stored } = setup({ disabled: true });
+    await expect(service.create(customer, input(), CLAIM)).rejects.toThrow(
+      'CATEGORY_DISABLED',
+    );
+    expect(stored.request).toBeUndefined();
+  });
+
   it('stores the free-text medical fields encrypted and the structured ones plain', async () => {
     const { service, stored } = setup();
     await service.create(

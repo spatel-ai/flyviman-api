@@ -138,6 +138,8 @@ export class SearchService {
     userId: string | null,
   ): Promise<SearchResponseDto> {
     const started = Date.now();
+    // Not while the platform has the category switched off (M10).
+    await this.categories.assertEnabled(category);
     const now = new Date();
     const departureAt = new Date(dto.departureAt);
     if (dto.originId === dto.destinationId) {
@@ -309,7 +311,7 @@ export class SearchService {
   }
 
   /** Empty legs for a charter trip's outbound flight; none for helicopters. */
-  private alternatives(
+  private async alternatives(
     category: SearchResponseDto['category'],
     originId: string,
     destinationId: string,
@@ -317,15 +319,18 @@ export class SearchService {
     passengers: number,
     points?: Parameters<EmptyLegsService['alternativesFor']>[0]['points'],
   ): Promise<SearchResponseDto['emptyLegAlternatives']> {
-    return category === 'PRIVATE_CHARTER'
-      ? this.emptyLegs.alternativesFor({
-          originId,
-          destinationId,
-          departureAt,
-          passengers,
-          points,
-        })
-      : Promise.resolve([]);
+    if (category !== 'PRIVATE_CHARTER') return [];
+    // None while empty legs are switched off (M10).
+    if (!(await this.categories.isEnabled(ServiceCategory.EMPTY_LEG))) {
+      return [];
+    }
+    return this.emptyLegs.alternativesFor({
+      originId,
+      destinationId,
+      departureAt,
+      passengers,
+      points,
+    });
   }
 
   async get(searchId: string): Promise<SearchResponseDto> {
@@ -584,6 +589,7 @@ export class SearchService {
   async calendar(
     query: FareCalendarQueryDto,
   ): Promise<FareCalendarResponseDto> {
+    await this.categories.assertEnabled(query.category);
     const key = JSON.stringify(query);
     const cached = this.calendarCache.get(key);
     if (cached && cached.expires > Date.now()) return cached.value;

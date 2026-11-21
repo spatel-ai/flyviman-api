@@ -49,7 +49,11 @@ export class SearchController {
   @Post('charter')
   @SearchRateLimit()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Search eligible charter aircraft with estimates' })
+  @ApiOperation({
+    summary: 'Search eligible charter aircraft with estimates',
+    description:
+      '422 `CATEGORY_DISABLED` while the platform has the category switched off. Empty-leg alternatives are left out while empty legs are switched off.',
+  })
   @ApiOkResponse({ type: SearchResponseDto })
   charter(@Body() dto: CharterSearchDto): Promise<SearchResponseDto> {
     return this.search.search('PRIVATE_CHARTER', dto, null);
@@ -58,7 +62,11 @@ export class SearchController {
   @Post('helicopter')
   @SearchRateLimit()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Search helicopter options with estimates' })
+  @ApiOperation({
+    summary: 'Search helicopter options with estimates',
+    description:
+      '422 `CATEGORY_DISABLED` while the platform has the category switched off.',
+  })
   @ApiOkResponse({ type: SearchResponseDto })
   helicopter(@Body() dto: HelicopterSearchDto): Promise<SearchResponseDto> {
     return this.search.search('HELICOPTER', dto, null);
@@ -69,6 +77,8 @@ export class SearchController {
   @SearchRateLimit()
   @ApiOperation({
     summary: 'Lowest estimate and aircraft count for each day of a month',
+    description:
+      '422 `CATEGORY_DISABLED` while the platform has the category switched off.',
   })
   @ApiOkResponse({ type: FareCalendarResponseDto })
   calendar(

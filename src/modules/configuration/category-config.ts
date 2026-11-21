@@ -98,6 +98,42 @@ export function parseOverride<T extends string>(
   return result;
 }
 
+/** A change to a platform row; a field left out stays as it is. */
+export type PlatformSettingChange = Partial<PlatformSetting>;
+
+/**
+ * The row after `change`, whether anything differs, or why it is refused:
+ * air ambulance can never be INSTANT (rule 7, and the database CHECK).
+ */
+export function applyPlatformChange(
+  category: ServiceCategory,
+  current: PlatformSetting,
+  change: PlatformSettingChange,
+):
+  | { ok: true; next: PlatformSetting; changed: boolean }
+  | { ok: false; field: 'bookingMode'; issue: string } {
+  const next: PlatformSetting = {
+    isEnabled: change.isEnabled ?? current.isEnabled,
+    bookingMode: change.bookingMode ?? current.bookingMode,
+    paymentModel: change.paymentModel ?? current.paymentModel,
+    depositPercent: change.depositPercent ?? current.depositPercent,
+  };
+  if (
+    category === ServiceCategory.AIR_AMBULANCE &&
+    next.bookingMode === BookingMode.INSTANT
+  ) {
+    return {
+      ok: false,
+      field: 'bookingMode',
+      issue: 'air ambulance is always booked on request',
+    };
+  }
+  const changed = (Object.keys(next) as (keyof PlatformSetting)[]).some(
+    (key) => next[key] !== current[key],
+  );
+  return { ok: true, next, changed };
+}
+
 /**
  * The platform setting, then the operator's override for the category, then
  * rule 7: air ambulance never resolves to INSTANT, whatever is stored. With no

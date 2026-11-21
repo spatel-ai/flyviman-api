@@ -39,7 +39,7 @@ export class ScheduledSearchController {
   @ApiOperation({
     summary: 'Search scheduled flights across airline suppliers',
     description:
-      "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned.",
+      "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned. 422 `CATEGORY_DISABLED` while the platform has scheduled flights switched off.",
   })
   @ApiOkResponse({ type: ScheduledSearchResponseDto })
   search(@Body() dto: ScheduledSearchDto): Promise<ScheduledSearchResponseDto> {

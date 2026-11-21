@@ -1,4 +1,11 @@
-import { Controller, Get } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+} from '@nestjs/common';
 import {
   ApiCookieAuth,
   ApiOkResponse,
@@ -7,8 +14,27 @@ import {
 } from '@nestjs/swagger';
 import { Role } from '../../generated/prisma/enums.js';
 import { Roles } from '../auth/auth.decorators.js';
-import { CategoryConfigService } from './category-config.service.js';
-import { CategoryConfigResponseDto } from './dto/category-config.dto.js';
+import {
+  CategoryConfigService,
+  type CategoryConfigRow,
+} from './category-config.service.js';
+import {
+  CategoryConfigResponseDto,
+  UpdateCategoryConfigDto,
+} from './dto/category-config.dto.js';
+
+function toDto(row: CategoryConfigRow): CategoryConfigResponseDto {
+  return {
+    id: row.id,
+    category: row.category,
+    region: row.region,
+    isEnabled: row.isEnabled,
+    bookingMode: row.bookingMode,
+    paymentModel: row.paymentModel,
+    depositPercent: row.depositPercent,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
 
 @ApiTags('admin: configuration')
 @ApiCookieAuth()
@@ -21,19 +47,26 @@ export class AdminCategoryConfigController {
   @ApiOperation({
     summary: 'Service category configuration',
     description:
-      'Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.',
+      'Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Super administrators change a row with `PATCH /admin/category-config/:id`.',
   })
   @ApiOkResponse({ type: [CategoryConfigResponseDto] })
   async list(): Promise<CategoryConfigResponseDto[]> {
     const rows = await this.config.list();
-    return rows.map((row) => ({
-      category: row.category,
-      region: row.region,
-      isEnabled: row.isEnabled,
-      bookingMode: row.bookingMode,
-      paymentModel: row.paymentModel,
-      depositPercent: row.depositPercent,
-      updatedAt: row.updatedAt.toISOString(),
-    }));
+    return rows.map(toDto);
+  }
+
+  @Patch(':id')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Change a service category configuration',
+    description:
+      'Changes whether a category is offered, its platform booking mode, payment model and Model C deposit percent; fields left out stay as they are. `reason` is required and the change is audited with before and after (`category_config.update`). 409 `CATEGORY_CONFIG_CHANGED` when the row changed since `expectedUpdatedAt` (its current `updatedAt` in `details`); 422 `CATEGORY_CONFIG_INVALID` for air ambulance on `INSTANT` (business rule 7); 404 for an unknown row. A disabled category is hidden from search and takes no new bookings or requests. New bookings use the new booking mode and payment model; bookings already made keep theirs. The deposit percent is read when a payment is due, so a change also applies to model C bookings not yet paid. A change sending the current values writes nothing.',
+  })
+  @ApiOkResponse({ type: CategoryConfigResponseDto })
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateCategoryConfigDto,
+  ): Promise<CategoryConfigResponseDto> {
+    return toDto(await this.config.update(id, body));
   }
 }

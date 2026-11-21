@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../prisma/prisma.service.js';
+import type { AuditService } from '../audit/audit.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
 import { DEFAULT_CATEGORY_CONFIG } from './category-config.js';
 import { CategoryConfigService } from './category-config.service.js';
@@ -19,6 +20,7 @@ function build(overrides: unknown = null) {
   const service = new CategoryConfigService(
     { serviceCategoryConfig: { findMany } } as unknown as PrismaService,
     { modeOverrides } as unknown as OperatorsService,
+    { record: vi.fn() } as unknown as AuditService,
   );
   return { service, findMany, modeOverrides };
 }
@@ -87,5 +89,114 @@ describe('CategoryConfigService.resolve', () => {
       bookingMode: 'REQUEST',
       paymentModel: 'B_OPERATOR_CONFIRMED',
     });
+  });
+});
+
+describe('CategoryConfigService.update', () => {
+  const updatedAt = new Date('2026-11-21T10:00:00.000Z');
+  const current = {
+    id: 'cfg-1',
+    category: 'PRIVATE_CHARTER',
+    region: 'IN',
+    ...DEFAULT_CATEGORY_CONFIG.PRIVATE_CHARTER,
+    updatedAt,
+  };
+
+  function buildUpdate(row: unknown = current) {
+    const update = vi.fn().mockImplementation(({ data }) => ({
+      ...current,
+      ...data,
+      updatedAt: new Date('2026-11-21T11:00:00.000Z'),
+    }));
+    const tx = {
+      $queryRaw: vi.fn(),
+      serviceCategoryConfig: {
+        findUnique: vi.fn().mockResolvedValue(row),
+        update,
+      },
+    };
+    const record = vi.fn();
+    const findMany = vi.fn().mockResolvedValue(ROWS);
+    const service = new CategoryConfigService(
+      {
+        $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
+        serviceCategoryConfig: { findMany },
+      } as unknown as PrismaService,
+      { modeOverrides: vi.fn() } as unknown as OperatorsService,
+      { record } as unknown as AuditService,
+    );
+    return { service, update, record, findMany };
+  }
+
+  const base = {
+    expectedUpdatedAt: updatedAt.toISOString(),
+    reason: 'Pause charter',
+  };
+
+  it('writes the change with an audit record holding before and after', async () => {
+    const { service, update, record } = buildUpdate();
+    const row = await service.update('cfg-1', { ...base, isEnabled: false });
+    expect(row.isEnabled).toBe(false);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isEnabled: false }),
+      }),
+    );
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'category_config.update',
+        entityType: 'ServiceCategoryConfig',
+        entityId: 'cfg-1',
+        reason: 'Pause charter',
+        before: expect.objectContaining({ isEnabled: true }),
+        after: expect.objectContaining({ isEnabled: false }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('refuses a stale editor with 409 CATEGORY_CONFIG_CHANGED', async () => {
+    const { service, update } = buildUpdate();
+    await expect(
+      service.update('cfg-1', {
+        ...base,
+        expectedUpdatedAt: '2026-11-21T09:00:00.000Z',
+        isEnabled: false,
+      }),
+    ).rejects.toMatchObject({ code: 'CATEGORY_CONFIG_CHANGED' });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('refuses air ambulance on INSTANT with 422, not a database error', async () => {
+    const { service, update } = buildUpdate({
+      ...current,
+      category: 'AIR_AMBULANCE',
+    });
+    await expect(
+      service.update('cfg-1', { ...base, bookingMode: 'INSTANT' }),
+    ).rejects.toMatchObject({ code: 'CATEGORY_CONFIG_INVALID' });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown row', async () => {
+    const { service } = buildUpdate(null);
+    await expect(
+      service.update('cfg-1', { ...base, isEnabled: false }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('writes and audits nothing when nothing changes', async () => {
+    const { service, update, record } = buildUpdate();
+    await service.update('cfg-1', { ...base, isEnabled: true });
+    expect(update).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('drops the cached rows, so resolve reads the change at once', async () => {
+    const { service, findMany } = buildUpdate();
+    await service.resolve('PRIVATE_CHARTER');
+    await service.update('cfg-1', { ...base, isEnabled: false });
+    await service.resolve('PRIVATE_CHARTER');
+    expect(findMany).toHaveBeenCalledTimes(2);
   });
 });

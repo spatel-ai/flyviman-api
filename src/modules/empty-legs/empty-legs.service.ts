@@ -15,6 +15,7 @@ import {
   NotificationChannel,
   OperatorStatus,
   Role,
+  ServiceCategory,
   UserStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -22,6 +23,7 @@ import { REDIS } from '../../redis/redis.module.js';
 import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
+import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import {
@@ -261,6 +263,7 @@ export class EmptyLegsService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly categories: CategoryConfigService,
   ) {}
 
   private get reviewRequired(): boolean {
@@ -430,6 +433,10 @@ export class EmptyLegsService {
   async publicList(
     query: PublicEmptyLegQueryDto,
   ): Promise<Paginated<OfferRow>> {
+    // Nothing is listed while empty legs are switched off (M10).
+    if (!(await this.categories.isEnabled(ServiceCategory.EMPTY_LEG))) {
+      return new Paginated([], query.page, query.pageSize, 0);
+    }
     const where: Prisma.EmptyLegWhereInput = {
       AND: [
         this.listedWhere(),
@@ -526,6 +533,10 @@ export class EmptyLegsService {
    * (expired or withdrawn), 404 when it was never public or is hidden.
    */
   async listed(id: string): Promise<OfferRow> {
+    // Hidden while empty legs are switched off (M10).
+    if (!(await this.categories.isEnabled(ServiceCategory.EMPTY_LEG))) {
+      throw notFound();
+    }
     const row = await this.prisma.emptyLeg.findFirst({
       where: { id, ...this.listedWhere() },
       include: OFFER_INCLUDE,

@@ -75,7 +75,7 @@ export class AirAmbulanceController {
   @ApiOperation({
     summary: 'Submit an air ambulance request',
     description:
-      'Records the request as `SUBMITTED` with the medical details encrypted; operations take it from there. Both locations must be active (404 `NOT_FOUND`, field in `details`) and different (400 `VALIDATION_ERROR`). The answer holds the reference, status and `emergencyNotice` only. Medical details are never logged or audited. A repeat with the same `Idempotency-Key` and body returns the first answer.',
+      'Records the request as `SUBMITTED` with the medical details encrypted; operations take it from there. Both locations must be active (404 `NOT_FOUND`, field in `details`) and different (400 `VALIDATION_ERROR`). 422 `CATEGORY_DISABLED` while the platform has air ambulance switched off. The answer holds the reference, status and `emergencyNotice` only. Medical details are never logged or audited. A repeat with the same `Idempotency-Key` and body returns the first answer.',
   })
   @ApiHeader({
     name: 'Idempotency-Key',

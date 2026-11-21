@@ -12,6 +12,7 @@ import {
   type NamedAirlineProvider,
 } from '../../integrations/airline/airline.provider.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { CategoryConfigService } from '../configuration/category-config.service.js';
 import {
   LocationsService,
   type LocationSummary,
@@ -70,6 +71,7 @@ export class ScheduledSearchService {
     private readonly config: ConfigService,
     @Inject(AIRLINE_PROVIDERS)
     private readonly providers: NamedAirlineProvider[],
+    private readonly categories: CategoryConfigService,
   ) {}
 
   async search(
@@ -77,6 +79,8 @@ export class ScheduledSearchService {
     userId: string | null,
   ): Promise<ScheduledSearchResponseDto> {
     const started = Date.now();
+    // Not while the platform has the category switched off (M10).
+    await this.categories.assertEnabled(ServiceCategory.SCHEDULED_AIRLINE);
     const now = new Date();
     if (dto.originId === dto.destinationId) {
       throw invalid('destinationId', 'must differ from originId');

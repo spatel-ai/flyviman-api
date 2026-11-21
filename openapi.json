@@ -3799,7 +3799,7 @@
     },
     "/api/v1/empty-legs": {
       "get": {
-        "description": "Published offers still valid, on an approved, available aircraft with current documents, of an approved operator. Soonest departure first. `from` and `to` are India dates matched against the departure window; `maxPrice` is in paise.",
+        "description": "Published offers still valid, on an approved, available aircraft with current documents, of an approved operator. Soonest departure first. `from` and `to` are India dates matched against the departure window; `maxPrice` is in paise. Empty while the platform has empty legs switched off.",
         "operationId": "EmptyLegsController_list",
         "parameters": [
           {
@@ -3909,7 +3909,7 @@
     },
     "/api/v1/empty-legs/{id}": {
       "get": {
-        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `updatedAt` is sent back as `offerUpdatedAt` with a booking request. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
+        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends, and every offer while the platform has empty legs switched off). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `updatedAt` is sent back as `offerUpdatedAt` with a booking request. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
         "operationId": "EmptyLegsController_detail",
         "parameters": [
           {
@@ -4439,6 +4439,84 @@
         "summary": "Reject with reason",
         "tags": [
           "admin-empty-legs"
+        ]
+      }
+    },
+    "/api/v1/admin/category-config": {
+      "get": {
+        "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Super administrators change a row with `PATCH /admin/category-config/:id`.",
+        "operationId": "AdminCategoryConfigController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Service category configuration",
+        "tags": [
+          "admin: configuration"
+        ]
+      }
+    },
+    "/api/v1/admin/category-config/{id}": {
+      "patch": {
+        "description": "Changes whether a category is offered, its platform booking mode, payment model and Model C deposit percent; fields left out stay as they are. `reason` is required and the change is audited with before and after (`category_config.update`). 409 `CATEGORY_CONFIG_CHANGED` when the row changed since `expectedUpdatedAt` (its current `updatedAt` in `details`); 422 `CATEGORY_CONFIG_INVALID` for air ambulance on `INSTANT` (business rule 7); 404 for an unknown row. A disabled category is hidden from search and takes no new bookings or requests. New bookings use the new booking mode and payment model; bookings already made keep theirs. The deposit percent is read when a payment is due, so a change also applies to model C bookings not yet paid. A change sending the current values writes nothing.",
+        "operationId": "AdminCategoryConfigController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCategoryConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryConfigResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Change a service category configuration",
+        "tags": [
+          "admin: configuration"
         ]
       }
     },
@@ -5310,7 +5388,7 @@
     },
     "/api/v1/search/scheduled": {
       "post": {
-        "description": "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned.",
+        "description": "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned. 422 `CATEGORY_DISABLED` while the platform has scheduled flights switched off.",
         "operationId": "ScheduledSearchController_search",
         "parameters": [],
         "requestBody": {
@@ -5446,6 +5524,7 @@
     },
     "/api/v1/search/charter": {
       "post": {
+        "description": "422 `CATEGORY_DISABLED` while the platform has the category switched off. Empty-leg alternatives are left out while empty legs are switched off.",
         "operationId": "SearchController_charter",
         "parameters": [],
         "requestBody": {
@@ -5478,6 +5557,7 @@
     },
     "/api/v1/search/helicopter": {
       "post": {
+        "description": "422 `CATEGORY_DISABLED` while the platform has the category switched off.",
         "operationId": "SearchController_helicopter",
         "parameters": [],
         "requestBody": {
@@ -5510,6 +5590,7 @@
     },
     "/api/v1/search/calendar": {
       "get": {
+        "description": "422 `CATEGORY_DISABLED` while the platform has the category switched off.",
         "operationId": "SearchController_calendar",
         "parameters": [
           {
@@ -5706,37 +5787,6 @@
         "summary": "Apply a promotion code to one result (preview, nothing stored)",
         "tags": [
           "search"
-        ]
-      }
-    },
-    "/api/v1/admin/category-config": {
-      "get": {
-        "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.",
-        "operationId": "AdminCategoryConfigController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "Service category configuration",
-        "tags": [
-          "admin: configuration"
         ]
       }
     },
@@ -8533,7 +8583,7 @@
     },
     "/api/v1/air-ambulance/requests": {
       "post": {
-        "description": "Records the request as `SUBMITTED` with the medical details encrypted; operations take it from there. Both locations must be active (404 `NOT_FOUND`, field in `details`) and different (400 `VALIDATION_ERROR`). The answer holds the reference, status and `emergencyNotice` only. Medical details are never logged or audited. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "description": "Records the request as `SUBMITTED` with the medical details encrypted; operations take it from there. Both locations must be active (404 `NOT_FOUND`, field in `details`) and different (400 `VALIDATION_ERROR`). 422 `CATEGORY_DISABLED` while the platform has air ambulance switched off. The answer holds the reference, status and `emergencyNotice` only. Medical details are never logged or audited. A repeat with the same `Idempotency-Key` and body returns the first answer.",
         "operationId": "AirAmbulanceController_create",
         "parameters": [
           {
@@ -15219,6 +15269,126 @@
           "reason"
         ]
       },
+      "BookingMode": {
+        "type": "string",
+        "enum": [
+          "INSTANT",
+          "REQUEST"
+        ],
+        "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST."
+      },
+      "PaymentModel": {
+        "type": "string",
+        "enum": [
+          "A_INSTANT",
+          "B_OPERATOR_CONFIRMED",
+          "C_DEPOSIT"
+        ],
+        "description": "Platform setting. Operators may override it per category."
+      },
+      "CategoryConfigResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "region": {
+            "type": "string",
+            "example": "IN"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "bookingMode": {
+            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "paymentModel": {
+            "description": "Platform setting. Operators may override it per category.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentModel"
+              }
+            ]
+          },
+          "depositPercent": {
+            "type": "number",
+            "example": 25,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "The deposit taken under payment model C, in whole percent of the confirmed total, rounded up to the next paisa."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "region",
+          "isEnabled",
+          "bookingMode",
+          "paymentModel",
+          "depositPercent",
+          "updatedAt"
+        ]
+      },
+      "UpdateCategoryConfigDto": {
+        "type": "object",
+        "properties": {
+          "isEnabled": {
+            "type": "boolean",
+            "description": "Whether the category is offered. A disabled category is hidden from search and takes no new bookings or requests."
+          },
+          "bookingMode": {
+            "description": "Air ambulance is always REQUEST (422 `CATEGORY_CONFIG_INVALID`).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "paymentModel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentModel"
+              }
+            ]
+          },
+          "depositPercent": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "The model C deposit, whole percent. Also used when an operator overrides the payment model to C."
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The row's `updatedAt` as the editor loaded it. 409 `CATEGORY_CONFIG_CHANGED` if it has changed since."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the configuration is changed. Audited."
+          }
+        },
+        "required": [
+          "expectedUpdatedAt",
+          "reason"
+        ]
+      },
       "OperatorPricingResponseDto": {
         "type": "object",
         "properties": {
@@ -17446,14 +17616,6 @@
           "amountMinor"
         ]
       },
-      "BookingMode": {
-        "type": "string",
-        "enum": [
-          "INSTANT",
-          "REQUEST"
-        ],
-        "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator."
-      },
       "SearchResultDetailDto": {
         "type": "object",
         "properties": {
@@ -17706,70 +17868,6 @@
           "price",
           "breakdown",
           "assumptions"
-        ]
-      },
-      "PaymentModel": {
-        "type": "string",
-        "enum": [
-          "A_INSTANT",
-          "B_OPERATOR_CONFIRMED",
-          "C_DEPOSIT"
-        ],
-        "description": "Platform setting. Operators may override it per category."
-      },
-      "CategoryConfigResponseDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ServiceCategory"
-              }
-            ]
-          },
-          "region": {
-            "type": "string",
-            "example": "IN"
-          },
-          "isEnabled": {
-            "type": "boolean"
-          },
-          "bookingMode": {
-            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/BookingMode"
-              }
-            ]
-          },
-          "paymentModel": {
-            "description": "Platform setting. Operators may override it per category.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PaymentModel"
-              }
-            ]
-          },
-          "depositPercent": {
-            "type": "number",
-            "example": 25,
-            "minimum": 1,
-            "maximum": 100,
-            "description": "The deposit taken under payment model C, in whole percent of the confirmed total, rounded up to the next paisa."
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "category",
-          "region",
-          "isEnabled",
-          "bookingMode",
-          "paymentModel",
-          "depositPercent",
-          "updatedAt"
         ]
       },
       "CreateBookingDto": {

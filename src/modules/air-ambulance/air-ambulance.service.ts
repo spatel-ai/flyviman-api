@@ -16,10 +16,12 @@ import {
   OperatorStatus,
   type PatientMobility,
   Role,
+  ServiceCategory,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AircraftService } from '../aircraft/aircraft.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { CategoryConfigService } from '../configuration/category-config.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
@@ -196,6 +198,7 @@ export class AirAmbulanceService implements OnModuleInit {
     private readonly events: NotificationEventsService,
     private readonly aircraft: AircraftService,
     private readonly users: UsersService,
+    private readonly categories: CategoryConfigService,
   ) {}
 
   onModuleInit(): void {
@@ -271,6 +274,8 @@ export class AirAmbulanceService implements OnModuleInit {
     claim: IdempotencyClaim,
   ): Promise<AirAmbulanceRequestView> {
     const { medical } = input;
+    // Not while the platform has the category switched off (M10).
+    await this.categories.assertEnabled(ServiceCategory.AIR_AMBULANCE);
     await this.assertLocations(input);
     for (let attempt = 1; ; attempt += 1) {
       try {
