@@ -404,9 +404,10 @@ export class ReconciliationService {
       }
     }
 
-    // A payout reference names one bank transfer to one settlement: any
-    // paid in the period that shares its reference with another paid record
-    // (at any time, ignoring case).
+    // A payout reference names one bank transfer to one operator (which may
+    // pay several of its settlements): any paid in the period whose
+    // reference is also on another operator's paid record (at any time,
+    // ignoring case).
     const references = [
       ...new Set(
         paidOut.flatMap((settlement) =>
@@ -426,6 +427,7 @@ export class ReconciliationService {
         where: { id: { in: ids.map((row) => row.id) } },
         select: {
           id: true,
+          operatorId: true,
           paymentReference: true,
           payableMinor: true,
           currency: true,
@@ -439,11 +441,12 @@ export class ReconciliationService {
         byReference.set(key, [...(byReference.get(key) ?? []), row]);
       }
       for (const rows of byReference.values()) {
-        if (rows.length < 2) continue;
+        const operators = new Set(rows.map((row) => row.operatorId)).size;
+        if (operators < 2) continue;
         for (const row of rows) {
           flag(
             'SETTLEMENT_REFERENCE_REUSED',
-            `Payout reference ${row.paymentReference ?? ''} is on ${rows.length} paid settlements.`,
+            `Payout reference ${row.paymentReference ?? ''} is on paid settlements of ${operators} operators.`,
             {
               bookingReference: row.booking.reference,
               settlementId: row.id,

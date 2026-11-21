@@ -58,16 +58,19 @@ describe('canReadAuditContents', () => {
     expect(canReadAuditContents(promotion, Role.OPS)).toBe(false);
   });
 
-  it('keeps settlement contents for finance and super admins', () => {
-    const settlement = {
-      entityType: 'Settlement',
-      before: { payableMinor: 900000, status: 'DUE' },
-      after: { payableMinor: 900000, status: 'PAID', paymentReference: 'UTR1' },
-    };
-    expect(canReadAuditContents(settlement, Role.FINANCE_ADMIN)).toBe(true);
-    expect(canReadAuditContents(settlement, Role.SUPER_ADMIN)).toBe(true);
-    expect(canReadAuditContents(settlement, Role.OPS)).toBe(false);
-  });
+  it.each(['Payment', 'Refund', 'Settlement'])(
+    'keeps %s contents for finance and super admins',
+    (entityType) => {
+      const record = {
+        entityType,
+        before: { amountMinor: 900000, status: 'PENDING' },
+        after: { amountMinor: 900000, status: 'PAID', reference: 'UTR1' },
+      };
+      expect(canReadAuditContents(record, Role.FINANCE_ADMIN)).toBe(true);
+      expect(canReadAuditContents(record, Role.SUPER_ADMIN)).toBe(true);
+      expect(canReadAuditContents(record, Role.OPS)).toBe(false);
+    },
+  );
 
   it('leaves other records readable by every role that reads the log', () => {
     const other = { before: null, after: null };

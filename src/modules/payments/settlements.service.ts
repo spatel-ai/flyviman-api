@@ -420,8 +420,9 @@ export class SettlementsService implements OnModuleInit {
    *   (`expectedPayableMinor`), are unchanged (409 `SETTLEMENT_CHANGED`).
    *   Marking it paid again with the same reference returns the record;
    *   another reference is 409 `SETTLEMENT_ALREADY_PAID`. A reference
-   *   already on another settlement (ignoring case) is 409
-   *   `SETTLEMENT_REFERENCE_USED`, checked under a lock on the reference.
+   *   already on another operator's settlement (ignoring case) is 409
+   *   `SETTLEMENT_REFERENCE_USED`, checked under a lock on the reference;
+   *   one transfer may pay several of the same operator's settlements.
    * Any other move is 409 `SETTLEMENT_INVALID_TRANSITION`. Audited with the
    * reason.
    */
@@ -503,7 +504,11 @@ export class SettlementsService implements OnModuleInit {
             [{ field: 'payableMinor', issue: String(fresh.payableMinor) }],
           );
         }
-        await this.refuseUsedReference(tx, id, input.paymentReference ?? '');
+        await this.refuseUsedReference(
+          tx,
+          row.operatorId,
+          input.paymentReference ?? '',
+        );
       }
 
       const paid = to === SettlementStatus.PAID;
@@ -555,15 +560,17 @@ export class SettlementsService implements OnModuleInit {
   }
 
   /**
-   * One payout reference names one settlement. Two marks with the same
-   * reference on different bookings hold different booking locks, so the
-   * reference takes its own lock (always after the booking's) before the
-   * look-up. There is no unique index behind it (no schema change); the
-   * reconciliation report lists any reference on two paid records.
+   * One payout reference names one bank transfer to one operator, which
+   * may pay several of its settlements (a batched payout). Two marks with
+   * the same reference on different bookings hold different booking locks,
+   * so the reference takes its own lock (always after the booking's)
+   * before the look-up. There is no unique index behind it (no schema
+   * change); the reconciliation report lists any reference on two
+   * operators' paid records.
    */
   private async refuseUsedReference(
     tx: Prisma.TransactionClient,
-    id: string,
+    operatorId: string,
     reference: string,
   ): Promise<void> {
     const key = `settlement_reference:${reference.toUpperCase()}`;
@@ -572,13 +579,13 @@ export class SettlementsService implements OnModuleInit {
     // (`_` is allowed in a reference) are never pattern characters.
     const others = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM "Settlement"
-      WHERE id <> ${id}::uuid
+      WHERE "operatorId" <> ${operatorId}::uuid
         AND upper("paymentReference") = upper(${reference})
       LIMIT 1`;
     if (others.length > 0) {
       throw new AppException(
         'SETTLEMENT_REFERENCE_USED',
-        'This bank transfer reference is already recorded on another settlement.',
+        'This bank transfer reference is already recorded on another operator’s settlement.',
         HttpStatus.CONFLICT,
         [{ field: 'paymentReference', issue: 'already used' }],
       );
