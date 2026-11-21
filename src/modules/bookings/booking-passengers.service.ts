@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CustomersService } from '../customers/customers.service.js';
+import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { parseItinerary } from './booking-json.js';
 import { passengerSnapshot } from './booking-snapshot.js';
 import type {
@@ -50,7 +51,8 @@ function locked(issue: string): AppException {
  * The customer replaces a booking's passengers with saved passengers
  * (M8): the booking's copies are deleted and fresh ones written from the
  * saved passengers as they are now, sensitive fields encrypted, under the
- * booking's lock. Idempotent by key; audited with counts only, never a
+ * booking's lock. The operator's team is told (`booking.passengers_changed`,
+ * the count only). Idempotent by key; audited with counts only, never a
  * passenger's details (rule 8).
  */
 @Injectable()
@@ -60,6 +62,7 @@ export class BookingPassengersService {
     private readonly audit: AuditService,
     private readonly customers: CustomersService,
     private readonly cipher: FieldCipher,
+    private readonly events: NotificationEventsService,
   ) {}
 
   async replace(
@@ -141,6 +144,14 @@ export class BookingPassengersService {
           },
         },
         tx,
+      );
+      // The operator's team, if an operator has the booking: the count and
+      // a link, never a name (rule 8). Queued with the change.
+      await this.events.notifyBooking(
+        tx,
+        'booking.passengers_changed',
+        booking.id,
+        { passengerCount: snapshots.length },
       );
       return {
         reference: booking.reference,

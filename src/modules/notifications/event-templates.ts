@@ -4,7 +4,8 @@ import { NOTIFICATION_MATRIX } from './matrix.js';
 /**
  * The wording of the matrix events (M10), kept as one short copy per event
  * and turned into a template for each channel the event uses. Variables are
- * system-derived only: `reference`, `link`, `validUntil`, `decision`. No
+ * system-derived only: `reference`, `link`, `validUntil`, `decision`,
+ * `passengerCount`. No
  * amount, passenger, medical or free-text value ever appears, so a message
  * is safe on a lock screen (rule 8) and an estimate is never read as a
  * final price (rule 1).
@@ -50,6 +51,10 @@ const COPY: Record<string, Copy> = {
   'booking.change_requested': {
     title: 'Change requested for {{reference}}',
     text: 'The customer asked for a change to {{reference}}. Open it in the operator portal to approve or decline.',
+  },
+  'booking.passengers_changed': {
+    title: 'Passengers changed for {{reference}}',
+    text: 'The customer changed who is flying on {{reference}}: {{passengerCount}} passengers now. Open it in the operator portal for the passenger details.',
   },
   'booking.confirmed_operator': {
     title: 'Booking {{reference}} is confirmed',
@@ -121,6 +126,7 @@ export const EVENT_VARIABLES: ReadonlySet<string> = new Set([
   'link',
   'validUntil',
   'decision',
+  'passengerCount',
 ]);
 
 /**

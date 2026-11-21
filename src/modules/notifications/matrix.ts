@@ -58,6 +58,8 @@ export const NOTIFICATION_MATRIX: readonly NotificationRule[] = [
   rule('booking.clarification_answered', 'OPERATOR', 'BOOKING', BASIC, false),
   rule('booking.cancelled_by_customer', 'OPERATOR', 'BOOKING', BASIC, true),
   rule('booking.change_requested', 'OPERATOR', 'BOOKING', BASIC, false),
+  // Who flies is the operator's manifest: always told (counts only).
+  rule('booking.passengers_changed', 'OPERATOR', 'BOOKING', BASIC, true),
   rule('booking.confirmed_operator', 'OPERATOR', 'BOOKING', BASIC, true),
   // Booking requests: to the customer.
   rule('booking.price_confirmed', 'CUSTOMER', 'BOOKING', URGENT, false),

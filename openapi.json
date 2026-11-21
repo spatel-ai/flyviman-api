@@ -7237,7 +7237,7 @@
     },
     "/api/v1/bookings/{reference}/passengers": {
       "put": {
-        "description": "Copies the saved passengers (`passengerIds`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 `VALIDATION_ERROR`). Only from `REQUESTED` up to `CONFIRMED` and until 24 hours before the first departure: 409 `BOOKING_PASSENGERS_LOCKED` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. Answers the reference and the passenger count only (`GET /bookings/:reference` has the details). A repeat with the same `Idempotency-Key` and body returns the first answer. Another customer’s booking is 404.",
+        "description": "Copies the saved passengers (`passengerIds`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 `VALIDATION_ERROR`). Only from `REQUESTED` up to `CONFIRMED` and until 24 hours before the first departure: 409 `BOOKING_PASSENGERS_LOCKED` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. The booking’s operator, if any, is told (`booking.passengers_changed`, in-app and email, the count only). Answers the reference and the passenger count only (`GET /bookings/:reference` has the details). A repeat with the same `Idempotency-Key` and body returns the first answer. Another customer’s booking is 404.",
         "operationId": "BookingSelfServiceController_replacePassengers",
         "parameters": [
           {
