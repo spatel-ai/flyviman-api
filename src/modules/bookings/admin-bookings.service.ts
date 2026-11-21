@@ -424,7 +424,8 @@ function offerTaken(): AppException {
 /**
  * Reviving an ended empty-leg booking (M8-C) needs its offer free: another
  * live booking of the offer is 409 `BOOKING_UNAVAILABLE`, not the partial
- * unique index's failure. Under the offer's row lock, which a customer's
+ * unique index's failure. Under the offer's row lock (a lock only; the
+ * empty-legs module's table is never written here), which a customer's
  * request takes too (`EmptyLegsService.forBooking`), so the two are made one
  * after the other; the booking's row is locked first, as a confirmation
  * locks it before marking the offer booked.
