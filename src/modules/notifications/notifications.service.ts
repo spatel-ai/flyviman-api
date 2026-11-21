@@ -191,6 +191,20 @@ export class NotificationsService {
   }
 
   /**
+   * Erasure (privacy module): deletes every notification addressed to the
+   * user (in-app inbox, delivery log, queued outbox rows with their address),
+   * in the caller's transaction. A row being sent at that moment is simply
+   * not found when its send is recorded.
+   */
+  async eraseFor(
+    userId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
+    const { count } = await tx.notification.deleteMany({ where: { userId } });
+    return count;
+  }
+
+  /**
    * Delivers queued messages that are due, a batch at a time. Each row is
    * leased first (SKIP LOCKED, `nextAttemptAt` pushed past the lease), so two
    * instances, or the dispatcher and an immediate send, never send the same

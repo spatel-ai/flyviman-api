@@ -16,6 +16,7 @@ import { AdminBookingsController } from './admin-bookings.controller.js';
 import { AdminBookingsService } from './admin-bookings.service.js';
 import { AdminChangeRequestsController } from './admin-change-requests.controller.js';
 import { AdminPriceOverrideController } from './admin-price-override.controller.js';
+import { BookingErasureService } from './booking-erasure.service.js';
 import { BookingDocumentsController } from './booking-documents.controller.js';
 import { BookingDocumentsService } from './booking-documents.service.js';
 import { BookingEscalationService } from './booking-escalation.service.js';
@@ -96,7 +97,8 @@ import { BookingReportsService } from './booking-reports.service.js';
     BookingTimelineService,
     BookingPassengersService,
     BookingRevalidationService,
+    BookingErasureService,
   ],
-  exports: [BookingsService, BookingReportsService],
+  exports: [BookingsService, BookingReportsService, BookingErasureService],
 })
 export class BookingsModule {}

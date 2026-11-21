@@ -9997,6 +9997,112 @@
           "admin: reports"
         ]
       }
+    },
+    "/api/v1/me/erasure/code": {
+      "post": {
+        "description": "For accounts without a password (registered with a mobile number), or as an alternative to it. The code goes to the mobile number, or to the email address when there is none. Send the answer’s `verificationId` with the code to `POST /me/erasure`. The code works only there: `POST /auth/otp/verify` refuses it, and `POST /me/erasure` refuses a sign-in code.",
+        "operationId": "MeErasureController_sendCode",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationSentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Send a code to confirm erasing your account",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/erasure": {
+      "post": {
+        "description": "Irreversible. Confirmed with the current password, or with `verificationId` and `code` from `POST /me/erasure/code`. Your name, contact details, password, saved passengers, sign-ins, notifications and the personal details on past bookings and air ambulance requests (passengers, special requests, contacts, medical details and documents) are erased at once. Booking references, amounts, payments and settlements are kept for the legal and financial record, as are the records of the consents you gave (with the address they were given from) and the audit log (with the address of each action). Messages in a booking’s timeline stay, encrypted, because the timeline cannot be edited. Every sign-in ends; the email address or mobile number can be registered again. 409 `USER_ERASURE_BLOCKED` while something is still open, with one `details` entry per reason (`OPEN_BOOKINGS`, `PAYMENT_IN_PROGRESS`, `REFUND_IN_PROGRESS`, `REFUND_DUE`, `BALANCE_DUE`, `OPEN_AIR_AMBULANCE`, `RECENT_ACTIVITY`); 401 `AUTH_INVALID_CREDENTIALS` for a wrong password; 400 `AUTH_OTP_INVALID` or `AUTH_OTP_EXPIRED` for a wrong or used code.",
+        "operationId": "MeErasureController_erase",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EraseMyAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Erase your account and personal data",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/erase": {
+      "post": {
+        "description": "For an erasure request received another way (email, letter). Customer accounts only. Irreversible; needs a reason and is audited as `user.erase` with counts only. The same data is erased and kept as for `POST /me/erasure`, and the same 409 `USER_ERASURE_BLOCKED` applies. 409 `USER_INVALID_TRANSITION` for an internal staff or operator account, or one already erased.",
+        "operationId": "AdminErasureController_erase",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EraseUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserErasedResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Erase a customer's personal data",
+        "tags": [
+          "admin: users"
+        ]
+      }
     }
   },
   "info": {
@@ -10166,7 +10272,8 @@
         "enum": [
           "PENDING_VERIFICATION",
           "ACTIVE",
-          "SUSPENDED"
+          "SUSPENDED",
+          "ERASED"
         ]
       },
       "UserResponseDto": {
@@ -24088,6 +24195,59 @@
           "averageMinutesToQuote",
           "averageMinutesToConfirm",
           "fulfilmentRate"
+        ]
+      },
+      "EraseMyAccountDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The current password. Send this, or verificationId and code."
+          },
+          "verificationId": {
+            "type": "string",
+            "description": "From `POST /me/erasure/code`."
+          },
+          "code": {
+            "type": "string",
+            "example": "123456"
+          }
+        }
+      },
+      "EraseUserDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Why the personal data is being erased, for example how the request arrived. Audited and kept: never include the person’s name or contact details."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "UserErasedResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ERASED"
+            ]
+          },
+          "erasedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "erasedAt"
         ]
       },
       "ResponseMetaDto": {

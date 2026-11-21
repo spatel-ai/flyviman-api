@@ -34,6 +34,15 @@ export interface PendingRegistration {
   [field: string]: unknown;
 }
 
+/**
+ * What a code may be used for. `sign-in` covers registration and code
+ * sign-in (`POST /auth/otp/verify`, the only route that accepts them);
+ * `erasure` confirms a signed-in customer's erasure of their own account
+ * (`POST /me/erasure`) and is refused everywhere else, as a sign-in code is
+ * refused there (W5-8b). Attempts stored without one are `sign-in`.
+ */
+export type VerificationPurpose = 'sign-in' | 'erasure';
+
 /** Creates the account for a verified registration; `null` if it no longer can. */
 export type RegistrationCompletion = (
   pending: PendingRegistration,
@@ -48,6 +57,8 @@ interface Attempt {
   pending: PendingRegistration | null;
   /** `null` when no code was sent: the attempt can never succeed. */
   hash: string | null;
+  /** Left out for `sign-in`, which attempts stored before W5-8b are. */
+  purpose?: VerificationPurpose;
 }
 
 export interface VerifiedAttempt {
@@ -183,7 +194,11 @@ export class VerificationService {
    */
   async start(
     identifier: Identifier,
-    target: { userId?: string; pending?: PendingRegistration } = {},
+    target: {
+      userId?: string;
+      pending?: PendingRegistration;
+      purpose?: VerificationPurpose;
+    } = {},
   ): Promise<VerificationSent> {
     const verificationId = randomBytes(24).toString('base64url');
     const attempt: Attempt = {
@@ -191,6 +206,9 @@ export class VerificationService {
       userId: target.userId ?? null,
       pending: target.pending ?? null,
       hash: null,
+      ...(target.purpose && target.purpose !== 'sign-in'
+        ? { purpose: target.purpose }
+        : {}),
     };
     await this.issue(verificationId, attempt);
     return this.sent(verificationId, identifier);
@@ -213,9 +231,15 @@ export class VerificationService {
 
   /**
    * Checks a code against its attempt. A code works once, and five wrong
-   * guesses destroy it.
+   * guesses destroy it. An attempt started for another purpose is refused
+   * whatever the code, counted as a guess and left unused, so a code sent to
+   * confirm one thing can never be spent on another.
    */
-  async check(verificationId: string, code: string): Promise<VerifiedAttempt> {
+  async check(
+    verificationId: string,
+    code: string,
+    purpose: VerificationPurpose = 'sign-in',
+  ): Promise<VerifiedAttempt> {
     const key = this.key(verificationId);
     const taken = (await this.redis.eval(
       TAKE_GUESS,
@@ -229,6 +253,7 @@ export class VerificationService {
 
     const [stored, guesses] = taken;
     const attempt = JSON.parse(stored) as Attempt;
+    if ((attempt.purpose ?? 'sign-in') !== purpose) throw this.expired();
     const expected = Buffer.from(attempt.hash ?? '');
     const given = Buffer.from(this.hash(verificationId, code));
     const matches =

@@ -153,7 +153,14 @@ export class RegistrationService implements OnModuleInit {
           HttpStatus.FORBIDDEN,
         );
       }
-      if (account?.role !== Role.CUSTOMER) account = null;
+      // An erased account is gone: a code sent before the erasure neither
+      // signs in nor marks anything verified on it.
+      if (
+        account?.role !== Role.CUSTOMER ||
+        account.status === UserStatus.ERASED
+      ) {
+        account = null;
+      }
       if (account && 'phone' in attempt.identifier) {
         ({ account } = await this.users.markVerified(account.id, 'phone'));
       }

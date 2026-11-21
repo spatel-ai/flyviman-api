@@ -180,6 +180,21 @@ export class PrismaIdempotencyStore extends IdempotencyStore {
 }
 
 /**
+ * Erasure (W5-8b): deletes the keys a user's own requests claimed, whose
+ * stored responses can repeat what they sent (passengers, contacts) for up
+ * to a day. Their scope starts with the user's id (`idempotencyScope`).
+ */
+export async function forgetIdempotencyKeys(
+  tx: Prisma.TransactionClient,
+  userId: string,
+): Promise<number> {
+  const { count } = await tx.idempotencyKey.deleteMany({
+    where: { scope: { startsWith: `${userId}:` } },
+  });
+  return count;
+}
+
+/**
  * Marks the key COMMITTED inside the handler's own transaction, so the
  * record it creates and the key commit together or not at all. Every
  * `@Idempotent()` route calls it in the transaction that makes its change.

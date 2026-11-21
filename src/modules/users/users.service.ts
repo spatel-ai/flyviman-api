@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Paginated } from '../../common/dto/paginated.js';
+import { scrubbedUser } from '../../common/erasure.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import { uniqueOrNull } from '../../common/errors/unique.js';
 import type { Prisma } from '../../generated/prisma/client.js';
@@ -535,6 +536,37 @@ export class UsersService {
       },
     });
     return user;
+  }
+
+  // --- Erasure (privacy module) ---------------------------------------------
+
+  /**
+   * Locks the account row for the rest of the caller's transaction and
+   * returns what an erasure is decided on. The row lock also holds back any
+   * record being created for the account at the same moment (its foreign key
+   * check waits for the lock), so the erasure sees it or it comes after.
+   */
+  async lockForErasure(
+    id: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<UserAccount | null> {
+    const rows = await tx.$queryRaw<UserAccount[]>`
+      SELECT "id", "email", "phone", "role", "status"
+      FROM "User" WHERE "id" = ${id}::uuid FOR UPDATE`;
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Removes the account's identifiers and password and marks it ERASED, in
+   * the caller's transaction. The row stays: bookings, payments and audit
+   * records refer to it. The caller decides whether it may be erased.
+   */
+  async anonymise(
+    id: string,
+    now: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.user.update({ where: { id }, data: scrubbedUser(now) });
   }
 
   // --- For operator staff (operators module) --------------------------------

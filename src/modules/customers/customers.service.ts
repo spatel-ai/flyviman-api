@@ -228,6 +228,22 @@ export class CustomersService implements OnApplicationBootstrap {
     });
   }
 
+  /**
+   * Erasure (privacy module): deletes the customer's saved passengers and
+   * profile, in the caller's transaction. Bookings keep their own snapshot,
+   * whose link to a saved passenger is cleared by the foreign key.
+   */
+  async erase(
+    userId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ passengers: number }> {
+    const { count } = await tx.passenger.deleteMany({
+      where: { customer: { userId } },
+    });
+    await tx.customerProfile.deleteMany({ where: { userId } });
+    return { passengers: count };
+  }
+
   private async profileIdOrThrow(userId: string): Promise<string> {
     const profile = await this.prisma.customerProfile.findUnique({
       where: { userId },

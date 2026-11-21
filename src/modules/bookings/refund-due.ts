@@ -20,16 +20,19 @@ export interface CancellationRefundDue {
 /**
  * Cancellations recorded with a refund due (W3-2, computed from payments
  * since W4-1), oldest first, for the finance refund queue. Bookings' own
- * table, read for the payments module, which depends on bookings.
+ * table, read for the payments module, which depends on bookings. With
+ * `customerId`, only that customer's bookings (erasure, W5-8b).
  */
 export async function cancellationsWithRefundDue(
   db: Pick<Prisma.TransactionClient, 'changeRequest'>,
+  customerId?: string,
 ): Promise<CancellationRefundDue[]> {
   const rows = await db.changeRequest.findMany({
     where: {
       kind: ChangeRequestKind.CANCELLATION,
       status: ChangeRequestStatus.COMPLETED,
       refundMinor: { gt: 0n },
+      ...(customerId ? { booking: { customerId } } : {}),
     },
     select: {
       refundMinor: true,

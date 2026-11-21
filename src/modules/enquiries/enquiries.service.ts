@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppException } from '../../common/errors/app.exception.js';
 import { Paginated } from '../../common/dto/paginated.js';
+import { SCRUBBED_ENQUIRY } from '../../common/erasure.js';
 import {
   type IdempotencyClaim,
   markIdempotencyCommitted,
@@ -53,6 +54,44 @@ export class EnquiriesService {
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Erasure (privacy module): scrubs the sender and message of every
+   * enquiry sent from the erased customer's email address or phone number,
+   * in the caller's transaction. The topic and dates stay for the counts.
+   */
+  async eraseFrom(
+    contact: { email: string | null; phone: string | null },
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
+    const OR: Prisma.EnquiryWhereInput[] = [];
+    if (contact.email) {
+      OR.push({ email: { equals: contact.email, mode: 'insensitive' } });
+    }
+    if (contact.phone) OR.push({ phone: contact.phone });
+    if (OR.length === 0) return 0;
+    // Matched again exactly here: a case-insensitive match may be a pattern
+    // match, where `_` or `%` in an address would catch someone else's.
+    const email = contact.email?.toLowerCase();
+    const ids = (
+      await tx.enquiry.findMany({
+        where: { OR },
+        select: { id: true, email: true, phone: true },
+      })
+    )
+      .filter(
+        (row) =>
+          (email !== undefined && row.email?.toLowerCase() === email) ||
+          (contact.phone !== null && row.phone === contact.phone),
+      )
+      .map((row) => row.id);
+    if (ids.length === 0) return 0;
+    const { count } = await tx.enquiry.updateMany({
+      where: { id: { in: ids } },
+      data: SCRUBBED_ENQUIRY,
+    });
+    return count;
+  }
 
   /** `claim` is the request's `Idempotency-Key`, committed with the enquiry. */
   async create(
