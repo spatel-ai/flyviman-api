@@ -12,7 +12,10 @@ import type { AuthUser } from '../auth/auth-user.js';
 import { CustomersService } from '../customers/customers.service.js';
 import { parseItinerary } from './booking-json.js';
 import { passengerSnapshot } from './booking-snapshot.js';
-import type { ReplacePassengersDto } from './dto/customer-booking.dto.js';
+import type {
+  PassengersReplacedDto,
+  ReplacePassengersDto,
+} from './dto/customer-booking.dto.js';
 
 /**
  * While the customer may change who flies: from the request up to a
@@ -64,7 +67,7 @@ export class BookingPassengersService {
     reference: string,
     input: ReplacePassengersDto,
     claim: IdempotencyClaim,
-  ): Promise<void> {
+  ): Promise<PassengersReplacedDto> {
     // Ownership of each saved passenger: another customer's is 404.
     const passengers = await this.customers.passengersByIds(
       user.id,
@@ -73,7 +76,7 @@ export class BookingPassengersService {
     const snapshots = passengers.map((passenger) =>
       passengerSnapshot(passenger, (plain) => this.cipher.encrypt(plain)),
     );
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       await markIdempotencyCommitted(tx, claim);
       const found = await tx.booking.findFirst({
         where: { reference, customerId: user.id },
@@ -139,6 +142,10 @@ export class BookingPassengersService {
         },
         tx,
       );
+      return {
+        reference: booking.reference,
+        passengerCount: snapshots.length,
+      };
     });
   }
 }

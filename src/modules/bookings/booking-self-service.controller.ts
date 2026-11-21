@@ -29,11 +29,10 @@ import {
 import { BookingReferencePipe } from './booking-reference.pipe.js';
 import { BookingRevalidationService } from './booking-revalidation.service.js';
 import { BookingTimelineService } from './booking-timeline.service.js';
-import { BookingsService } from './bookings.service.js';
-import { BookingResponseDto } from './dto/booking.dto.js';
 import {
   BookingRevalidationDto,
   CustomerBookingEventDto,
+  PassengersReplacedDto,
   ReplacePassengersDto,
 } from './dto/customer-booking.dto.js';
 
@@ -47,7 +46,6 @@ import {
 @Controller('bookings')
 export class BookingSelfServiceController {
   constructor(
-    private readonly bookings: BookingsService,
     private readonly timeline: BookingTimelineService,
     private readonly passengers: BookingPassengersService,
     private readonly revalidation: BookingRevalidationService,
@@ -71,7 +69,7 @@ export class BookingSelfServiceController {
   @Idempotent()
   @ApiOperation({
     summary: 'Replace the booking’s passengers with saved passengers',
-    description: `Copies the saved passengers (\`passengerIds\`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 \`VALIDATION_ERROR\`). Only from \`REQUESTED\` up to \`CONFIRMED\` and until ${PASSENGER_CUTOFF_HOURS} hours before the first departure: 409 \`BOOKING_PASSENGERS_LOCKED\` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. Answers the booking, document numbers masked. A repeat with the same \`Idempotency-Key\` and body returns the first answer. Another customer’s booking is 404.`,
+    description: `Copies the saved passengers (\`passengerIds\`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 \`VALIDATION_ERROR\`). Only from \`REQUESTED\` up to \`CONFIRMED\` and until ${PASSENGER_CUTOFF_HOURS} hours before the first departure: 409 \`BOOKING_PASSENGERS_LOCKED\` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. Answers the reference and the passenger count only (\`GET /bookings/:reference\` has the details). A repeat with the same \`Idempotency-Key\` and body returns the first answer. Another customer’s booking is 404.`,
   })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -79,15 +77,14 @@ export class BookingSelfServiceController {
     description: 'A UUID, new for each change and reused on retry.',
     schema: { type: 'string', format: 'uuid' },
   })
-  @ApiOkResponse({ type: BookingResponseDto })
-  async replacePassengers(
+  @ApiOkResponse({ type: PassengersReplacedDto })
+  replacePassengers(
     @CurrentUser() user: AuthUser,
     @Param('reference', BookingReferencePipe) reference: string,
     @Body() body: ReplacePassengersDto,
     @IdempotencyClaimParam() claim: IdempotencyClaim,
-  ): Promise<BookingResponseDto> {
-    await this.passengers.replace(user, reference, body, claim);
-    return this.bookings.getOwn(user, reference);
+  ): Promise<PassengersReplacedDto> {
+    return this.passengers.replace(user, reference, body, claim);
   }
 
   @Post(':reference/revalidate')

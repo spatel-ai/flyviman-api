@@ -112,7 +112,7 @@ export class ReplacePassengersDto {
     type: [String],
     format: 'uuid',
     description:
-      'Saved passengers (`/me/passengers`), the lead first: at least one and at most the trip’s passenger count. Their details are copied onto the booking as they are now.',
+      'Saved passengers (`/me/passengers`): at least one and at most the trip’s passenger count. Their details are copied onto the booking as they are now.',
   })
   @IsArray()
   @ArrayMinSize(1)
@@ -120,6 +120,18 @@ export class ReplacePassengersDto {
   @ArrayUnique()
   @IsUUID('all', { each: true })
   passengerIds: string[];
+}
+
+/**
+ * What the passenger change answers: no passenger data, since an idempotent
+ * answer is kept for replay (`GET /bookings/:reference` has the details).
+ */
+export class PassengersReplacedDto {
+  @ApiProperty({ example: 'FLY-BK-7K2M9Q' })
+  reference: string;
+
+  @ApiProperty()
+  passengerCount: number;
 }
 
 /** Why a booking cannot be flown as booked now, for the customer. */

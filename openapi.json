@@ -7237,7 +7237,7 @@
     },
     "/api/v1/bookings/{reference}/passengers": {
       "put": {
-        "description": "Copies the saved passengers (`passengerIds`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 `VALIDATION_ERROR`). Only from `REQUESTED` up to `CONFIRMED` and until 24 hours before the first departure: 409 `BOOKING_PASSENGERS_LOCKED` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. Answers the booking, document numbers masked. A repeat with the same `Idempotency-Key` and body returns the first answer. Another customer’s booking is 404.",
+        "description": "Copies the saved passengers (`passengerIds`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 `VALIDATION_ERROR`). Only from `REQUESTED` up to `CONFIRMED` and until 24 hours before the first departure: 409 `BOOKING_PASSENGERS_LOCKED` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. Answers the reference and the passenger count only (`GET /bookings/:reference` has the details). A repeat with the same `Idempotency-Key` and body returns the first answer. Another customer’s booking is 404.",
         "operationId": "BookingSelfServiceController_replacePassengers",
         "parameters": [
           {
@@ -7275,7 +7275,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BookingResponseDto"
+                  "$ref": "#/components/schemas/PassengersReplacedDto"
                 }
               }
             }
@@ -18333,7 +18333,7 @@
         "type": "object",
         "properties": {
           "passengerIds": {
-            "description": "Saved passengers (`/me/passengers`), the lead first: at least one and at most the trip’s passenger count. Their details are copied onto the booking as they are now.",
+            "description": "Saved passengers (`/me/passengers`): at least one and at most the trip’s passenger count. Their details are copied onto the booking as they are now.",
             "type": "array",
             "items": {
               "type": "string",
@@ -18343,6 +18343,22 @@
         },
         "required": [
           "passengerIds"
+        ]
+      },
+      "PassengersReplacedDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "passengerCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reference",
+          "passengerCount"
         ]
       },
       "BookingUnavailableReason": {
