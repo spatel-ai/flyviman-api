@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { Logger } from '@nestjs/common';
 import {
@@ -49,6 +50,17 @@ const METHOD = /^[a-z_]{1,20}$/;
 const ERROR_CODE = /^[A-Z_]{1,40}$/;
 /** `X-Refund-Idempotency`: at least 10 letters, digits, `-` or `_`. */
 const REFUND_IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{10,}$/;
+/** Razorpay's longest order receipt. */
+const RECEIPT_MAX_LENGTH = 40;
+/**
+ * The 400 refusals that are not final, so a refund is never failed for
+ * them (https://razorpay.com/docs/api/refunds/create-normal/, errors):
+ * "Request failed because another payment operation is in progress." (and
+ * its order twin), and "Duplicate receipt found for this refund request.",
+ * which means a refund with our reference may exist already: its notice
+ * settles it.
+ */
+const NOT_FINAL_400 = /another \w+ operation is in progress|duplicate receipt/i;
 
 const ORDER_STATUSES = new Set<string>([
   'created',
@@ -113,12 +125,16 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
   }
 
   /**
-   * `POST /orders` (https://razorpay.com/docs/api/orders/create/). Never
-   * retried: orders take no idempotency key and Razorpay does not refuse a
-   * repeated receipt, so a retry after a timeout could make a second order.
-   * An order made but not answered stays unpaid; only an order we got back
-   * is recorded. An answer for another amount or currency (an existing
-   * order handed back) is refused, never offered to the customer.
+   * `POST /orders` (https://razorpay.com/docs/api/orders/create/). The
+   * receipt is our reference with a random suffix per attempt
+   * (`FLY-BK-ABC234-1f2e3d4c`): Razorpay's documentation says a receipt must
+   * be unique, and a booking can have several orders (a retry, a deposit and
+   * its balance). Nothing maps back by receipt; our payment is found by the
+   * order ID. Never retried: orders take no idempotency key, so a retry
+   * after a timeout could make a second order. An order made but not
+   * answered stays unpaid; only an order we got back is recorded. An answer
+   * for another amount or currency is refused, never offered to the
+   * customer.
    */
   async createOrder(input: CreateOrderInput): Promise<GatewayOrder> {
     if (
@@ -136,10 +152,11 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
         'The currency is not supported.',
       );
     }
+    const receipt = attemptReceipt(input.receipt);
     const json = await this.call('createOrder', 'POST', '/orders', {
       amount: input.amountMinor,
       currency: input.currency,
-      receipt: input.receipt,
+      receipt,
     });
     const { id, amount, currency, status } = json;
     if (
@@ -161,7 +178,7 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
       providerOrderId: id,
       amountMinor: amount,
       currency,
-      receipt: input.receipt,
+      receipt,
       status: status as GatewayOrderStatus,
       checkoutKeyId: this.checkoutKeyId,
     };
@@ -330,10 +347,15 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
       typeof error?.code === 'string' && ERROR_CODE.test(error.code)
         ? ` ${error.code}`
         : '';
+    // Razorpay's description is read to classify, never kept or logged.
+    const notFinal =
+      response.status === 400 &&
+      typeof error?.description === 'string' &&
+      NOT_FINAL_400.test(error.description);
     return {
       ok: false,
-      reason: reasonFor(response.status),
-      detail: `HTTP ${response.status}${code}`,
+      reason: notFinal ? 'UNAVAILABLE' : reasonFor(response.status),
+      detail: `HTTP ${response.status}${code}${notFinal ? ', not final' : ''}`,
     };
   }
 
@@ -351,11 +373,16 @@ const MESSAGES: Record<PaymentGatewayError['reason'], string> = {
 };
 
 /**
- * Only a refusal of the request itself is `INVALID_REQUEST` (a refund marked
- * failed). Our own credentials refused (401, 403), a conflict with an
- * operation in progress (409), a rate limit (429) or Razorpay failing (5xx)
- * is `UNAVAILABLE`: asked again later. Razorpay answers an unknown ID with
- * 400, so `NOT_FOUND` is only a real 404.
+ * Only a final refusal of the request itself is `INVALID_REQUEST` (a refund
+ * marked failed, its amount freed): every 400 except `NOT_FINAL_400`, for
+ * example "The refund amount provided is greater than amount captured.",
+ * "The payment has been fully refunded already.", "The payment status
+ * should be captured for action to be taken." and "Your account does not
+ * have enough balance to carry out the refund operation." (no refund is
+ * made; finance tops up and refunds again). Our own credentials refused
+ * (401, 403), a conflict with an operation in progress (409), a rate limit
+ * (429) or Razorpay failing (5xx) is `UNAVAILABLE`: nothing is failed.
+ * Razorpay answers an unknown ID with 400, so `NOT_FOUND` is only a 404.
  */
 function reasonFor(status: number): PaymentGatewayError['reason'] {
   if (status === 404) return 'NOT_FOUND';
@@ -389,6 +416,12 @@ function toPayment(json: Record<string, unknown>): GatewayPayment | null {
     amountRefundedMinor: refunded,
     ...(typeof method === 'string' && METHOD.test(method) ? { method } : {}),
   };
+}
+
+/** Our reference, cut to fit, and 8 random hex characters. */
+function attemptReceipt(reference: string): string {
+  const suffix = randomBytes(4).toString('hex');
+  return `${reference.slice(0, RECEIPT_MAX_LENGTH - suffix.length - 1)}-${suffix}`;
 }
 
 function parseJson(text: string): unknown {

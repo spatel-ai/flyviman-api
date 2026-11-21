@@ -162,7 +162,7 @@ describe('RazorpayPaymentGatewayProvider', () => {
         providerOrderId: 'order_RB58MiP5SPFYyM',
         amountMinor: 1_250_000,
         currency: 'INR',
-        receipt: 'FLY-ABC123',
+        receipt: expect.stringMatching(/^FLY-ABC123-[0-9a-f]{8}$/),
         status: 'created',
         checkoutKeyId: KEY_ID,
       });
@@ -172,7 +172,7 @@ describe('RazorpayPaymentGatewayProvider', () => {
       expect(request.body).toEqual({
         amount: 1_250_000,
         currency: 'INR',
-        receipt: 'FLY-ABC123',
+        receipt: order.receipt,
       });
       expect(request.headers.authorization).toBe(
         `Basic ${Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString('base64')}`,
@@ -180,6 +180,38 @@ describe('RazorpayPaymentGatewayProvider', () => {
       expect(request.headers['content-type']).toBe('application/json');
       expect(request.init.signal).toBeInstanceOf(AbortSignal);
       expect(request.init.redirect).toBe('error');
+    });
+
+    it("gives each attempt its own receipt, within Razorpay's 40 characters", async () => {
+      const order = (receipt: string) => ({
+        id: 'order_X',
+        amount: 1_250_000,
+        currency: 'INR',
+        receipt,
+        status: 'created',
+      });
+      const fetchStub = vi.fn<typeof fetch>((_url, init) =>
+        Promise.resolve(
+          answer(
+            200,
+            order(
+              (JSON.parse(init!.body as string) as { receipt: string }).receipt,
+            ),
+          ),
+        ),
+      );
+      const razorpay = gateway(fetchStub);
+      const first = await razorpay.createOrder(input);
+      const second = await razorpay.createOrder(input);
+      expect(first.receipt).not.toBe(second.receipt);
+      expect(first.receipt.startsWith('FLY-ABC123-')).toBe(true);
+
+      const long = await razorpay.createOrder({
+        ...input,
+        receipt: 'R'.repeat(60),
+      });
+      expect(long.receipt).toHaveLength(40);
+      expect(long.receipt).toMatch(/^R{31}-[0-9a-f]{8}$/);
     });
 
     it('refuses an answer for another amount or currency (an existing order handed back)', async () => {
@@ -514,7 +546,7 @@ describe('RazorpayPaymentGatewayProvider', () => {
       );
     });
 
-    it('a refusal fails the refund; a conflict, refused keys or a 5xx leaves it to be asked again', async () => {
+    it('only a final refusal fails the refund; anything not final leaves it to be asked again', async () => {
       const cases: [Response, string][] = [
         [
           answer(
@@ -524,6 +556,49 @@ describe('RazorpayPaymentGatewayProvider', () => {
             ),
           ),
           'INVALID_REQUEST',
+        ],
+        [
+          answer(
+            400,
+            razorpayError('The payment has been fully refunded already.'),
+          ),
+          'INVALID_REQUEST',
+        ],
+        [
+          answer(
+            400,
+            razorpayError(
+              'The payment status should be captured for action to be taken.',
+            ),
+          ),
+          'INVALID_REQUEST',
+        ],
+        [
+          answer(
+            400,
+            razorpayError(
+              'Your account does not have enough balance to carry out the refund operation.',
+            ),
+          ),
+          'INVALID_REQUEST',
+        ],
+        // Not final: another operation runs, or a refund with our reference
+        // may exist already (its notice settles it).
+        [
+          answer(
+            400,
+            razorpayError(
+              'Request failed because another payment operation is in progress.',
+            ),
+          ),
+          'UNAVAILABLE',
+        ],
+        [
+          answer(
+            400,
+            razorpayError('Duplicate receipt found for this refund request.'),
+          ),
+          'UNAVAILABLE',
         ],
         [answer(409, razorpayError('in progress')), 'UNAVAILABLE'],
         [answer(401, { error: { code: 'BAD_REQUEST_ERROR' } }), 'UNAVAILABLE'],
