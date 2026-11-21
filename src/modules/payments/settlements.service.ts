@@ -568,14 +568,14 @@ export class SettlementsService implements OnModuleInit {
   ): Promise<void> {
     const key = `settlement_reference:${reference.toUpperCase()}`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
-    const other = await tx.settlement.findFirst({
-      where: {
-        id: { not: id },
-        paymentReference: { equals: reference, mode: 'insensitive' },
-      },
-      select: { id: true },
-    });
-    if (other) {
+    // upper() on both sides, not Prisma's insensitive mode, so `_` and `%`
+    // (`_` is allowed in a reference) are never pattern characters.
+    const others = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Settlement"
+      WHERE id <> ${id}::uuid
+        AND upper("paymentReference") = upper(${reference})
+      LIMIT 1`;
+    if (others.length > 0) {
       throw new AppException(
         'SETTLEMENT_REFERENCE_USED',
         'This bank transfer reference is already recorded on another settlement.',

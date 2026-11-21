@@ -410,16 +410,20 @@ export class ReconciliationService {
     const references = [
       ...new Set(
         paidOut.flatMap((settlement) =>
-          settlement.paymentReference ? [settlement.paymentReference] : [],
+          settlement.paymentReference
+            ? [settlement.paymentReference.toUpperCase()]
+            : [],
         ),
       ),
     ];
     if (references.length > 0) {
+      // upper() as the mark-paid check compares, never a pattern match.
+      const ids = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Settlement"
+        WHERE status = 'PAID'
+          AND upper("paymentReference") = ANY(${references}::text[])`;
       const sharing = await this.prisma.settlement.findMany({
-        where: {
-          status: SettlementStatus.PAID,
-          paymentReference: { in: references, mode: 'insensitive' },
-        },
+        where: { id: { in: ids.map((row) => row.id) } },
         select: {
           id: true,
           paymentReference: true,
