@@ -7456,6 +7456,140 @@
         ]
       }
     },
+    "/api/v1/bookings/{reference}/events": {
+      "get": {
+        "description": "Status changes, quotes sent (with the quoted total as a `QUOTE`), payment status changes, the operator’s questions and the customer’s answers (the words are in `GET /bookings/:reference/messages`), change requests with their details and the answers with their notes. Never internal notes, the operator’s reasons, override reasons or who did it beyond `YOU`, `OPERATOR`, `FLYVIMAN` or `SYSTEM`. Another customer’s booking is 404.",
+        "operationId": "BookingSelfServiceController_events",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerBookingEventDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The booking’s timeline as the customer sees it, oldest first",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/passengers": {
+      "put": {
+        "description": "Copies the saved passengers (`passengerIds`, the caller’s own, 404 otherwise) onto the booking as they are now, replacing those it had: at least one, at most the trip’s passenger count (400 `VALIDATION_ERROR`). Only from `REQUESTED` up to `CONFIRMED` and until 24 hours before the first departure: 409 `BOOKING_PASSENGERS_LOCKED` otherwise. Document numbers and assistance notes are stored encrypted; audited with passenger counts only. The booking’s operator, if any, is told (`booking.passengers_changed`, in-app and email, the count only). Answers the reference and the passenger count only (`GET /bookings/:reference` has the details). A repeat with the same `Idempotency-Key` and body returns the first answer. Another customer’s booking is 404.",
+        "operationId": "BookingSelfServiceController_replacePassengers",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each change and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplacePassengersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassengersReplacedDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Replace the booking’s passengers with saved passengers",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/revalidate": {
+      "post": {
+        "description": "Whether the trip can still be flown as booked (the trip ahead, the operator and aircraft approved and in service, the held time free), with the same check the confirmation rule makes; `reason` when not (`CLOSED` for a booking completed, cancelled or otherwise ended). Answers the labelled price, `priceExpired` for an estimate past its validity, and `amountDue` (null when the trip is not available). A `CONFIRMED` price is never repriced. Nothing is written. Another customer’s booking is 404.",
+        "operationId": "BookingSelfServiceController_revalidate",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingRevalidationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Check the booking again before paying (rule 3)",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
     "/api/v1/bookings/{reference}/payments": {
       "get": {
         "description": "Newest first: every attempt with its status, method type, refunds, and `receipt` (null until it has succeeded; the same as `GET /payments/:reference/receipt`). What is due now is the booking’s `amountDue`. Another customer’s booking is 404.",
@@ -19336,6 +19470,226 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "CustomerEventKind": {
+        "type": "string",
+        "enum": [
+          "STATUS_CHANGED",
+          "QUOTE_SENT",
+          "PAYMENT_UPDATED",
+          "QUESTION_ASKED",
+          "QUESTION_ANSWERED",
+          "CHANGE_REQUESTED",
+          "CHANGE_REQUEST_ANSWERED"
+        ]
+      },
+      "BookingEventActor": {
+        "type": "string",
+        "enum": [
+          "YOU",
+          "OPERATOR",
+          "FLYVIMAN",
+          "SYSTEM"
+        ]
+      },
+      "CustomerBookingEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomerEventKind"
+              }
+            ]
+          },
+          "by": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingEventActor"
+              }
+            ]
+          },
+          "fromStatus": {
+            "nullable": true,
+            "description": "`STATUS_CHANGED` only; null for the request being made.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "toStatus": {
+            "nullable": true,
+            "description": "`STATUS_CHANGED` only.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "price": {
+            "nullable": true,
+            "description": "`QUOTE_SENT` only: the quoted total (`QUOTE`).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "quoteReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "FLY-QT-7K2M9Q"
+          },
+          "paymentStatus": {
+            "nullable": true,
+            "description": "`PAYMENT_UPDATED` only: the payment status it moved to.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "changeRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The change request, for `CHANGE_REQUEST*` entries."
+          },
+          "decision": {
+            "nullable": true,
+            "description": "`CHANGE_REQUEST_ANSWERED` only.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChangeRequestStatus"
+              }
+            ]
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "description": "The note written for the customer with a change request’s answer."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "by",
+          "fromStatus",
+          "toStatus",
+          "price",
+          "quoteReference",
+          "paymentStatus",
+          "changeRequestId",
+          "decision",
+          "note",
+          "createdAt"
+        ]
+      },
+      "ReplacePassengersDto": {
+        "type": "object",
+        "properties": {
+          "passengerIds": {
+            "description": "Saved passengers (`/me/passengers`): at least one and at most the trip’s passenger count. Their details are copied onto the booking as they are now.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "passengerIds"
+        ]
+      },
+      "PassengersReplacedDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "passengerCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reference",
+          "passengerCount"
+        ]
+      },
+      "BookingUnavailableReason": {
+        "type": "string",
+        "enum": [
+          "CLOSED",
+          "DEPARTED",
+          "OPERATOR_NOT_APPROVED",
+          "AIRCRAFT_NOT_AVAILABLE",
+          "TIME_TAKEN",
+          "UNAVAILABLE"
+        ]
+      },
+      "BookingRevalidationDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether the trip can still be flown as booked: the trip ahead, the operator and aircraft approved and in service, the held time free."
+          },
+          "reason": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingUnavailableReason"
+              }
+            ]
+          },
+          "price": {
+            "nullable": true,
+            "description": "The booking’s price, labelled. A `CONFIRMED` price is fixed once agreed and never repriced; null for a request priced on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "priceExpired": {
+            "type": "boolean",
+            "description": "True for an `ESTIMATE` past its `validUntil`: the operator’s answer prices the trip again. Always false for a `CONFIRMED` price."
+          },
+          "amountDue": {
+            "nullable": true,
+            "description": "What the booking owes now, by the rule payment creation applies; null when nothing is due or the trip is not available.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingAmountDueDto"
+              }
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "available",
+          "reason",
+          "price",
+          "priceExpired",
+          "amountDue",
+          "checkedAt"
         ]
       },
       "PaymentPriceDto": {
