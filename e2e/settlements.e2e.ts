@@ -579,6 +579,21 @@ test.describe('PATCH /admin/settlements/:id', () => {
       notDueReason: 'A refund is on its way.',
     });
 
+    // Finance on a stale Due screen marks the NOT_DUE record paid: told why.
+    const stalePaid = await change(finance, row.id, {
+      status: 'PAID',
+      reason,
+      paymentReference: `R-${randomUUID().slice(0, 8)}`,
+      expectedPayableMinor: Number(row.payableMinor),
+    });
+    expect(stalePaid.status()).toBe(409);
+    expect(await errorCode(stalePaid)).toBe('SETTLEMENT_NOT_DUE');
+    expect((await stalePaid.json()).error.details).toContainEqual({
+      field: 'reason',
+      issue: 'A refund is on its way.',
+    });
+    expect((await adminView(finance, row.id))!.status).toBe('NOT_DUE');
+
     // The refund completes: due again, with the refund out of the payable.
     const { providerRefundId } = await withPrisma((prisma) =>
       prisma.refund.findUniqueOrThrow({

@@ -4,10 +4,12 @@ import {
   SettlementStatus,
 } from '../../generated/prisma/enums.js';
 import {
+  AWAITING_SYNC,
   canMoveSettlement,
   derivedSettlementStatus,
   figuresTotal,
   notDueReason,
+  paidNotDueReason,
   REFUND_EXCEEDS_PAYABLE,
   sameFigures,
   type SettlementCalculation,
@@ -209,5 +211,25 @@ describe('the MOVES table (canMoveSettlement)', () => {
   it('a NOT_DUE record can never be paid, and a PAID record never moves', () => {
     expect(canMoveSettlement(NOT_DUE, PAID)).toBe(false);
     for (const to of all) expect(canMoveSettlement(PAID, to)).toBe(false);
+  });
+});
+
+describe('paidNotDueReason (marking PAID answers SETTLEMENT_NOT_DUE)', () => {
+  const { NOT_DUE, DUE, ON_HOLD, PAID } = SettlementStatus;
+  const refund = 'A refund is on its way.';
+
+  it('a DUE record still due may be paid; one no longer due gives the reason', () => {
+    expect(paidNotDueReason(DUE, null)).toBeNull();
+    expect(paidNotDueReason(DUE, refund)).toBe(refund);
+  });
+
+  it('a NOT_DUE record (a stale Due screen) always gives a reason', () => {
+    expect(paidNotDueReason(NOT_DUE, refund)).toBe(refund);
+    expect(paidNotDueReason(NOT_DUE, null)).toBe(AWAITING_SYNC);
+  });
+
+  it('ON_HOLD and PAID records are left to the move table', () => {
+    expect(paidNotDueReason(ON_HOLD, refund)).toBeNull();
+    expect(paidNotDueReason(PAID, refund)).toBeNull();
   });
 });

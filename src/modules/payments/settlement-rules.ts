@@ -161,3 +161,21 @@ export function canMoveSettlement(
 ): boolean {
   return MOVES[from].includes(to);
 }
+
+/** Shown for a `NOT_DUE` record the rules now find due, until the job runs. */
+export const AWAITING_SYNC = 'The settlement is waiting for the next run.';
+
+/**
+ * Why marking a record `PAID` answers `SETTLEMENT_NOT_DUE` (D-198), or null
+ * when it does not: a `DUE` record the rules no longer find due (`why`), or
+ * any `NOT_DUE` record, so finance on a stale screen is told why. Other
+ * records are left to the move table.
+ */
+export function paidNotDueReason(
+  from: SettlementStatus,
+  why: string | null,
+): string | null {
+  if (from === SettlementStatus.DUE) return why;
+  if (from === SettlementStatus.NOT_DUE) return why ?? AWAITING_SYNC;
+  return null;
+}

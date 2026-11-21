@@ -43,6 +43,7 @@ import {
   canMoveSettlement,
   derivedSettlementStatus,
   notDueReason,
+  paidNotDueReason,
   type SettlementCalculation,
   type SettlementFigures,
   type SettlementState,
@@ -416,7 +417,8 @@ export class SettlementsService implements OnModuleInit {
    *   date;
    * - `PAID` from `DUE`, with the payout's bank reference, only when the
    *   booking is still due (409 `SETTLEMENT_NOT_DUE`, the reason in
-   *   `details`) and the figures, and the payable finance saw
+   *   `details`; also for a `NOT_DUE` record, so finance on a stale Due
+   *   screen is told why) and the figures, and the payable finance saw
    *   (`expectedPayableMinor`), are unchanged (409 `SETTLEMENT_CHANGED`).
    *   Marking it paid again with the same reference returns the record;
    *   another reference is 409 `SETTLEMENT_ALREADY_PAID`. A reference
@@ -454,15 +456,6 @@ export class SettlementsService implements OnModuleInit {
           HttpStatus.CONFLICT,
         );
       }
-      if (!canMoveSettlement(row.status, to)) {
-        throw new AppException(
-          'SETTLEMENT_INVALID_TRANSITION',
-          `A ${row.status} settlement cannot become ${to}.`,
-          HttpStatus.CONFLICT,
-          [{ field: 'status', issue: row.status }],
-        );
-      }
-
       const fresh =
         basis?.calculation && !basis.unusable
           ? settlementFigures(basis.keptMinor, basis.calculation)
@@ -478,6 +471,29 @@ export class SettlementsService implements OnModuleInit {
             })
           : 'The booking has no usable price calculation.';
 
+      // Marking a record paid that is not due, stored or now, says why
+      // (D-198), even from a stale Due screen.
+      const notDue =
+        to === SettlementStatus.PAID
+          ? paidNotDueReason(row.status, why)
+          : null;
+      if (notDue !== null) {
+        throw new AppException(
+          'SETTLEMENT_NOT_DUE',
+          `This settlement is not due: ${notDue}`,
+          HttpStatus.CONFLICT,
+          [{ field: 'reason', issue: notDue }],
+        );
+      }
+      if (!canMoveSettlement(row.status, to)) {
+        throw new AppException(
+          'SETTLEMENT_INVALID_TRANSITION',
+          `A ${row.status} settlement cannot become ${to}.`,
+          HttpStatus.CONFLICT,
+          [{ field: 'status', issue: row.status }],
+        );
+      }
+
       let status: SettlementStatus = to;
       let figures: SettlementFigures = row;
       if (to === SettlementStatus.DUE) {
@@ -485,15 +501,9 @@ export class SettlementsService implements OnModuleInit {
         if (fresh) figures = fresh;
         status = why === null ? SettlementStatus.DUE : SettlementStatus.NOT_DUE;
       } else if (to === SettlementStatus.PAID) {
-        if (!fresh || why !== null) {
-          throw new AppException(
-            'SETTLEMENT_NOT_DUE',
-            `This settlement is not due: ${why ?? ''}`,
-            HttpStatus.CONFLICT,
-            [{ field: 'reason', issue: why ?? '' }],
-          );
-        }
+        // Due (checked above), so `fresh` is set.
         if (
+          !fresh ||
           !sameFigures(fresh, row) ||
           BigInt(input.expectedPayableMinor ?? -1) !== row.payableMinor
         ) {
@@ -501,7 +511,12 @@ export class SettlementsService implements OnModuleInit {
             'SETTLEMENT_CHANGED',
             'The amount payable has changed. Check it before marking it paid.',
             HttpStatus.CONFLICT,
-            [{ field: 'payableMinor', issue: String(fresh.payableMinor) }],
+            [
+              {
+                field: 'payableMinor',
+                issue: String((fresh ?? row).payableMinor),
+              },
+            ],
           );
         }
         await this.refuseUsedReference(
