@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { FieldCipher } from '../../common/crypto/field-cipher.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import type {
   AirAmbulanceRequest,
@@ -58,6 +59,8 @@ export interface QuoteInput {
   amountMinor: number;
   currency: string;
   conditions: string;
+  /** Why a quotation already sent is replaced; required while QUOTED. */
+  revisionReason?: string;
 }
 
 function conflict(code: string, message: string): AppException {
@@ -90,6 +93,7 @@ export class AirAmbulanceWorkflowService {
     private readonly users: UsersService,
     private readonly events: NotificationEventsService,
     private readonly aircraft: AircraftService,
+    private readonly cipher: FieldCipher,
   ) {}
 
   // --- Operations --------------------------------------------------------
@@ -218,7 +222,9 @@ export class AirAmbulanceWorkflowService {
   /**
    * Sends the customer a quotation (priceType QUOTE, rule 1) from an
    * approved operator (rule 4), moving FEASIBILITY_CHECK to QUOTED. While
-   * QUOTED, a new quotation replaces the last one.
+   * QUOTED, a new quotation replaces the last one and needs a revision
+   * reason: kept encrypted in the timeline entry (free text on a medical
+   * mission), and only its existence in the audit record.
    */
   async quote(
     actor: AirAmbulanceActor,
@@ -254,16 +260,33 @@ export class AirAmbulanceWorkflowService {
         currency: row.quoteCurrency,
       };
       if (row.status === AirAmbulanceStatus.QUOTED) {
+        if (!input.revisionReason) {
+          throw new AppException(
+            'VALIDATION_ERROR',
+            'Say why the quotation sent is being replaced.',
+            HttpStatus.BAD_REQUEST,
+            [
+              {
+                field: 'revisionReason',
+                issue: 'required to replace a quotation already sent',
+              },
+            ],
+          );
+        }
         await this.events.notify(tx, 'air_ambulance.quoted', {
           reference: row.reference,
           customerId: row.requesterId,
         });
         return this.record(tx, row, actor, {
           data,
-          payload: { kind: 'QUOTE', ...quote },
+          payload: {
+            kind: 'QUOTE',
+            ...quote,
+            revisionReason: this.cipher.encrypt(input.revisionReason),
+          },
           action: 'air_ambulance_request.quote',
           before,
-          after: quote,
+          after: { ...quote, revised: true },
         });
       }
       return this.apply(tx, row, AirAmbulanceStatus.QUOTED, actor, {

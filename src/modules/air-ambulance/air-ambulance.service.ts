@@ -649,6 +649,19 @@ export class AirAmbulanceService implements OnModuleInit {
   }
 
   /**
+   * A timeline entry's payload for operations (`adminDetail`): the revision
+   * reason of a replaced quotation decrypted, everything else as stored.
+   */
+  eventPayloadForOperations(payload: unknown): Record<string, unknown> | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const entry = payload as Record<string, unknown>;
+    const reason = entry.revisionReason;
+    return typeof reason === 'string' && isEncrypted(reason)
+      ? { ...entry, revisionReason: this.cipher.decrypt(reason) }
+      : entry;
+  }
+
+  /**
    * A collection or receiving place. Rows written before it was encrypted
    * (none outside development) are returned as stored.
    */

@@ -697,7 +697,11 @@ test.describe('operations queue', () => {
       ).status(),
     ).toBe(200);
 
-    const quote = (id: string, amountMinor = 45_000_000) =>
+    const quote = (
+      id: string,
+      amountMinor = 45_000_000,
+      revisionReason?: string,
+    ) =>
       ops.post(`${path}/quote`, {
         headers,
         data: {
@@ -705,6 +709,7 @@ test.describe('operations queue', () => {
           amountMinor,
           currency: 'INR',
           conditions: 'Free cancellation until the aircraft is dispatched.',
+          revisionReason,
         },
       });
     expect((await quote(draftId)).status()).toBe(409);
@@ -731,8 +736,11 @@ test.describe('operations queue', () => {
       status: 'QUOTED',
       price: { priceType: 'QUOTE', amountMinor: 45_000_000, currency: 'INR' },
     });
-    // A revised quotation replaces the last one.
-    expect((await quote(operatorId, 48_000_000)).status()).toBe(200);
+    // A revised quotation replaces the last one, with a reason.
+    expect((await quote(operatorId, 48_000_000)).status()).toBe(400);
+    expect(
+      (await quote(operatorId, 48_000_000, 'Fuel surcharge revised')).status(),
+    ).toBe(200);
 
     // The customer sees a labelled quotation with its conditions.
     const seen = (

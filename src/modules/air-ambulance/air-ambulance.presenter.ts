@@ -157,10 +157,7 @@ export async function adminDetail(
       toStatus: event.toStatus,
       actorId: event.actorId,
       actorRole: event.actorRole,
-      payload:
-        typeof event.payload === 'object' && event.payload !== null
-          ? (event.payload as Record<string, unknown>)
-          : null,
+      payload: service.eventPayloadForOperations(event.payload),
       at: event.createdAt.toISOString(),
     })),
   };
