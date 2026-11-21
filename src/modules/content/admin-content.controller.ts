@@ -223,7 +223,7 @@ export class AdminPoliciesController {
   @ApiOperation({
     summary: 'Update a notification template',
     description:
-      'The channel is in the body. The text must keep every placeholder the built-in wording uses and add none (400 `VALIDATION_ERROR` otherwise). Audited with the wording before and after.',
+      'The channel is in the body. The text must keep every placeholder the built-in wording uses and add none (400 `VALIDATION_ERROR` otherwise). Send `baseVersion` (the `version` loaded): 409 `CONTENT_VERSION_CONFLICT` if the template was changed meanwhile; nothing is written. Audited with the wording before and after.',
   })
   @ApiOkResponse({ type: NotificationTemplateResponseDto })
   updateTemplate(

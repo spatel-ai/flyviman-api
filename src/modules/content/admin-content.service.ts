@@ -293,6 +293,7 @@ export class AdminContentService {
         isActive: row ? row.isActive : true,
         placeholders: this.required(builtIn),
         stored: Boolean(row),
+        version: row?.version ?? 0,
       };
     });
   }
@@ -309,7 +310,12 @@ export class AdminContentService {
   async updateTemplate(
     key: string,
     channel: NotificationChannel,
-    input: { subject?: string | null; body: string; isActive: boolean },
+    input: {
+      subject?: string | null;
+      body: string;
+      isActive: boolean;
+      baseVersion: number;
+    },
   ) {
     const builtIn = DEFAULT_TEMPLATES.find(
       (t) => t.key === key && t.channel === channel,
@@ -353,8 +359,25 @@ export class AdminContentService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // One editor per template at a time, so two changes made on the same
+      // version cannot both pass the check below.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`template:${key}:${channel}`}))`;
       const where = { key_channel: { key, channel } };
       const before = await tx.notificationTemplate.findUnique({ where });
+      const current = before?.version ?? 0;
+      if (input.baseVersion !== current) {
+        throw new AppException(
+          'CONTENT_VERSION_CONFLICT',
+          'This template was changed after you opened it. Reload it and make your changes again.',
+          HttpStatus.CONFLICT,
+          [
+            {
+              field: 'baseVersion',
+              issue: `The latest version is ${current}.`,
+            },
+          ],
+        );
+      }
       const row = await tx.notificationTemplate.upsert({
         where,
         create: {
@@ -363,8 +386,14 @@ export class AdminContentService {
           subject,
           body: input.body,
           isActive: input.isActive,
+          version: 1,
         },
-        update: { subject, body: input.body, isActive: input.isActive },
+        update: {
+          subject,
+          body: input.body,
+          isActive: input.isActive,
+          version: current + 1,
+        },
       });
       const shape = (t: {
         subject: string | null;
@@ -395,6 +424,7 @@ export class AdminContentService {
         isActive: row.isActive,
         placeholders: required,
         stored: true,
+        version: row.version,
       };
     });
   }
