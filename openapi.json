@@ -8657,6 +8657,560 @@
           "admin: enquiries"
         ]
       }
+    },
+    "/api/v1/admin/reports/overview": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). `inPeriod` counts what happened in the period; `now` is the current state whatever the period. `finance` (payments taken, refunds due, confirmed booking value, Flyviman's revenue) is for finance and the super administrator only and is omitted for operations.",
+        "operationId": "AdminReportsController_overview",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Headline figures for the admin dashboard",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/search": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Filter: `category`. Conversion is booking requests made in the period per search, by category; a request is not traced to its search.",
+        "operationId": "AdminReportsController_search",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Search volume and search-to-request conversion",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/bookings": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Filters: `category`, `operatorId`. The requests made in the period, by their current booking status (never the payment status). Each figures block has `finance` (confirmed value, Flyviman's revenue) for finance and the super administrator only; omitted for operations.",
+        "operationId": "AdminReportsController_bookings",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Booking requests, confirmations and cancellations",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/revenue": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Filters: `category`, `operatorId`. Bookings confirmed in the period and still confirmed, scheduled or completed; amounts from each booking's price calculation (the accepted quote's, else the booking's own), per currency.",
+        "operationId": "AdminReportsController_revenue",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenueReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Gross booking value, operator payable and Flyviman revenue",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/payments": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Payment attempts and refunds started in the period. No card data or gateway references.",
+        "operationId": "AdminReportsController_payments",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Payment success, failure and refund rates",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/operators": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Filter: `operatorId`. Booking requests made to each operator in the period; the response time is to the first accept, reject or quote by the operator's staff.",
+        "operationId": "AdminReportsController_operators",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Operator response time, declines and outcomes",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/empty-legs": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Filter: `operatorId`. Offers created in the period.",
+        "operationId": "AdminReportsController_emptyLegs",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyLegReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Empty-leg listing performance and conversion",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/air-ambulance": {
+      "get": {
+        "description": "`from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). Requests made in the period. Counts and timings only: never patient, medical or contact data.",
+        "operationId": "AdminReportsController_airAmbulance",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirAmbulanceReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Air ambulance volumes, response time and fulfilment",
+        "tags": [
+          "admin: reports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/{report}/export": {
+      "get": {
+        "description": "The same report, filters and role gate as `GET /admin/reports/:report`: a role the report is not open to gets 403 `FORBIDDEN`, a filter the report does not take 400 `VALIDATION_ERROR`, an unknown report 404. `from` and `to` are calendar days in India (`YYYY-MM-DD`, both included; IST day boundaries); by default the last 30 days, at most 366 days (400 `VALIDATION_ERROR` otherwise, also for `from` after `to`). `text/csv` as an attachment, one figure per row: `section,dimension,metric,currency,value` (money in paise). Finance fields appear only for finance and the super administrator. Text that a spreadsheet would read as a formula is prefixed with `'`.",
+        "operationId": "AdminReportsController_export",
+        "parameters": [
+          {
+            "name": "report",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "enum": [
+                "overview",
+                "search",
+                "bookings",
+                "revenue",
+                "payments",
+                "operators",
+                "empty-legs",
+                "air-ambulance"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First day, `YYYY-MM-DD`, in India. Defaults to 29 days before `to`.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last day, included, `YYYY-MM-DD`, in India. Defaults to today in India.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceCategory"
+            }
+          },
+          {
+            "name": "operatorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "A report as CSV",
+        "tags": [
+          "admin: reports"
+        ]
+      }
     }
   },
   "info": {
@@ -20399,6 +20953,1201 @@
           "message",
           "handledAt",
           "createdAt"
+        ]
+      },
+      "ReportPeriodDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-01"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-30"
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The start of `from` in India, UTC."
+          },
+          "endsBefore": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The start of the day after `to` in India, UTC (excluded)."
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "timeZone",
+          "startsAt",
+          "endsBefore"
+        ]
+      },
+      "BookingStatusCountDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "OverviewPeriodFiguresDto": {
+        "type": "object",
+        "properties": {
+          "searches": {
+            "type": "number",
+            "description": "Searches made in the period."
+          },
+          "bookingRequests": {
+            "type": "number",
+            "description": "Booking requests made in the period."
+          },
+          "bookingsByStatus": {
+            "description": "The booking requests made in the period, by their current booking status (not the payment status).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingStatusCountDto"
+            }
+          },
+          "airAmbulanceRequests": {
+            "type": "number",
+            "description": "Air ambulance requests made in the period."
+          }
+        },
+        "required": [
+          "searches",
+          "bookingRequests",
+          "bookingsByStatus",
+          "airAmbulanceRequests"
+        ]
+      },
+      "OverviewCurrentFiguresDto": {
+        "type": "object",
+        "properties": {
+          "openBookingRequests": {
+            "type": "number",
+            "description": "Booking requests waiting on the operator now (`REQUESTED`, `OPERATOR_PENDING`, `CLARIFICATION_REQUESTED`)."
+          },
+          "operatorsPendingReview": {
+            "type": "number",
+            "description": "Operators waiting for review now."
+          },
+          "airAmbulanceOpen": {
+            "type": "number",
+            "description": "Air ambulance requests not yet `COMPLETED`, `DECLINED` or `CANCELLED`."
+          }
+        },
+        "required": [
+          "openBookingRequests",
+          "operatorsPendingReview",
+          "airAmbulanceOpen"
+        ]
+      },
+      "MoneyTotalDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Minor units (paise)."
+          }
+        },
+        "required": [
+          "currency",
+          "amountMinor"
+        ]
+      },
+      "CountWithAmountsDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number"
+          },
+          "amounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "amounts"
+        ]
+      },
+      "OverviewFinanceDto": {
+        "type": "object",
+        "properties": {
+          "paymentsTaken": {
+            "description": "In the period: payments whose money arrived (`paidAt`), counted at their full amount even if refunded since.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CountWithAmountsDto"
+              }
+            ]
+          },
+          "refundsDue": {
+            "description": "Now: the finance refunds-due queue (`GET /admin/refunds/due`), its rows and the amounts due.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CountWithAmountsDto"
+              }
+            ]
+          },
+          "confirmedBookingValue": {
+            "description": "In the period: the total of bookings confirmed (`confirmedAt`) and still `CONFIRMED`, `SCHEDULED` or `COMPLETED`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          },
+          "platformRevenue": {
+            "description": "Flyviman's revenue on those bookings (commission, markup and fees, less discounts, before tax), from their price calculations.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          }
+        },
+        "required": [
+          "paymentsTaken",
+          "refundsDue",
+          "confirmedBookingValue",
+          "platformRevenue"
+        ]
+      },
+      "OverviewReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "inPeriod": {
+            "$ref": "#/components/schemas/OverviewPeriodFiguresDto"
+          },
+          "now": {
+            "description": "Figures as they are now, whatever the period.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OverviewCurrentFiguresDto"
+              }
+            ]
+          },
+          "finance": {
+            "description": "Finance and super administrator only; omitted otherwise.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OverviewFinanceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "period",
+          "inPeriod",
+          "now"
+        ]
+      },
+      "ReportFiltersDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "category",
+          "operatorId"
+        ]
+      },
+      "SearchFiguresDto": {
+        "type": "object",
+        "properties": {
+          "searches": {
+            "type": "number"
+          },
+          "withoutResults": {
+            "type": "number",
+            "description": "Searches that offered nothing."
+          },
+          "averageResults": {
+            "type": "number",
+            "nullable": true,
+            "description": "Results offered per search, 1 decimal."
+          },
+          "averageDurationMs": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole ms."
+          },
+          "bookingRequests": {
+            "type": "number",
+            "description": "Booking requests made in the period in the same categories. Not traced to the search they came from."
+          },
+          "conversionRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Booking requests per search. A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          }
+        },
+        "required": [
+          "searches",
+          "withoutResults",
+          "averageResults",
+          "averageDurationMs",
+          "bookingRequests",
+          "conversionRate"
+        ]
+      },
+      "SearchCategoryFiguresDto": {
+        "type": "object",
+        "properties": {
+          "searches": {
+            "type": "number"
+          },
+          "withoutResults": {
+            "type": "number",
+            "description": "Searches that offered nothing."
+          },
+          "averageResults": {
+            "type": "number",
+            "nullable": true,
+            "description": "Results offered per search, 1 decimal."
+          },
+          "averageDurationMs": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole ms."
+          },
+          "bookingRequests": {
+            "type": "number",
+            "description": "Booking requests made in the period in the same categories. Not traced to the search they came from."
+          },
+          "conversionRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Booking requests per search. A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          }
+        },
+        "required": [
+          "searches",
+          "withoutResults",
+          "averageResults",
+          "averageDurationMs",
+          "bookingRequests",
+          "conversionRate",
+          "category"
+        ]
+      },
+      "SearchReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/ReportFiltersDto"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/SearchFiguresDto"
+          },
+          "byCategory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchCategoryFiguresDto"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "filters",
+          "totals",
+          "byCategory"
+        ]
+      },
+      "BookingFinanceDto": {
+        "type": "object",
+        "properties": {
+          "confirmedValue": {
+            "description": "The total of the confirmed bookings (`CONFIRMED`, `SCHEDULED`, `COMPLETED`). Estimates of open requests are never added.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          },
+          "platformRevenue": {
+            "description": "Flyviman's revenue on them (commission, markup and fees, less discounts, before tax).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          },
+          "withoutCalculation": {
+            "type": "number",
+            "description": "Confirmed bookings with no price calculation (for example scheduled fares): in `confirmedValue`, not in `platformRevenue`."
+          }
+        },
+        "required": [
+          "confirmedValue",
+          "platformRevenue",
+          "withoutCalculation"
+        ]
+      },
+      "BookingFiguresDto": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "number",
+            "description": "Requests made in the period."
+          },
+          "open": {
+            "type": "number",
+            "description": "Still in progress: `REQUESTED`, `OPERATOR_PENDING`, `CLARIFICATION_REQUESTED`, `PRICE_CONFIRMED`, `AWAITING_PAYMENT`."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "`CONFIRMED`, `SCHEDULED` or `COMPLETED`."
+          },
+          "declined": {
+            "type": "number",
+            "description": "`OPERATOR_UNAVAILABLE` or `QUOTE_DECLINED`."
+          },
+          "expired": {
+            "type": "number"
+          },
+          "cancelled": {
+            "type": "number"
+          },
+          "confirmationRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Confirmed per request. A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          },
+          "finance": {
+            "description": "Finance and super administrator only; omitted otherwise.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingFinanceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requested",
+          "open",
+          "confirmed",
+          "declined",
+          "expired",
+          "cancelled",
+          "confirmationRate"
+        ]
+      },
+      "BookingCategoryFiguresDto": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "number",
+            "description": "Requests made in the period."
+          },
+          "open": {
+            "type": "number",
+            "description": "Still in progress: `REQUESTED`, `OPERATOR_PENDING`, `CLARIFICATION_REQUESTED`, `PRICE_CONFIRMED`, `AWAITING_PAYMENT`."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "`CONFIRMED`, `SCHEDULED` or `COMPLETED`."
+          },
+          "declined": {
+            "type": "number",
+            "description": "`OPERATOR_UNAVAILABLE` or `QUOTE_DECLINED`."
+          },
+          "expired": {
+            "type": "number"
+          },
+          "cancelled": {
+            "type": "number"
+          },
+          "confirmationRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Confirmed per request. A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          },
+          "finance": {
+            "description": "Finance and super administrator only; omitted otherwise.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingFinanceDto"
+              }
+            ]
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requested",
+          "open",
+          "confirmed",
+          "declined",
+          "expired",
+          "cancelled",
+          "confirmationRate",
+          "category"
+        ]
+      },
+      "BookingReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/ReportFiltersDto"
+          },
+          "totals": {
+            "description": "The requests made in the period, by their current booking status.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingFiguresDto"
+              }
+            ]
+          },
+          "byStatus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingStatusCountDto"
+            }
+          },
+          "byCategory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingCategoryFiguresDto"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "filters",
+          "totals",
+          "byStatus",
+          "byCategory"
+        ]
+      },
+      "RevenueFiguresDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "bookings": {
+            "type": "number"
+          },
+          "grossValueMinor": {
+            "type": "number",
+            "description": "Paise: what customers pay (gross booking value)."
+          },
+          "taxMinor": {
+            "type": "number",
+            "description": "Paise: tax in the priced bookings."
+          },
+          "operatorPayableMinor": {
+            "type": "number",
+            "description": "Paise: what Flyviman pays operators."
+          },
+          "platformRevenueMinor": {
+            "type": "number",
+            "description": "Paise: Flyviman's net revenue (commission, markup and fees, less discounts, before tax). Can be negative."
+          },
+          "withoutCalculation": {
+            "type": "number",
+            "description": "Bookings with no price calculation: in `grossValueMinor` only."
+          }
+        },
+        "required": [
+          "currency",
+          "bookings",
+          "grossValueMinor",
+          "taxMinor",
+          "operatorPayableMinor",
+          "platformRevenueMinor",
+          "withoutCalculation"
+        ]
+      },
+      "RevenueCategoryRowDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "bookings": {
+            "type": "number"
+          },
+          "grossValueMinor": {
+            "type": "number",
+            "description": "Paise: what customers pay (gross booking value)."
+          },
+          "taxMinor": {
+            "type": "number",
+            "description": "Paise: tax in the priced bookings."
+          },
+          "operatorPayableMinor": {
+            "type": "number",
+            "description": "Paise: what Flyviman pays operators."
+          },
+          "platformRevenueMinor": {
+            "type": "number",
+            "description": "Paise: Flyviman's net revenue (commission, markup and fees, less discounts, before tax). Can be negative."
+          },
+          "withoutCalculation": {
+            "type": "number",
+            "description": "Bookings with no price calculation: in `grossValueMinor` only."
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          }
+        },
+        "required": [
+          "currency",
+          "bookings",
+          "grossValueMinor",
+          "taxMinor",
+          "operatorPayableMinor",
+          "platformRevenueMinor",
+          "withoutCalculation",
+          "category"
+        ]
+      },
+      "RevenueOperatorRowDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "bookings": {
+            "type": "number"
+          },
+          "grossValueMinor": {
+            "type": "number",
+            "description": "Paise: what customers pay (gross booking value)."
+          },
+          "taxMinor": {
+            "type": "number",
+            "description": "Paise: tax in the priced bookings."
+          },
+          "operatorPayableMinor": {
+            "type": "number",
+            "description": "Paise: what Flyviman pays operators."
+          },
+          "platformRevenueMinor": {
+            "type": "number",
+            "description": "Paise: Flyviman's net revenue (commission, markup and fees, less discounts, before tax). Can be negative."
+          },
+          "withoutCalculation": {
+            "type": "number",
+            "description": "Bookings with no price calculation: in `grossValueMinor` only."
+          },
+          "operatorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for scheduled airline bookings."
+          },
+          "operatorName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Trading name, else legal name."
+          }
+        },
+        "required": [
+          "currency",
+          "bookings",
+          "grossValueMinor",
+          "taxMinor",
+          "operatorPayableMinor",
+          "platformRevenueMinor",
+          "withoutCalculation",
+          "operatorId",
+          "operatorName"
+        ]
+      },
+      "RevenueReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/ReportFiltersDto"
+          },
+          "totals": {
+            "description": "Bookings confirmed in the period (`confirmedAt`) and still `CONFIRMED`, `SCHEDULED` or `COMPLETED`, one row per currency.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevenueFiguresDto"
+            }
+          },
+          "byCategory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevenueCategoryRowDto"
+            }
+          },
+          "byOperator": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevenueOperatorRowDto"
+            }
+          },
+          "cancelledAfterConfirmation": {
+            "type": "number",
+            "description": "Bookings confirmed in the period and cancelled since: not in the figures."
+          }
+        },
+        "required": [
+          "period",
+          "filters",
+          "totals",
+          "byCategory",
+          "byOperator",
+          "cancelledAfterConfirmation"
+        ]
+      },
+      "PaymentStatusCountDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "PaymentMethodRowDto": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "nullable": true,
+            "description": "As the gateway reports it (`card`, `upi`, …); null if none."
+          },
+          "succeeded": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "method",
+          "succeeded",
+          "failed"
+        ]
+      },
+      "PaymentFlagCountDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentReviewReason"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reason",
+          "count"
+        ]
+      },
+      "RefundStatusCountDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RefundStatus"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "CurrencyRateDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "rate": {
+            "type": "number",
+            "nullable": true,
+            "description": "A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          }
+        },
+        "required": [
+          "currency",
+          "rate"
+        ]
+      },
+      "RefundFiguresDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Refunds started in the period."
+          },
+          "byStatus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundStatusCountDto"
+            }
+          },
+          "refunded": {
+            "description": "`COMPLETED`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          },
+          "inProgress": {
+            "description": "`REQUESTED` or `PENDING`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          },
+          "refundRate": {
+            "description": "Completed refunds started in the period, per amount collected on payments started in the period.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrencyRateDto"
+            }
+          }
+        },
+        "required": [
+          "count",
+          "byStatus",
+          "refunded",
+          "inProgress",
+          "refundRate"
+        ]
+      },
+      "PaymentReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "attempts": {
+            "type": "number",
+            "description": "Payment attempts started in the period."
+          },
+          "byStatus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentStatusCountDto"
+            }
+          },
+          "succeeded": {
+            "type": "number",
+            "description": "Attempts whose money arrived (`SUCCEEDED`, `REFUND_PENDING`, `PARTIALLY_REFUNDED`, `REFUNDED`)."
+          },
+          "failed": {
+            "type": "number"
+          },
+          "successRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Succeeded per finished attempt (succeeded or failed). A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          },
+          "collected": {
+            "description": "The amount of the succeeded attempts.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyTotalDto"
+            }
+          },
+          "byMethod": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethodRowDto"
+            }
+          },
+          "flagged": {
+            "description": "Attempts flagged for operations to look at.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentFlagCountDto"
+            }
+          },
+          "refunds": {
+            "$ref": "#/components/schemas/RefundFiguresDto"
+          }
+        },
+        "required": [
+          "period",
+          "attempts",
+          "byStatus",
+          "succeeded",
+          "failed",
+          "successRate",
+          "collected",
+          "byMethod",
+          "flagged",
+          "refunds"
+        ]
+      },
+      "OperatorStatusCountDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "OperatorPerformanceRowDto": {
+        "type": "object",
+        "properties": {
+          "operatorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operatorName": {
+            "type": "string",
+            "description": "Trading name, else legal name."
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperatorStatus"
+              }
+            ]
+          },
+          "requests": {
+            "type": "number",
+            "description": "Booking requests made to it in the period."
+          },
+          "responded": {
+            "type": "number",
+            "description": "Requests its staff answered (accepted, rejected or quoted)."
+          },
+          "responseRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Responded per request. A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          },
+          "averageResponseMinutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole minutes from the request to its first answer."
+          },
+          "declined": {
+            "type": "number",
+            "description": "`OPERATOR_UNAVAILABLE`: the aircraft could not fly although the calendar offered it."
+          },
+          "declineRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Declined per request, a measure of availability accuracy (lower is better). A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          },
+          "expired": {
+            "type": "number"
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "`CONFIRMED`, `SCHEDULED` or `COMPLETED`."
+          },
+          "cancelled": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "operatorId",
+          "operatorName",
+          "status",
+          "requests",
+          "responded",
+          "responseRate",
+          "averageResponseMinutes",
+          "declined",
+          "declineRate",
+          "expired",
+          "confirmed",
+          "cancelled"
+        ]
+      },
+      "OperatorReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/ReportFiltersDto"
+          },
+          "byStatus": {
+            "description": "Every operator, by status now.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperatorStatusCountDto"
+            }
+          },
+          "operators": {
+            "description": "Operators with requests in the period, most requests first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperatorPerformanceRowDto"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "filters",
+          "byStatus",
+          "operators"
+        ]
+      },
+      "EmptyLegStatusCountDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmptyLegStatus"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "EmptyLegReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/ReportFiltersDto"
+          },
+          "created": {
+            "type": "number",
+            "description": "Offers created in the period."
+          },
+          "byStatus": {
+            "description": "Those offers by status now.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmptyLegStatusCountDto"
+            }
+          },
+          "published": {
+            "type": "number",
+            "description": "Those offers that were ever published."
+          },
+          "booked": {
+            "type": "number"
+          },
+          "withdrawn": {
+            "type": "number"
+          },
+          "expired": {
+            "type": "number"
+          },
+          "interests": {
+            "type": "number",
+            "description": "Customers following those offers."
+          },
+          "bookingRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Booked per published offer. A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          }
+        },
+        "required": [
+          "period",
+          "filters",
+          "created",
+          "byStatus",
+          "published",
+          "booked",
+          "withdrawn",
+          "expired",
+          "interests",
+          "bookingRate"
+        ]
+      },
+      "AirAmbulanceStatusCountDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AirAmbulanceStatus"
+              }
+            ]
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "AirAmbulanceReportDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodDto"
+          },
+          "requests": {
+            "type": "number",
+            "description": "Requests made in the period."
+          },
+          "byStatus": {
+            "description": "Those requests by status now.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirAmbulanceStatusCountDto"
+            }
+          },
+          "open": {
+            "type": "number",
+            "description": "Not yet completed, declined or cancelled."
+          },
+          "quoted": {
+            "type": "number",
+            "description": "Those that were sent a quotation."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "Those that were confirmed by operations."
+          },
+          "completed": {
+            "type": "number"
+          },
+          "declined": {
+            "type": "number"
+          },
+          "cancelled": {
+            "type": "number"
+          },
+          "averageMinutesToQuote": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole minutes from the request to its quotation."
+          },
+          "averageMinutesToConfirm": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole minutes from the request to its confirmation."
+          },
+          "fulfilmentRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "Completed per closed request (completed, declined or cancelled). A share from 0 to 1, rounded to 4 decimals; null when there is nothing to divide by."
+          }
+        },
+        "required": [
+          "period",
+          "requests",
+          "byStatus",
+          "open",
+          "quoted",
+          "confirmed",
+          "completed",
+          "declined",
+          "cancelled",
+          "averageMinutesToQuote",
+          "averageMinutesToConfirm",
+          "fulfilmentRate"
         ]
       },
       "ResponseMetaDto": {

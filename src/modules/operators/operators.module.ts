@@ -10,6 +10,7 @@ import { OperatorController } from './operator.controller.js';
 import { OperatorStaffController } from './operator-staff.controller.js';
 import { OperatorStaffService } from './operator-staff.service.js';
 import { OperatorsService } from './operators.service.js';
+import { OperatorReportsService } from './operator-reports.service.js';
 
 @Module({
   imports: [UsersModule, AuthModule, DocumentsModule, NotificationsModule],
@@ -19,7 +20,12 @@ import { OperatorsService } from './operators.service.js';
     OperatorStaffController,
     AdminOperatorsController,
   ],
-  providers: [OperatorsService, OperatorStaffService, OperatorDashboardService],
-  exports: [OperatorsService],
+  providers: [
+    OperatorsService,
+    OperatorStaffService,
+    OperatorDashboardService,
+    OperatorReportsService,
+  ],
+  exports: [OperatorsService, OperatorReportsService],
 })
 export class OperatorsModule {}

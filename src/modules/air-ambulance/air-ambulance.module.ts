@@ -14,6 +14,7 @@ import { OperatorAirAmbulanceController } from './operator-air-ambulance.control
 import { AirAmbulanceController } from './air-ambulance.controller.js';
 import { AirAmbulanceService } from './air-ambulance.service.js';
 import { AirAmbulanceWorkflowService } from './air-ambulance-workflow.service.js';
+import { AirAmbulanceReportsService } from './air-ambulance-reports.service.js';
 
 /** Owns AirAmbulanceRequest, AirAmbulanceMedical, its timeline and documents. */
 @Module({
@@ -31,7 +32,12 @@ import { AirAmbulanceWorkflowService } from './air-ambulance-workflow.service.js
     AdminAirAmbulanceOperatorsController,
     OperatorAirAmbulanceController,
   ],
-  providers: [AirAmbulanceService, AirAmbulanceWorkflowService, FieldCipher],
-  exports: [AirAmbulanceService],
+  providers: [
+    AirAmbulanceService,
+    AirAmbulanceWorkflowService,
+    AirAmbulanceReportsService,
+    FieldCipher,
+  ],
+  exports: [AirAmbulanceService, AirAmbulanceReportsService],
 })
 export class AirAmbulanceModule {}

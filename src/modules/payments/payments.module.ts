@@ -11,6 +11,7 @@ import { PaymentsController } from './payments.controller.js';
 import { PaymentsService } from './payments.service.js';
 import { ReceiptsService } from './receipts.service.js';
 import { RefundsService } from './refunds.service.js';
+import { PaymentReportsService } from './payment-reports.service.js';
 
 /**
  * Payments (M9): orders, checkout results, gateway notifications, the
@@ -34,6 +35,8 @@ import { RefundsService } from './refunds.service.js';
     PaymentWebhooksService,
     RefundsService,
     ReceiptsService,
+    PaymentReportsService,
   ],
+  exports: [PaymentReportsService],
 })
 export class PaymentsModule {}
