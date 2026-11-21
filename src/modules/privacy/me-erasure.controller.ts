@@ -43,7 +43,7 @@ export class MeErasureController {
   @ApiOperation({
     summary: 'Send a code to confirm erasing your account',
     description:
-      'For accounts without a password (registered with a mobile number), or as an alternative to it. The code goes to the mobile number, or to the email address when there is none. Send the answer’s `verificationId` with the code to `POST /me/erasure`.',
+      'For accounts without a password (registered with a mobile number), or as an alternative to it. The code goes to the mobile number, or to the email address when there is none. Send the answer’s `verificationId` with the code to `POST /me/erasure`. The code works only there: `POST /auth/otp/verify` refuses it, and `POST /me/erasure` refuses a sign-in code.',
   })
   @ApiAcceptedResponse({ type: VerificationSentResponseDto })
   sendCode(

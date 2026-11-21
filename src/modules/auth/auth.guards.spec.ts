@@ -1,9 +1,12 @@
 import { ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
-import { Role } from '../../generated/prisma/enums.js';
+import { Role, UserStatus } from '../../generated/prisma/enums.js';
+import type { UsersService } from '../users/users.service.js';
 import { IS_PUBLIC, ROLES, SKIP_CSRF } from './auth.decorators.js';
-import { CsrfGuard, RolesGuard } from './auth.guards.js';
+import { CsrfGuard, JwtAuthGuard, RolesGuard } from './auth.guards.js';
+import type { AuthService } from './auth.service.js';
+import type { TokenService } from './token.service.js';
 
 function context(request: object): ExecutionContext {
   return {
@@ -18,6 +21,48 @@ function reflector(metadata: Record<string, unknown>): Reflector {
     getAllAndOverride: (key: string) => metadata[key],
   } as unknown as Reflector;
 }
+
+describe('JwtAuthGuard', () => {
+  // A signed-in request whose access token is still valid.
+  function guard(status: UserStatus, sessionLive: boolean) {
+    const tokens = {
+      verifyAccessToken: () => Promise.resolve({ sub: 'u1', sid: 'family-1' }),
+    } as unknown as TokenService;
+    const users = {
+      findAccount: () =>
+        Promise.resolve({
+          id: 'u1',
+          email: null,
+          phone: null,
+          role: Role.CUSTOMER,
+          status,
+        }),
+    } as unknown as UsersService;
+    const auth = {
+      isFamilyActive: () => Promise.resolve(sessionLive),
+    } as unknown as AuthService;
+    return new JwtAuthGuard(reflector({}), tokens, users, auth);
+  }
+  const request = { cookies: { access_token: 'still-valid' } };
+
+  it('lets an active account with a live session through', async () => {
+    await expect(
+      guard(UserStatus.ACTIVE, true).canActivate(context({ ...request })),
+    ).resolves.toBe(true);
+  });
+
+  it('refuses an erased account at once, whatever its token (W5-8b)', async () => {
+    await expect(
+      guard(UserStatus.ERASED, true).canActivate(context({ ...request })),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+  });
+
+  it('refuses a token whose sessions were deleted, as an erasure does', async () => {
+    await expect(
+      guard(UserStatus.ACTIVE, false).canActivate(context({ ...request })),
+    ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+  });
+});
 
 describe('RolesGuard', () => {
   const admin = { user: { id: 'u1', role: Role.SUPER_ADMIN } };

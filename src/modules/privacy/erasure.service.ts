@@ -83,7 +83,11 @@ export class ErasureService {
     // Every customer registered with one of the two.
     if (!identifier) throw new Error('Customer account without an address');
     await this.verification.throttle(identifier);
-    return this.verification.start(identifier, { userId: user.id });
+    // Bound to erasure: refused by every sign-in and registration route.
+    return this.verification.start(identifier, {
+      userId: user.id,
+      purpose: 'erasure',
+    });
   }
 
   /**
@@ -99,9 +103,11 @@ export class ErasureService {
         requestContext.get()?.ipAddress ?? null,
       );
     } else {
+      // Only a code sent by `sendCode`: a sign-in code is refused.
       const attempt = await this.verification.check(
         proof.verificationId,
         proof.code,
+        'erasure',
       );
       if (attempt.pending || attempt.userId !== user.id) {
         throw this.verification.expired();
