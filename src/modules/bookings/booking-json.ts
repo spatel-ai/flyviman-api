@@ -17,12 +17,27 @@ export interface ItineraryLeg {
   departureAt: string;
 }
 
+/** The empty-leg offer an `EMPTY_LEG` booking was made from (M8-C). */
+export interface ItineraryEmptyLeg {
+  id: string;
+  reference: string;
+  /**
+   * The end of the offer's departure window, ISO 8601 UTC. The leg's
+   * `departureAt` is the window's start; the operator confirms the time.
+   */
+  departureTo: string;
+  /** The offer's conditions as the customer was shown them (rule 9). */
+  conditions: string;
+}
+
 export interface Itinerary {
   version: 1;
-  /** Where the booking came from. Empty legs and quotes come later. */
-  source: 'SEARCH';
-  searchId: string;
-  resultId: string;
+  /** Where the booking came from: a search result or an empty-leg offer. */
+  source: 'SEARCH' | 'EMPTY_LEG';
+  /** Null for an empty-leg booking. */
+  searchId: string | null;
+  /** Null for an empty-leg booking. */
+  resultId: string | null;
   tripType: 'ONE_WAY' | 'ROUND_TRIP';
   passengerCount: number;
   /** One leg, or the outbound and the return for a round trip. */
@@ -40,6 +55,11 @@ export interface Itinerary {
   distanceKm: number;
   /** Whole minutes; null when unknown. */
   flightMinutes: number | null;
+  /**
+   * The offer, for an `EMPTY_LEG` booking; null (or left out, in rows
+   * written before M8-C) for a search booking.
+   */
+  emptyLeg: ItineraryEmptyLeg | null;
 }
 
 export interface CancellationCharge {
@@ -74,12 +94,22 @@ export class BookingJsonError extends Error {
 
 type Json = Record<string, unknown>;
 
-function object(value: unknown, what: string, keys: readonly string[]): Json {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+function isObject(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** `optional` keys may be left out; every other key in `keys` must be there. */
+function object(
+  value: unknown,
+  what: string,
+  keys: readonly string[],
+  optional: readonly string[] = [],
+): Json {
+  if (!isObject(value)) {
     throw new BookingJsonError(what, 'must be an object');
   }
   for (const key of Object.keys(value)) {
-    if (!keys.includes(key)) {
+    if (!keys.includes(key) && !optional.includes(key)) {
       throw new BookingJsonError(what, `unknown key ${key}`);
     }
   }
@@ -153,6 +183,13 @@ const ITINERARY_KEYS = [
   'flightMinutes',
 ] as const;
 
+const EMPTY_LEG_KEYS = [
+  'id',
+  'reference',
+  'departureTo',
+  'conditions',
+] as const;
+
 const AIRCRAFT_KEYS = [
   'id',
   'manufacturer',
@@ -161,8 +198,28 @@ const AIRCRAFT_KEYS = [
   'passengerCapacity',
 ] as const;
 
+function nothing(value: unknown, what: string): null {
+  if (value !== null) throw new BookingJsonError(what, 'must be null');
+  return null;
+}
+
+function emptyLegOf(value: unknown): ItineraryEmptyLeg {
+  const raw = object(value, 'emptyLeg', EMPTY_LEG_KEYS);
+  return {
+    id: text(raw.id, 'emptyLeg.id', 36),
+    reference: text(raw.reference, 'emptyLeg.reference', 32),
+    departureTo: instant(raw.departureTo, 'emptyLeg.departureTo'),
+    conditions: text(raw.conditions, 'emptyLeg.conditions', 2000),
+  };
+}
+
 export function parseItinerary(value: unknown): Itinerary {
-  const raw = object(value, 'itinerary', ITINERARY_KEYS);
+  // A search itinerary may leave `emptyLeg` out (rows from before M8-C);
+  // an empty-leg itinerary must carry it, and no search or result.
+  const fromEmptyLeg = isObject(value) && value.source === 'EMPTY_LEG';
+  const raw = fromEmptyLeg
+    ? object(value, 'itinerary', [...ITINERARY_KEYS, 'emptyLeg'])
+    : object(value, 'itinerary', ITINERARY_KEYS, ['emptyLeg']);
   if (raw.version !== 1) throw new BookingJsonError('itinerary', 'version 1');
   const tripType = oneOf(raw.tripType, 'tripType', [
     'ONE_WAY',
@@ -187,9 +244,15 @@ export function parseItinerary(value: unknown): Itinerary {
   const aircraft = object(raw.aircraft, 'aircraft', AIRCRAFT_KEYS);
   return {
     version: 1,
-    source: oneOf(raw.source, 'source', ['SEARCH'] as const),
-    searchId: text(raw.searchId, 'searchId', 36),
-    resultId: text(raw.resultId, 'resultId', 36),
+    source: fromEmptyLeg
+      ? 'EMPTY_LEG'
+      : oneOf(raw.source, 'source', ['SEARCH'] as const),
+    searchId: fromEmptyLeg
+      ? nothing(raw.searchId, 'searchId')
+      : text(raw.searchId, 'searchId', 36),
+    resultId: fromEmptyLeg
+      ? nothing(raw.resultId, 'resultId')
+      : text(raw.resultId, 'resultId', 36),
     tripType,
     passengerCount: whole(raw.passengerCount, 'passengerCount', 1, 1000),
     legs,
@@ -222,6 +285,11 @@ export function parseItinerary(value: unknown): Itinerary {
       raw.flightMinutes === null
         ? null
         : whole(raw.flightMinutes, 'flightMinutes', 0, 100_000),
+    emptyLeg: fromEmptyLeg
+      ? emptyLegOf(raw.emptyLeg)
+      : raw.emptyLeg === undefined
+        ? null
+        : nothing(raw.emptyLeg, 'emptyLeg'),
   };
 }
 

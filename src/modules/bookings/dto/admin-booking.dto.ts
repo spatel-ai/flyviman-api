@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
+  IsIn,
   IsISO8601,
   IsOptional,
   IsString,
@@ -85,6 +86,14 @@ export class AdminBookingQueryDto extends PageQueryDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   to?: string;
+
+  @ApiPropertyOptional({
+    enum: ['true'],
+    description: '`true`: only bookings operations have escalated (M8-C).',
+  })
+  @IsOptional()
+  @IsIn(['true'])
+  escalated?: 'true';
 }
 
 export class AssignBookingDto {
@@ -186,8 +195,43 @@ export class AdminBookingSummaryDto {
   })
   assignedToId: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Set while operations have the booking escalated.',
+  })
+  escalatedAt: string | null;
+
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
+}
+
+/** Why and by whom a booking is escalated, while it is. */
+export class AdminBookingEscalationDto {
+  @ApiProperty({ format: 'date-time' })
+  escalatedAt: string;
+
+  @ApiProperty({ description: 'The reason given (also in the audit trail).' })
+  reason: string;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  escalatedById: string | null;
+}
+
+/** `POST /admin/bookings/:reference/escalate` and `/resolve-escalation`. */
+export class BookingEscalationInputDto {
+  @ApiProperty({
+    minLength: 3,
+    maxLength: 500,
+    description:
+      'Why the booking is escalated, or how the escalation was resolved. Kept on the timeline and in the audit trail; never put passenger or medical details here.',
+  })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  @IsPlainText()
+  reason: string;
 }
 
 export class AdminBookingEventDto {
@@ -220,7 +264,8 @@ export class AdminBookingEventDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: 'The reason of a status override (also in the audit trail).',
+    description:
+      'The reason of a status override, an escalation or its resolution (also in the audit trail).',
   })
   overrideReason: string | null;
 
@@ -318,6 +363,13 @@ export class AdminBookingDetailDto extends AdminBookingSummaryDto {
 
   @ApiProperty({ type: [AdminBookingPaymentDto], description: 'Newest first.' })
   payments: AdminBookingPaymentDto[];
+
+  @ApiProperty({
+    type: AdminBookingEscalationDto,
+    nullable: true,
+    description: 'The open escalation, or null.',
+  })
+  escalation: AdminBookingEscalationDto | null;
 }
 
 export class ChangeRequestQueryDto extends PageQueryDto {

@@ -33,7 +33,9 @@ import { OperatorsService } from '../operators/operators.service.js';
 import { UsersService } from '../users/users.service.js';
 import {
   ALTERNATIVE_WINDOW_DAYS,
+  BOOKING_ENDED,
   changedFields,
+  greatCircleKm,
   EDITABLE,
   type EmptyLegAction,
   LOCKED_WHEN_PUBLISHED,
@@ -100,6 +102,33 @@ const OFFER_INCLUDE = {
 } satisfies Prisma.EmptyLegInclude;
 
 type OfferRow = Prisma.EmptyLegGetPayload<{ include: typeof OFFER_INCLUDE }>;
+
+/** What a booking copies from the offer it is made from (M8-C). */
+export interface BookableOffer {
+  id: string;
+  reference: string;
+  operatorId: string;
+  operatorName: string;
+  aircraft: {
+    id: string;
+    manufacturer: string;
+    model: string;
+    category: OfferRow['aircraft']['category'];
+    passengerCapacity: number;
+  };
+  origin: { id: string; name: string };
+  destination: { id: string; name: string };
+  departureFrom: Date;
+  departureTo: Date;
+  seatsAvailable: number;
+  priceMinor: bigint;
+  currency: string;
+  priceType: ReturnType<typeof priceTypeOf>;
+  expiresAt: Date;
+  conditions: string;
+  /** Great-circle kilometres, rounded; null when a location has no position. */
+  distanceKm: number | null;
+}
 
 /** A trip end as `alternativesFor` compares it. */
 type TripPoint = { id: string; latitude: number; longitude: number };
@@ -278,7 +307,95 @@ export class EmptyLegsService {
       status: EmptyLegStatus.PUBLISHED,
       expiresAt: { gt: now },
       aircraft: this.aircraft.bookableWhere(now),
+      // An offer someone has requested is off the list until that booking
+      // ends (M8-C); a read-only join, as for display (D-066).
+      bookings: { none: { status: { notIn: BOOKING_ENDED } } },
     };
+  }
+
+  /**
+   * The offer a customer is booking (M8-C), locked (`FOR UPDATE`) for the
+   * caller's transaction so two bookings of it are made one after the
+   * other. Listed (rule 4: published, valid, approved operator and
+   * aircraft, no live booking) and not yet in its departure window, read
+   * after the lock; otherwise null, which the caller answers as
+   * unavailable. The live-booking check is the caller's, under this lock.
+   */
+  async forBooking(
+    tx: Prisma.TransactionClient,
+    id: string,
+    now: Date,
+  ): Promise<BookableOffer | null> {
+    await tx.$queryRaw`SELECT 1 FROM "EmptyLeg" WHERE "id" = ${id}::uuid FOR UPDATE`;
+    const { bookings: _live, ...listed } = this.listedWhere(now);
+    const row = await tx.emptyLeg.findFirst({
+      where: { id, ...listed, departureWindowStart: { gt: now } },
+      include: OFFER_INCLUDE,
+    });
+    if (!row) return null;
+    const points = await this.locations.pricingPoints([
+      row.originId,
+      row.destinationId,
+    ]);
+    const from = points.get(row.originId);
+    const to = points.get(row.destinationId);
+    return {
+      id: row.id,
+      reference: row.reference,
+      operatorId: row.operatorId,
+      operatorName: row.operator.tradingName ?? row.operator.legalName,
+      aircraft: {
+        id: row.aircraft.id,
+        manufacturer: row.aircraft.manufacturer,
+        model: row.aircraft.model,
+        category: row.aircraft.category,
+        passengerCapacity: row.aircraft.passengerCapacity,
+      },
+      origin: { id: row.origin.id, name: row.origin.name },
+      destination: { id: row.destination.id, name: row.destination.name },
+      departureFrom: row.departureWindowStart,
+      departureTo: row.departureWindowEnd,
+      seatsAvailable: row.passengerCapacity,
+      priceMinor: row.priceMinor,
+      currency: row.currency,
+      priceType: priceTypeOf(row.pricingBasis),
+      expiresAt: row.expiresAt,
+      conditions: row.bookingConditions,
+      distanceKm: from && to ? Math.round(greatCircleKm(from, to)) : null,
+    };
+  }
+
+  /**
+   * A booking of the offer was confirmed: the offer becomes `BOOKED`
+   * (from `PUBLISHED`, or `EXPIRED` when the job closed it meanwhile),
+   * audited as the system's act. Runs inside the confirmation's
+   * transaction, which must never fail for it: an offer in any other
+   * status (withdrawn, already booked) is left as it is.
+   */
+  async markBooked(tx: Prisma.TransactionClient, id: string): Promise<void> {
+    const row = await tx.emptyLeg.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!row) return;
+    const next = nextEmptyLegStatus('book', row.status, null);
+    if (!('to' in next)) return;
+    const { count } = await tx.emptyLeg.updateMany({
+      where: { id, status: row.status },
+      data: { status: next.to },
+    });
+    if (count !== 1) return;
+    await this.audit.record(
+      {
+        action: 'empty_leg.book',
+        entityType: 'EmptyLeg',
+        entityId: id,
+        before: { status: row.status },
+        after: { status: next.to },
+        actor: null,
+      },
+      tx,
+    );
   }
 
   async publicList(

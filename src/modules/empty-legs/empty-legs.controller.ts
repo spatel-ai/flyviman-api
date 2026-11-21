@@ -32,11 +32,15 @@ import {
   PublicEmptyLegQueryDto,
 } from './dto/empty-leg.dto.js';
 import { EmptyLegsService } from './empty-legs.service.js';
+import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
 
 @ApiTags('empty-legs')
 @Controller('empty-legs')
 export class EmptyLegsController {
-  constructor(private readonly emptyLegs: EmptyLegsService) {}
+  constructor(
+    private readonly emptyLegs: EmptyLegsService,
+    private readonly cancellationTerms: CancellationTermsService,
+  ) {}
 
   @Get()
   @Public()
@@ -63,7 +67,7 @@ export class EmptyLegsController {
   @ApiOperation({
     summary: 'Empty-leg offer detail',
     description:
-      '410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.',
+      '410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.',
   })
   @ApiOkResponse({ type: EmptyLegDetailResponseDto })
   async detail(
@@ -75,7 +79,9 @@ export class EmptyLegsController {
       user?.role === Role.CUSTOMER
         ? await this.emptyLegs.isInterested(user.id, id)
         : false;
-    return { ...this.emptyLegs.toPublic(row), interested };
+    const { ruleId: _ruleId, ...cancellationTerms } =
+      await this.cancellationTerms.current();
+    return { ...this.emptyLegs.toPublic(row), interested, cancellationTerms };
   }
 
   @Post(':id/interest')

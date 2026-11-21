@@ -34,6 +34,7 @@ import { CategoryConfigService } from '../configuration/category-config.service.
 import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { bookingStatusEvents } from '../notifications/matrix.js';
 import { CustomersService } from '../customers/customers.service.js';
+import { EmptyLegsService } from '../empty-legs/empty-legs.service.js';
 import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
 import { PromotionsService } from '../pricing/promotions.service.js';
 import { QuotesService } from '../quotes/quotes.service.js';
@@ -77,7 +78,7 @@ const REFERENCE_ATTEMPTS = 5;
  * question waiting for the customer still holds it, so it counts too;
  * answering it moves between two open statuses and never adds one.
  */
-const OPEN_STATUSES: BookingStatus[] = [
+export const OPEN_STATUSES: BookingStatus[] = [
   BookingStatus.REQUESTED,
   BookingStatus.OPERATOR_PENDING,
   BookingStatus.CLARIFICATION_REQUESTED,
@@ -161,6 +162,7 @@ export class BookingsService implements OnApplicationBootstrap {
     private readonly cancellationTerms: CancellationTermsService,
     private readonly promotions: PromotionsService,
     private readonly events: NotificationEventsService,
+    private readonly emptyLegs: EmptyLegsService,
   ) {}
 
   /**
@@ -609,6 +611,14 @@ export class BookingsService implements OnApplicationBootstrap {
     );
     for (const key of bookingStatusEvents(booking.status, to, actor.kind)) {
       await this.events.notifyBooking(tx, key, booking.id);
+    }
+    if (to === BookingStatus.CONFIRMED) {
+      // An empty-leg offer is taken once its booking is confirmed (M8-C).
+      const { emptyLegId } = await tx.booking.findUniqueOrThrow({
+        where: { id: booking.id },
+        select: { emptyLegId: true },
+      });
+      if (emptyLegId) await this.emptyLegs.markBooked(tx, emptyLegId);
     }
     return to;
   }

@@ -24,6 +24,7 @@ import { BookingsService } from './bookings.service.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import type {
   AdminBookingDetailDto,
+  AdminBookingEscalationDto,
   AdminBookingEventDto,
   AdminBookingQueryDto,
   AdminBookingSummaryDto,
@@ -103,6 +104,7 @@ export class AdminBookingsService {
       ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(query.operatorId ? { operatorId: query.operatorId } : {}),
+      ...(query.escalated ? { escalatedAt: { not: null } } : {}),
       ...(query.from || query.to
         ? {
             createdAt: {
@@ -191,6 +193,7 @@ export class AdminBookingsService {
         );
         return hide ? { ...view, details: '', decisionNote: null } : view;
       }),
+      escalation: escalationOf(row),
       payments: row.payments.map((payment) => ({
         reference: payment.reference,
         purpose: payment.purpose,
@@ -455,7 +458,33 @@ function summaryOf(row: SummaryRow): AdminBookingSummaryDto {
     departureAt: first.departureAt,
     passengerCount: itinerary.passengerCount,
     assignedToId: row.assignedToId,
+    escalatedAt: row.escalatedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** A reason kept on an escalation event's payload, or null. */
+function escalationReason(payload: unknown): string | null {
+  return payload !== null &&
+    typeof payload === 'object' &&
+    typeof (payload as Record<string, unknown>).reason === 'string'
+    ? ((payload as Record<string, unknown>).reason as string)
+    : null;
+}
+
+/** The open escalation, from the column and the latest ESCALATED event. */
+function escalationOf(row: {
+  escalatedAt: Date | null;
+  events: Prisma.BookingEventGetPayload<object>[];
+}): AdminBookingEscalationDto | null {
+  if (!row.escalatedAt) return null;
+  const event = row.events.findLast(
+    (e) => e.type === BookingEventType.ESCALATED,
+  );
+  return {
+    escalatedAt: row.escalatedAt.toISOString(),
+    reason: escalationReason(event?.payload ?? null) ?? '',
+    escalatedById: event?.actorId ?? null,
   };
 }
 
@@ -469,12 +498,15 @@ function eventOf(
   const payload = event.payload as Record<string, unknown> | null;
   // The override reason is in the audit trail too, which finance reads.
   const overrideReason =
-    payload !== null &&
-    typeof payload === 'object' &&
-    payload.override === true &&
-    typeof payload.reason === 'string'
-      ? payload.reason
-      : null;
+    event.type === BookingEventType.ESCALATED ||
+    event.type === BookingEventType.ESCALATION_RESOLVED
+      ? escalationReason(payload)
+      : payload !== null &&
+          typeof payload === 'object' &&
+          payload.override === true &&
+          typeof payload.reason === 'string'
+        ? payload.reason
+        : null;
   return {
     id: event.id,
     type: event.type,

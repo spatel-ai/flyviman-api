@@ -3909,7 +3909,7 @@
     },
     "/api/v1/empty-legs/{id}": {
       "get": {
-        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed. `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
+        "description": "410 `EMPTY_LEG_EXPIRED` or `EMPTY_LEG_WITHDRAWN` for an offer that was listed and has ended; 404 for any other offer that is not listed (including one another customer has requested, until that request ends). `cancellationTerms` are Flyviman’s tiers in force, shown before a booking request (rule 9). `interested` tells a signed-in customer whether they follow it; the answer is then `Cache-Control: private, no-store`.",
         "operationId": "EmptyLegsController_detail",
         "parameters": [
           {
@@ -4439,438 +4439,6 @@
         "summary": "Reject with reason",
         "tags": [
           "admin-empty-legs"
-        ]
-      }
-    },
-    "/api/v1/search/scheduled": {
-      "post": {
-        "description": "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned.",
-        "operationId": "ScheduledSearchController_search",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScheduledSearchDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduledSearchResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Search scheduled flights across airline suppliers",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/scheduled/revalidate": {
-      "post": {
-        "description": "A changed fare is returned, never hidden. 503 `SEARCH_PROVIDER_UNAVAILABLE` when the airline does not answer.",
-        "operationId": "ScheduledSearchController_revalidate",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RevalidateScheduledDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduledRevalidationDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Recheck the fare and seats of a selected flight",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/scheduled/{searchId}": {
-      "get": {
-        "operationId": "ScheduledSearchController_get",
-        "parameters": [
-          {
-            "name": "searchId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduledSearchResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "A stored scheduled search and its results (404 once expired)",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/scheduled/{searchId}/offers/{offerId}/fare-rules": {
-      "get": {
-        "operationId": "ScheduledSearchController_fareRules",
-        "parameters": [
-          {
-            "name": "searchId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "offerId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduledFareRulesDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Fare rules of one offer: baggage, cancellation and changes",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/charter": {
-      "post": {
-        "operationId": "SearchController_charter",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CharterSearchDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Search eligible charter aircraft with estimates",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/helicopter": {
-      "post": {
-        "operationId": "SearchController_helicopter",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/HelicopterSearchDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Search helicopter options with estimates",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/calendar": {
-      "get": {
-        "operationId": "SearchController_calendar",
-        "parameters": [
-          {
-            "name": "category",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "PRIVATE_CHARTER",
-                "HELICOPTER"
-              ]
-            }
-          },
-          {
-            "name": "originId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "name": "destinationId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "name": "month",
-            "required": true,
-            "in": "query",
-            "description": "YYYY-MM.",
-            "schema": {
-              "example": "2026-12",
-              "type": "string"
-            }
-          },
-          {
-            "name": "passengerCount",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "type": "number"
-            }
-          },
-          {
-            "name": "aircraftCategory",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/CharterCategory"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FareCalendarResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Lowest estimate and aircraft count for each day of a month",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/{searchId}": {
-      "get": {
-        "operationId": "SearchController_get",
-        "parameters": [
-          {
-            "name": "searchId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "A stored search and its results",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/{searchId}/results/{resultId}": {
-      "get": {
-        "operationId": "SearchController_result",
-        "parameters": [
-          {
-            "name": "searchId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "resultId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResultDetailDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "One result with its breakdown and conditions",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/search/{searchId}/results/{resultId}/promo-code": {
-      "post": {
-        "description": "The trip priced again with the code, as a booking with `promoCode` would be: an `ESTIMATE` with the discount as its own line. 422 `PROMO_CODE_INVALID` (unknown or not started), `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (another category or route, or priced on request), `PROMO_CODE_LIMIT_REACHED` (overall, or the signed-in customer’s own); 409 `BOOKING_UNAVAILABLE`. On the search rate tier.",
-        "operationId": "SearchController_promoCode",
-        "parameters": [
-          {
-            "name": "searchId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "resultId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApplyPromoCodeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromoPreviewResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Apply a promotion code to one result (preview, nothing stored)",
-        "tags": [
-          "search"
-        ]
-      }
-    },
-    "/api/v1/admin/category-config": {
-      "get": {
-        "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.",
-        "operationId": "AdminCategoryConfigController_list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookie": []
-          }
-        ],
-        "summary": "Service category configuration",
-        "tags": [
-          "admin: configuration"
         ]
       }
     },
@@ -5740,6 +5308,438 @@
         ]
       }
     },
+    "/api/v1/search/scheduled": {
+      "post": {
+        "description": "Suppliers are called in parallel, each with a timeout. One that times out or fails is listed in `providers` and `partial` is true; the others' fares are still returned.",
+        "operationId": "ScheduledSearchController_search",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduledSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search scheduled flights across airline suppliers",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/scheduled/revalidate": {
+      "post": {
+        "description": "A changed fare is returned, never hidden. 503 `SEARCH_PROVIDER_UNAVAILABLE` when the airline does not answer.",
+        "operationId": "ScheduledSearchController_revalidate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevalidateScheduledDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledRevalidationDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Recheck the fare and seats of a selected flight",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/scheduled/{searchId}": {
+      "get": {
+        "operationId": "ScheduledSearchController_get",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A stored scheduled search and its results (404 once expired)",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/scheduled/{searchId}/offers/{offerId}/fare-rules": {
+      "get": {
+        "operationId": "ScheduledSearchController_fareRules",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledFareRulesDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Fare rules of one offer: baggage, cancellation and changes",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/charter": {
+      "post": {
+        "operationId": "SearchController_charter",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharterSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search eligible charter aircraft with estimates",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/helicopter": {
+      "post": {
+        "operationId": "SearchController_helicopter",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelicopterSearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search helicopter options with estimates",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/calendar": {
+      "get": {
+        "operationId": "SearchController_calendar",
+        "parameters": [
+          {
+            "name": "category",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PRIVATE_CHARTER",
+                "HELICOPTER"
+              ]
+            }
+          },
+          {
+            "name": "originId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "destinationId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "required": true,
+            "in": "query",
+            "description": "YYYY-MM.",
+            "schema": {
+              "example": "2026-12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "passengerCount",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "aircraftCategory",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/CharterCategory"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FareCalendarResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Lowest estimate and aircraft count for each day of a month",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/{searchId}": {
+      "get": {
+        "operationId": "SearchController_get",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A stored search and its results",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/{searchId}/results/{resultId}": {
+      "get": {
+        "operationId": "SearchController_result",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resultId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResultDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One result with its breakdown and conditions",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/{searchId}/results/{resultId}/promo-code": {
+      "post": {
+        "description": "The trip priced again with the code, as a booking with `promoCode` would be: an `ESTIMATE` with the discount as its own line. 422 `PROMO_CODE_INVALID` (unknown or not started), `PROMO_CODE_EXPIRED`, `PROMO_CODE_NOT_APPLICABLE` (another category or route, or priced on request), `PROMO_CODE_LIMIT_REACHED` (overall, or the signed-in customer’s own); 409 `BOOKING_UNAVAILABLE`. On the search rate tier.",
+        "operationId": "SearchController_promoCode",
+        "parameters": [
+          {
+            "name": "searchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resultId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPromoCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoPreviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Apply a promotion code to one result (preview, nothing stored)",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/admin/category-config": {
+      "get": {
+        "description": "Platform booking mode, payment model and Model C deposit percent per category and region, by region then category. Read only until M10.",
+        "operationId": "AdminCategoryConfigController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryConfigResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Service category configuration",
+        "tags": [
+          "admin: configuration"
+        ]
+      }
+    },
     "/api/v1/bookings": {
       "post": {
         "description": "Checks the aircraft and the price again first (business rule 3): 409 `BOOKING_UNAVAILABLE` when the aircraft can no longer fly the trip; 409 `BOOKING_PRICE_CHANGED` when the estimate is not `expectedTotalMinor`, with the new estimate in `details` under the fields `totalMinor`, `currency`, `priceType` and `validUntil` (send it back as `expectedTotalMinor`, with a new key, to agree to it); a result priced on request (`price: null`) is requested without `expectedTotalMinor` and asks the operator for a quote (409 `BOOKING_PRICE_CHANGED` with `details` (field `price`, issue `ON_REQUEST`) when an amount is sent for a result now on request, and with the new estimate when none is sent for a result now priced); 422 `BOOKING_CATEGORY_DISABLED`; 404 for a search or result that is not found (searches are public: any customer may book from one), or a passenger that is not found or not the caller’s; 409 `BOOKING_DUPLICATE` when the caller already has an open request (`REQUESTED`, `OPERATOR_PENDING` or `CLARIFICATION_REQUESTED`) for this aircraft at an overlapping time; 409 `BOOKING_LIMIT_REACHED` when the caller already has the most open requests allowed (5 by default, `BOOKING_MAX_OPEN_PER_CUSTOMER`). Limited per caller (10 per 10 minutes by default; 429 `RATE_LIMITED`). Holds the aircraft for 48 hours by default (`BOOKING_HOLD_HOURS`, never past the trip’s end) while the operator answers. `specialRequests` is stored encrypted. Never confirmed here: charter goes to the operator (`OPERATOR_PENDING`). The answer holds references and statuses only. A repeat with the same `Idempotency-Key` and body returns the first answer.",
@@ -6380,6 +6380,18 @@
             "schema": {
               "format": "date-time",
               "type": "string"
+            }
+          },
+          {
+            "name": "escalated",
+            "required": false,
+            "in": "query",
+            "description": "`true`: only bookings operations have escalated (M8-C).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
             }
           }
         ],
@@ -7220,6 +7232,189 @@
         "summary": "Add an internal note to a booking",
         "tags": [
           "operator-booking-requests"
+        ]
+      }
+    },
+    "/api/v1/bookings/empty-leg": {
+      "post": {
+        "description": "The offer must be listed (published, still valid, approved operator and aircraft, not requested by anyone else) and its departure window not yet begun; otherwise 409 `BOOKING_UNAVAILABLE`, also when the aircraft is no longer free over the window. 409 `BOOKING_DUPLICATE` when the caller has already requested it. The price is the offer’s, a `QUOTE` (the operator’s own price) until the operator accepts: 409 `BOOKING_PRICE_CHANGED` when it is not `expectedTotalMinor`, with the current price in `details` (`totalMinor`, `currency`, `priceType`, `validUntil`). 409 `BOOKING_TERMS_CHANGED` when Flyviman’s cancellation tiers changed since the offer was shown (rule 9). 400 `VALIDATION_ERROR` when `passengerCount` exceeds the offer’s seats. 422 `BOOKING_CATEGORY_DISABLED`; 409 `BOOKING_LIMIT_REACHED`; 404 for a passenger that is not the caller’s. Limited per caller as `POST /bookings` (429 `RATE_LIMITED`). Holds the aircraft over the departure window (48 hours by default, `BOOKING_HOLD_HOURS`, never past the window’s end) and goes to the operator (`OPERATOR_PENDING`): never confirmed here. The leg’s `departureAt` is the window’s start; the operator confirms the time. The offer becomes `BOOKED` when the booking is confirmed, and is listed again if the request ends first. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "operationId": "EmptyLegBookingsController_create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each booking request and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEmptyLegBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingCreatedDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Request a booking of a listed empty-leg offer",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/bookings/{reference}/documents": {
+      "get": {
+        "description": "Worked out from the booking, nothing stored: the confirmation (available once `CONFIRMED`, `SCHEDULED` or `COMPLETED`), a receipt for each payment whose money arrived, and the cancellation terms accepted with the request. Another customer’s booking is 404.",
+        "operationId": "BookingDocumentsController_list",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookingDocumentDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "The documents of one of the caller’s bookings",
+        "tags": [
+          "bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/escalate": {
+      "post": {
+        "description": "Flags the booking for operations’ attention (`escalatedAt`, the list’s `escalated=true` filter) without changing its status. `reason` (3–500 characters) is kept on the timeline and in the audit trail (`booking.escalate`). 409 `BOOKING_ESCALATION_CONFLICT` when it is already escalated.",
+        "operationId": "AdminBookingEscalationController_escalate",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingEscalationInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Escalate a booking, with a reason",
+        "tags": [
+          "admin-bookings"
+        ]
+      }
+    },
+    "/api/v1/admin/bookings/{reference}/resolve-escalation": {
+      "post": {
+        "description": "Clears the flag. `reason` (3–500 characters) says how it was resolved; kept on the timeline and in the audit trail (`booking.escalation_resolve`). 409 `BOOKING_ESCALATION_CONFLICT` when it is not escalated.",
+        "operationId": "AdminBookingEscalationController_resolve",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingEscalationInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Resolve a booking’s escalation, with a note",
+        "tags": [
+          "admin-bookings"
         ]
       }
     },
@@ -13149,6 +13344,57 @@
           "conditions"
         ]
       },
+      "CancellationTierDto": {
+        "type": "object",
+        "properties": {
+          "minHoursBeforeDeparture": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8760,
+            "description": "Applies when cancelling at least this many hours before departure (a boundary falls in the cheaper tier)."
+          },
+          "chargePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Whole percent of the confirmed price."
+          }
+        },
+        "required": [
+          "minHoursBeforeDeparture",
+          "chargePercent"
+        ]
+      },
+      "CancellationTierTableDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "description": "The version in force. Send it back as `cancellationTermsVersion` when making a booking request, and as `baseVersion` when changing the tiers."
+          },
+          "tiers": {
+            "description": "Longest notice first; the last tier starts at 0 hours.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CancellationTierDto"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "The terms in words, shown to the customer and snapshotted on a booking request word for word."
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "tiers",
+          "summary",
+          "validFrom"
+        ]
+      },
       "EmptyLegDetailResponseDto": {
         "type": "object",
         "properties": {
@@ -13205,6 +13451,14 @@
           "interested": {
             "type": "boolean",
             "description": "Whether the signed-in customer follows this offer for change alerts. False when not signed in as a customer."
+          },
+          "cancellationTerms": {
+            "description": "Flyviman's cancellation tiers, shown before a booking request (rule 9). Send `version` as `cancellationTermsVersion` with `POST /bookings/empty-leg`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CancellationTierTableDto"
+              }
+            ]
           }
         },
         "required": [
@@ -13221,7 +13475,8 @@
           "price",
           "validUntil",
           "conditions",
-          "interested"
+          "interested",
+          "cancellationTerms"
         ]
       },
       "EmptyLegInterestResponseDto": {
@@ -13636,1279 +13891,6 @@
         },
         "required": [
           "reason"
-        ]
-      },
-      "ScheduledPassengersDto": {
-        "type": "object",
-        "properties": {
-          "adults": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 9,
-            "example": 1
-          },
-          "children": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 8,
-            "example": 0,
-            "description": "Seated. Adults and children together at most 9."
-          },
-          "infants": {
-            "type": "number",
-            "minimum": 0,
-            "example": 0,
-            "description": "On a lap: at most one per adult."
-          }
-        },
-        "required": [
-          "adults",
-          "children",
-          "infants"
-        ]
-      },
-      "ScheduledCabin": {
-        "type": "string",
-        "enum": [
-          "ECONOMY",
-          "PREMIUM_ECONOMY",
-          "BUSINESS"
-        ]
-      },
-      "ScheduledSearchDto": {
-        "type": "object",
-        "properties": {
-          "originId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "An active airport with an IATA code (`GET /locations`)."
-          },
-          "destinationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "departureDate": {
-            "type": "string",
-            "format": "date",
-            "example": "2026-12-05",
-            "description": "Local date at the origin, `YYYY-MM-DD`: today there or later, within a year."
-          },
-          "returnDate": {
-            "type": "string",
-            "format": "date",
-            "example": "2026-12-08",
-            "description": "For a return trip: local date at the destination, on or after `departureDate`, within a year. Results then hold both directions."
-          },
-          "passengers": {
-            "$ref": "#/components/schemas/ScheduledPassengersDto"
-          },
-          "cabin": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduledCabin"
-              }
-            ]
-          }
-        },
-        "required": [
-          "originId",
-          "destinationId",
-          "departureDate",
-          "passengers",
-          "cabin"
-        ]
-      },
-      "ScheduledProviderStatus": {
-        "type": "string",
-        "enum": [
-          "OK",
-          "TIMEOUT",
-          "ERROR"
-        ]
-      },
-      "ScheduledProviderStatusDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "example": "mock"
-          },
-          "status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduledProviderStatus"
-              }
-            ]
-          }
-        },
-        "required": [
-          "name",
-          "status"
-        ]
-      },
-      "ScheduledCarrierDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "example": "6E"
-          },
-          "name": {
-            "type": "string",
-            "example": "IndiGo"
-          }
-        },
-        "required": [
-          "code",
-          "name"
-        ]
-      },
-      "ScheduledLocationDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "iata": {
-            "type": "string",
-            "nullable": true
-          },
-          "icao": {
-            "type": "string",
-            "nullable": true
-          },
-          "timeZone": {
-            "type": "string",
-            "example": "Asia/Kolkata"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "iata",
-          "icao",
-          "timeZone"
-        ]
-      },
-      "ScheduledSegmentDto": {
-        "type": "object",
-        "properties": {
-          "from": {
-            "$ref": "#/components/schemas/ScheduledLocationDto"
-          },
-          "to": {
-            "$ref": "#/components/schemas/ScheduledLocationDto"
-          },
-          "departAt": {
-            "type": "string",
-            "example": "2026-12-05T06:15:00+05:30",
-            "description": "Local time at `from`, ISO 8601 with its offset."
-          },
-          "arriveAt": {
-            "type": "string",
-            "example": "2026-12-05T08:25:00+05:30",
-            "description": "Local time at `to`, ISO 8601 with its offset."
-          },
-          "flightNumber": {
-            "type": "string",
-            "example": "6E 2131"
-          },
-          "durationMinutes": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "from",
-          "to",
-          "departAt",
-          "arriveAt",
-          "flightNumber",
-          "durationMinutes"
-        ]
-      },
-      "ScheduledDirection": {
-        "type": "string",
-        "enum": [
-          "OUTBOUND",
-          "RETURN"
-        ]
-      },
-      "ScheduledFareDto": {
-        "type": "object",
-        "properties": {
-          "amountMinor": {
-            "type": "number",
-            "description": "Paise, the total for all travellers: adults, children and infants together."
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "INR"
-            ]
-          },
-          "priceType": {
-            "type": "string",
-            "enum": [
-              "LIVE_FARE"
-            ],
-            "description": "The supplier's price now; rechecked by revalidation before payment."
-          },
-          "fareFamily": {
-            "type": "string",
-            "example": "SAVER"
-          }
-        },
-        "required": [
-          "amountMinor",
-          "currency",
-          "priceType",
-          "fareFamily"
-        ]
-      },
-      "ScheduledBaggageDto": {
-        "type": "object",
-        "properties": {
-          "cabinKg": {
-            "type": "number"
-          },
-          "checkedKg": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "cabinKg",
-          "checkedKg"
-        ]
-      },
-      "ScheduledOfferDto": {
-        "type": "object",
-        "properties": {
-          "offerId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "carrier": {
-            "$ref": "#/components/schemas/ScheduledCarrierDto"
-          },
-          "segments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScheduledSegmentDto"
-            }
-          },
-          "direction": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduledDirection"
-              }
-            ]
-          },
-          "stops": {
-            "type": "number"
-          },
-          "fare": {
-            "$ref": "#/components/schemas/ScheduledFareDto"
-          },
-          "baggage": {
-            "$ref": "#/components/schemas/ScheduledBaggageDto"
-          },
-          "refundable": {
-            "type": "boolean"
-          },
-          "validUntil": {
-            "type": "string",
-            "format": "date-time",
-            "description": "The fare holds until then. Set at search time, when the search itself expires; a revalidation may store a new fare and validity, never past that."
-          }
-        },
-        "required": [
-          "offerId",
-          "carrier",
-          "segments",
-          "direction",
-          "stops",
-          "fare",
-          "baggage",
-          "refundable",
-          "validUntil"
-        ]
-      },
-      "ScheduledSearchResponseDto": {
-        "type": "object",
-        "properties": {
-          "searchId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "partial": {
-            "type": "boolean",
-            "description": "True when a supplier timed out or failed: the results hold only the others."
-          },
-          "providers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScheduledProviderStatusDto"
-            }
-          },
-          "passengers": {
-            "description": "The party searched for: every fare is the total for all of them.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduledPassengersDto"
-              }
-            ]
-          },
-          "results": {
-            "description": "Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party; an offer found sold out at revalidation is left out.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScheduledOfferDto"
-            }
-          }
-        },
-        "required": [
-          "searchId",
-          "partial",
-          "providers",
-          "passengers",
-          "results"
-        ]
-      },
-      "RevalidateScheduledDto": {
-        "type": "object",
-        "properties": {
-          "searchId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "offerId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "searchId",
-          "offerId"
-        ]
-      },
-      "ScheduledRevalidationStatus": {
-        "type": "string",
-        "enum": [
-          "AVAILABLE",
-          "PRICE_CHANGED",
-          "SOLD_OUT"
-        ]
-      },
-      "ScheduledRevalidationDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduledRevalidationStatus"
-              }
-            ]
-          },
-          "fare": {
-            "description": "The fare now. Absent when sold out.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ScheduledFareDto"
-              }
-            ]
-          },
-          "validUntil": {
-            "type": "string",
-            "format": "date-time",
-            "description": "How long the rechecked fare holds, never past the search's expiry. Absent when sold out."
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "ScheduledFareRuleDto": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "example": "Cancellation"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "title",
-          "text"
-        ]
-      },
-      "ScheduledCancellationDto": {
-        "type": "object",
-        "properties": {
-          "refundable": {
-            "type": "boolean"
-          },
-          "feeMinor": {
-            "type": "number",
-            "description": "Paise per passenger. Absent when the fare is not refundable."
-          }
-        },
-        "required": [
-          "refundable"
-        ]
-      },
-      "ScheduledChangeDto": {
-        "type": "object",
-        "properties": {
-          "allowed": {
-            "type": "boolean"
-          },
-          "feeMinor": {
-            "type": "number",
-            "description": "Paise per passenger, plus any fare difference. Absent when changes are not allowed."
-          }
-        },
-        "required": [
-          "allowed"
-        ]
-      },
-      "ScheduledFareRulesDto": {
-        "type": "object",
-        "properties": {
-          "offerId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "rules": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScheduledFareRuleDto"
-            }
-          },
-          "cancellation": {
-            "$ref": "#/components/schemas/ScheduledCancellationDto"
-          },
-          "change": {
-            "$ref": "#/components/schemas/ScheduledChangeDto"
-          }
-        },
-        "required": [
-          "offerId",
-          "rules",
-          "cancellation",
-          "change"
-        ]
-      },
-      "SearchTripType": {
-        "type": "string",
-        "enum": [
-          "ONE_WAY",
-          "ROUND_TRIP"
-        ]
-      },
-      "CharterCategory": {
-        "type": "string",
-        "enum": [
-          "TURBOPROP",
-          "LIGHT_JET",
-          "MIDSIZE_JET",
-          "HEAVY_JET"
-        ],
-        "description": "Limit to one fixed-wing category. All of them when left out."
-      },
-      "CharterSearchDto": {
-        "type": "object",
-        "properties": {
-          "originId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "An active location (`GET /locations`)."
-          },
-          "destinationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "departureAt": {
-            "type": "string",
-            "description": "ISO 8601 with offset, at least an hour ahead.",
-            "example": "2026-12-05T10:00:00+05:30"
-          },
-          "tripType": {
-            "default": "ONE_WAY",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchTripType"
-              }
-            ]
-          },
-          "returnAt": {
-            "type": "string",
-            "nullable": true,
-            "description": "Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.",
-            "example": "2026-12-07T16:00:00+05:30"
-          },
-          "passengerCount": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 50,
-            "example": 4
-          },
-          "category": {
-            "description": "Limit to one fixed-wing category. All of them when left out.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CharterCategory"
-              }
-            ]
-          }
-        },
-        "required": [
-          "originId",
-          "destinationId",
-          "departureAt",
-          "passengerCount"
-        ]
-      },
-      "SearchLegDto": {
-        "type": "object",
-        "properties": {
-          "originId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "originName": {
-            "type": "string"
-          },
-          "destinationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "destinationName": {
-            "type": "string"
-          },
-          "departureAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "originId",
-          "originName",
-          "destinationId",
-          "destinationName",
-          "departureAt"
-        ]
-      },
-      "SearchAircraftDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "manufacturer": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AircraftCategory"
-              }
-            ]
-          },
-          "passengerCapacity": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "manufacturer",
-          "model",
-          "category",
-          "passengerCapacity"
-        ]
-      },
-      "RoundTripStrategy": {
-        "type": "string",
-        "enum": [
-          "WAIT",
-          "RETURN_TO_BASE"
-        ],
-        "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request."
-      },
-      "SearchPriceDto": {
-        "type": "object",
-        "properties": {
-          "priceType": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PriceType"
-              }
-            ]
-          },
-          "amountMinor": {
-            "type": "number",
-            "description": "Paise."
-          },
-          "currency": {
-            "type": "string",
-            "example": "INR"
-          }
-        },
-        "required": [
-          "priceType",
-          "amountMinor",
-          "currency"
-        ]
-      },
-      "SearchResultDto": {
-        "type": "object",
-        "properties": {
-          "resultId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "aircraft": {
-            "$ref": "#/components/schemas/SearchAircraftDto"
-          },
-          "operatorName": {
-            "type": "string"
-          },
-          "distanceKm": {
-            "type": "number",
-            "description": "The flying the customer books: out and back for a round trip."
-          },
-          "flightMinutes": {
-            "type": "number",
-            "nullable": true,
-            "description": "Out and back for a round trip. Null when unknown."
-          },
-          "tripType": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchTripType"
-              }
-            ]
-          },
-          "returnAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "The return departure; null for a one-way trip."
-          },
-          "roundTripStrategy": {
-            "nullable": true,
-            "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoundTripStrategy"
-              }
-            ]
-          },
-          "price": {
-            "nullable": true,
-            "description": "Always an `ESTIMATE`. Null when the price is on request.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchPriceDto"
-              }
-            ]
-          },
-          "incomplete": {
-            "type": "boolean",
-            "description": "True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request."
-          },
-          "validUntil": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "resultId",
-          "aircraft",
-          "operatorName",
-          "distanceKm",
-          "flightMinutes",
-          "tripType",
-          "returnAt",
-          "roundTripStrategy",
-          "price",
-          "incomplete",
-          "validUntil",
-          "warnings"
-        ]
-      },
-      "SearchResponseDto": {
-        "type": "object",
-        "properties": {
-          "searchId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ServiceCategory"
-              }
-            ]
-          },
-          "aircraftCategory": {
-            "nullable": true,
-            "description": "The fixed-wing class asked for; null for any.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CharterCategory"
-              }
-            ]
-          },
-          "legs": {
-            "description": "One leg, or the outbound and the return for a round trip.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SearchLegDto"
-            }
-          },
-          "passengerCount": {
-            "type": "number"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "results": {
-            "description": "Priced first, cheapest first.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SearchResultDto"
-            }
-          },
-          "emptyLegAlternatives": {
-            "description": "Charter only (empty otherwise): listed empty legs on the same or a nearby route, leaving within two days of the first departure, with enough seats. Each carries its own price and `priceType`. Soonest and closest first, at most five.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EmptyLegResponseDto"
-            }
-          }
-        },
-        "required": [
-          "searchId",
-          "category",
-          "aircraftCategory",
-          "legs",
-          "passengerCount",
-          "createdAt",
-          "results",
-          "emptyLegAlternatives"
-        ]
-      },
-      "HelicopterSearchDto": {
-        "type": "object",
-        "properties": {
-          "originId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "An active location (`GET /locations`)."
-          },
-          "destinationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "departureAt": {
-            "type": "string",
-            "description": "ISO 8601 with offset, at least an hour ahead.",
-            "example": "2026-12-05T10:00:00+05:30"
-          },
-          "tripType": {
-            "default": "ONE_WAY",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchTripType"
-              }
-            ]
-          },
-          "returnAt": {
-            "type": "string",
-            "nullable": true,
-            "description": "Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.",
-            "example": "2026-12-07T16:00:00+05:30"
-          },
-          "passengerCount": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 50,
-            "example": 4
-          }
-        },
-        "required": [
-          "originId",
-          "destinationId",
-          "departureAt",
-          "passengerCount"
-        ]
-      },
-      "FareCalendarDayDto": {
-        "type": "object",
-        "properties": {
-          "date": {
-            "type": "string",
-            "example": "2026-12-05"
-          },
-          "availableCount": {
-            "type": "number",
-            "description": "Aircraft that can fly the route at 10:00 India time."
-          },
-          "lowest": {
-            "nullable": true,
-            "description": "The lowest estimate that day. Null when none is priced.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchPriceDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "date",
-          "availableCount",
-          "lowest"
-        ]
-      },
-      "FareCalendarResponseDto": {
-        "type": "object",
-        "properties": {
-          "month": {
-            "type": "string",
-            "example": "2026-12"
-          },
-          "days": {
-            "description": "Days inside the minimum notice are left out.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FareCalendarDayDto"
-            }
-          }
-        },
-        "required": [
-          "month",
-          "days"
-        ]
-      },
-      "BreakdownLineDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "example": "FLYING",
-            "description": "`FLYING` is every flight (the legs, priced hourly, per sector or at a fixed route price, with any minimum billable hours, positioning, any return to base between them and Flyviman's markup) in one line; other codes as the engine sets them (`WAITING`, `OVERNIGHT`, `CREW`, `PARKING`, `FUEL_SURCHARGE`, `PERMIT`, `NAVIGATION`, `OTHER` under the operator's label, `LANDING_HANDLING`, `MIN_CHARGE`, `PLATFORM_FEE`, `SERVICE_FEE`, `DISCOUNT` as a negative amount under the promotion's name, `TAX`)."
-          },
-          "label": {
-            "type": "string"
-          },
-          "amountMinor": {
-            "type": "number",
-            "description": "Paise."
-          },
-          "basis": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "label",
-          "amountMinor"
-        ]
-      },
-      "BookingMode": {
-        "type": "string",
-        "enum": [
-          "INSTANT",
-          "REQUEST"
-        ],
-        "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator."
-      },
-      "CancellationTierDto": {
-        "type": "object",
-        "properties": {
-          "minHoursBeforeDeparture": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 8760,
-            "description": "Applies when cancelling at least this many hours before departure (a boundary falls in the cheaper tier)."
-          },
-          "chargePercent": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100,
-            "description": "Whole percent of the confirmed price."
-          }
-        },
-        "required": [
-          "minHoursBeforeDeparture",
-          "chargePercent"
-        ]
-      },
-      "CancellationTierTableDto": {
-        "type": "object",
-        "properties": {
-          "version": {
-            "type": "number",
-            "description": "The version in force. Send it back as `cancellationTermsVersion` when making a booking request, and as `baseVersion` when changing the tiers."
-          },
-          "tiers": {
-            "description": "Longest notice first; the last tier starts at 0 hours.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CancellationTierDto"
-            }
-          },
-          "summary": {
-            "type": "string",
-            "description": "The terms in words, shown to the customer and snapshotted on a booking request word for word."
-          },
-          "validFrom": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "version",
-          "tiers",
-          "summary",
-          "validFrom"
-        ]
-      },
-      "SearchResultDetailDto": {
-        "type": "object",
-        "properties": {
-          "resultId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "aircraft": {
-            "$ref": "#/components/schemas/SearchAircraftDto"
-          },
-          "operatorName": {
-            "type": "string"
-          },
-          "distanceKm": {
-            "type": "number",
-            "description": "The flying the customer books: out and back for a round trip."
-          },
-          "flightMinutes": {
-            "type": "number",
-            "nullable": true,
-            "description": "Out and back for a round trip. Null when unknown."
-          },
-          "tripType": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchTripType"
-              }
-            ]
-          },
-          "returnAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "The return departure; null for a one-way trip."
-          },
-          "roundTripStrategy": {
-            "nullable": true,
-            "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoundTripStrategy"
-              }
-            ]
-          },
-          "price": {
-            "nullable": true,
-            "description": "Always an `ESTIMATE`. Null when the price is on request.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/SearchPriceDto"
-              }
-            ]
-          },
-          "incomplete": {
-            "type": "boolean",
-            "description": "True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request."
-          },
-          "validUntil": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "searchId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "legs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SearchLegDto"
-            }
-          },
-          "passengerCount": {
-            "type": "number"
-          },
-          "breakdown": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BreakdownLineDto"
-            }
-          },
-          "assumptions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "exclusions": {
-            "description": "What the estimate leaves out.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "bookingMode": {
-            "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/BookingMode"
-              }
-            ]
-          },
-          "confirmationRequirements": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "cancellationNote": {
-            "type": "string",
-            "description": "Shown before the customer commits (business rule 9): `cancellationTerms.summary`, word for word."
-          },
-          "cancellationTerms": {
-            "description": "Flyviman's cancellation tiers, the same for every operator (D-172). Send `version` as `cancellationTermsVersion` with the booking request.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CancellationTierTableDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "resultId",
-          "aircraft",
-          "operatorName",
-          "distanceKm",
-          "flightMinutes",
-          "tripType",
-          "returnAt",
-          "roundTripStrategy",
-          "price",
-          "incomplete",
-          "validUntil",
-          "warnings",
-          "searchId",
-          "legs",
-          "passengerCount",
-          "breakdown",
-          "assumptions",
-          "exclusions",
-          "bookingMode",
-          "confirmationRequirements",
-          "cancellationNote",
-          "cancellationTerms"
-        ]
-      },
-      "ApplyPromoCodeDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "example": "WINTER10",
-            "maxLength": 32
-          }
-        },
-        "required": [
-          "code"
-        ]
-      },
-      "PromoPriceDto": {
-        "type": "object",
-        "properties": {
-          "priceType": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PriceType"
-              }
-            ]
-          },
-          "amountMinor": {
-            "type": "number",
-            "description": "Paise, with the code applied."
-          },
-          "currency": {
-            "type": "string",
-            "example": "INR"
-          },
-          "validUntil": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "priceType",
-          "amountMinor",
-          "currency",
-          "validUntil"
-        ]
-      },
-      "PromoLineDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "amountMinor": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "code",
-          "label",
-          "amountMinor"
-        ]
-      },
-      "PromoPreviewResponseDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "example": "WINTER10"
-          },
-          "name": {
-            "type": "string",
-            "description": "The label of the discount line."
-          },
-          "amountOffMinor": {
-            "type": "number",
-            "description": "Paise the code takes off this trip; 0 when it lowers nothing here (it is then not worth sending)."
-          },
-          "price": {
-            "$ref": "#/components/schemas/PromoPriceDto"
-          },
-          "breakdown": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PromoLineDto"
-            }
-          },
-          "assumptions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "code",
-          "name",
-          "amountOffMinor",
-          "price",
-          "breakdown",
-          "assumptions"
-        ]
-      },
-      "PaymentModel": {
-        "type": "string",
-        "enum": [
-          "A_INSTANT",
-          "B_OPERATOR_CONFIRMED",
-          "C_DEPOSIT"
-        ],
-        "description": "Platform setting. Operators may override it per category."
-      },
-      "CategoryConfigResponseDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ServiceCategory"
-              }
-            ]
-          },
-          "region": {
-            "type": "string",
-            "example": "IN"
-          },
-          "isEnabled": {
-            "type": "boolean"
-          },
-          "bookingMode": {
-            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/BookingMode"
-              }
-            ]
-          },
-          "paymentModel": {
-            "description": "Platform setting. Operators may override it per category.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PaymentModel"
-              }
-            ]
-          },
-          "depositPercent": {
-            "type": "number",
-            "example": 25,
-            "minimum": 1,
-            "maximum": 100,
-            "description": "The deposit taken under payment model C, in whole percent of the confirmed total, rounded up to the next paisa."
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "category",
-          "region",
-          "isEnabled",
-          "bookingMode",
-          "paymentModel",
-          "depositPercent",
-          "updatedAt"
         ]
       },
       "OperatorPricingResponseDto": {
@@ -16242,6 +15224,1228 @@
           "createdAt"
         ]
       },
+      "ScheduledPassengersDto": {
+        "type": "object",
+        "properties": {
+          "adults": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 9,
+            "example": 1
+          },
+          "children": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 8,
+            "example": 0,
+            "description": "Seated. Adults and children together at most 9."
+          },
+          "infants": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0,
+            "description": "On a lap: at most one per adult."
+          }
+        },
+        "required": [
+          "adults",
+          "children",
+          "infants"
+        ]
+      },
+      "ScheduledCabin": {
+        "type": "string",
+        "enum": [
+          "ECONOMY",
+          "PREMIUM_ECONOMY",
+          "BUSINESS"
+        ]
+      },
+      "ScheduledSearchDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active airport with an IATA code (`GET /locations`)."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-12-05",
+            "description": "Local date at the origin, `YYYY-MM-DD`: today there or later, within a year."
+          },
+          "returnDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-12-08",
+            "description": "For a return trip: local date at the destination, on or after `departureDate`, within a year. Results then hold both directions."
+          },
+          "passengers": {
+            "$ref": "#/components/schemas/ScheduledPassengersDto"
+          },
+          "cabin": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledCabin"
+              }
+            ]
+          }
+        },
+        "required": [
+          "originId",
+          "destinationId",
+          "departureDate",
+          "passengers",
+          "cabin"
+        ]
+      },
+      "ScheduledProviderStatus": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "TIMEOUT",
+          "ERROR"
+        ]
+      },
+      "ScheduledProviderStatusDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "mock"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledProviderStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ]
+      },
+      "ScheduledCarrierDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "6E"
+          },
+          "name": {
+            "type": "string",
+            "example": "IndiGo"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ]
+      },
+      "ScheduledLocationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "iata": {
+            "type": "string",
+            "nullable": true
+          },
+          "icao": {
+            "type": "string",
+            "nullable": true
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "iata",
+          "icao",
+          "timeZone"
+        ]
+      },
+      "ScheduledSegmentDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ScheduledLocationDto"
+          },
+          "to": {
+            "$ref": "#/components/schemas/ScheduledLocationDto"
+          },
+          "departAt": {
+            "type": "string",
+            "example": "2026-12-05T06:15:00+05:30",
+            "description": "Local time at `from`, ISO 8601 with its offset."
+          },
+          "arriveAt": {
+            "type": "string",
+            "example": "2026-12-05T08:25:00+05:30",
+            "description": "Local time at `to`, ISO 8601 with its offset."
+          },
+          "flightNumber": {
+            "type": "string",
+            "example": "6E 2131"
+          },
+          "durationMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "departAt",
+          "arriveAt",
+          "flightNumber",
+          "durationMinutes"
+        ]
+      },
+      "ScheduledDirection": {
+        "type": "string",
+        "enum": [
+          "OUTBOUND",
+          "RETURN"
+        ]
+      },
+      "ScheduledFareDto": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise, the total for all travellers: adults, children and infants together."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ]
+          },
+          "priceType": {
+            "type": "string",
+            "enum": [
+              "LIVE_FARE"
+            ],
+            "description": "The supplier's price now; rechecked by revalidation before payment."
+          },
+          "fareFamily": {
+            "type": "string",
+            "example": "SAVER"
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "priceType",
+          "fareFamily"
+        ]
+      },
+      "ScheduledBaggageDto": {
+        "type": "object",
+        "properties": {
+          "cabinKg": {
+            "type": "number"
+          },
+          "checkedKg": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "cabinKg",
+          "checkedKg"
+        ]
+      },
+      "ScheduledOfferDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "carrier": {
+            "$ref": "#/components/schemas/ScheduledCarrierDto"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledSegmentDto"
+            }
+          },
+          "direction": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledDirection"
+              }
+            ]
+          },
+          "stops": {
+            "type": "number"
+          },
+          "fare": {
+            "$ref": "#/components/schemas/ScheduledFareDto"
+          },
+          "baggage": {
+            "$ref": "#/components/schemas/ScheduledBaggageDto"
+          },
+          "refundable": {
+            "type": "boolean"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The fare holds until then. Set at search time, when the search itself expires; a revalidation may store a new fare and validity, never past that."
+          }
+        },
+        "required": [
+          "offerId",
+          "carrier",
+          "segments",
+          "direction",
+          "stops",
+          "fare",
+          "baggage",
+          "refundable",
+          "validUntil"
+        ]
+      },
+      "ScheduledSearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "True when a supplier timed out or failed: the results hold only the others."
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledProviderStatusDto"
+            }
+          },
+          "passengers": {
+            "description": "The party searched for: every fare is the total for all of them.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledPassengersDto"
+              }
+            ]
+          },
+          "results": {
+            "description": "Outbound first, then return; each by departure, then fare. Only flights with seats for the whole party; an offer found sold out at revalidation is left out.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledOfferDto"
+            }
+          }
+        },
+        "required": [
+          "searchId",
+          "partial",
+          "providers",
+          "passengers",
+          "results"
+        ]
+      },
+      "RevalidateScheduledDto": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "searchId",
+          "offerId"
+        ]
+      },
+      "ScheduledRevalidationStatus": {
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "PRICE_CHANGED",
+          "SOLD_OUT"
+        ]
+      },
+      "ScheduledRevalidationDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledRevalidationStatus"
+              }
+            ]
+          },
+          "fare": {
+            "description": "The fare now. Absent when sold out.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledFareDto"
+              }
+            ]
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "How long the rechecked fare holds, never past the search's expiry. Absent when sold out."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ScheduledFareRuleDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Cancellation"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ]
+      },
+      "ScheduledCancellationDto": {
+        "type": "object",
+        "properties": {
+          "refundable": {
+            "type": "boolean"
+          },
+          "feeMinor": {
+            "type": "number",
+            "description": "Paise per passenger. Absent when the fare is not refundable."
+          }
+        },
+        "required": [
+          "refundable"
+        ]
+      },
+      "ScheduledChangeDto": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "feeMinor": {
+            "type": "number",
+            "description": "Paise per passenger, plus any fare difference. Absent when changes are not allowed."
+          }
+        },
+        "required": [
+          "allowed"
+        ]
+      },
+      "ScheduledFareRulesDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledFareRuleDto"
+            }
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/ScheduledCancellationDto"
+          },
+          "change": {
+            "$ref": "#/components/schemas/ScheduledChangeDto"
+          }
+        },
+        "required": [
+          "offerId",
+          "rules",
+          "cancellation",
+          "change"
+        ]
+      },
+      "SearchTripType": {
+        "type": "string",
+        "enum": [
+          "ONE_WAY",
+          "ROUND_TRIP"
+        ]
+      },
+      "CharterCategory": {
+        "type": "string",
+        "enum": [
+          "TURBOPROP",
+          "LIGHT_JET",
+          "MIDSIZE_JET",
+          "HEAVY_JET"
+        ],
+        "description": "Limit to one fixed-wing category. All of them when left out."
+      },
+      "CharterSearchDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active location (`GET /locations`)."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureAt": {
+            "type": "string",
+            "description": "ISO 8601 with offset, at least an hour ahead.",
+            "example": "2026-12-05T10:00:00+05:30"
+          },
+          "tripType": {
+            "default": "ONE_WAY",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.",
+            "example": "2026-12-07T16:00:00+05:30"
+          },
+          "passengerCount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "example": 4
+          },
+          "category": {
+            "description": "Limit to one fixed-wing category. All of them when left out.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CharterCategory"
+              }
+            ]
+          }
+        },
+        "required": [
+          "originId",
+          "destinationId",
+          "departureAt",
+          "passengerCount"
+        ]
+      },
+      "SearchLegDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originName": {
+            "type": "string"
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "departureAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "originId",
+          "originName",
+          "destinationId",
+          "destinationName",
+          "departureAt"
+        ]
+      },
+      "SearchAircraftDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AircraftCategory"
+              }
+            ]
+          },
+          "passengerCapacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "manufacturer",
+          "model",
+          "category",
+          "passengerCapacity"
+        ]
+      },
+      "RoundTripStrategy": {
+        "type": "string",
+        "enum": [
+          "WAIT",
+          "RETURN_TO_BASE"
+        ],
+        "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request."
+      },
+      "SearchPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency"
+        ]
+      },
+      "SearchResultDto": {
+        "type": "object",
+        "properties": {
+          "resultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/SearchAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "distanceKm": {
+            "type": "number",
+            "description": "The flying the customer books: out and back for a round trip."
+          },
+          "flightMinutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Out and back for a round trip. Null when unknown."
+          },
+          "tripType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The return departure; null for a one-way trip."
+          },
+          "roundTripStrategy": {
+            "nullable": true,
+            "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoundTripStrategy"
+              }
+            ]
+          },
+          "price": {
+            "nullable": true,
+            "description": "Always an `ESTIMATE`. Null when the price is on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceDto"
+              }
+            ]
+          },
+          "incomplete": {
+            "type": "boolean",
+            "description": "True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request."
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "resultId",
+          "aircraft",
+          "operatorName",
+          "distanceKm",
+          "flightMinutes",
+          "tripType",
+          "returnAt",
+          "roundTripStrategy",
+          "price",
+          "incomplete",
+          "validUntil",
+          "warnings"
+        ]
+      },
+      "SearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "aircraftCategory": {
+            "nullable": true,
+            "description": "The fixed-wing class asked for; null for any.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CharterCategory"
+              }
+            ]
+          },
+          "legs": {
+            "description": "One leg, or the outbound and the return for a round trip.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "results": {
+            "description": "Priced first, cheapest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResultDto"
+            }
+          },
+          "emptyLegAlternatives": {
+            "description": "Charter only (empty otherwise): listed empty legs on the same or a nearby route, leaving within two days of the first departure, with enough seats. Each carries its own price and `priceType`. Soonest and closest first, at most five.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmptyLegResponseDto"
+            }
+          }
+        },
+        "required": [
+          "searchId",
+          "category",
+          "aircraftCategory",
+          "legs",
+          "passengerCount",
+          "createdAt",
+          "results",
+          "emptyLegAlternatives"
+        ]
+      },
+      "HelicopterSearchDto": {
+        "type": "object",
+        "properties": {
+          "originId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "An active location (`GET /locations`)."
+          },
+          "destinationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureAt": {
+            "type": "string",
+            "description": "ISO 8601 with offset, at least an hour ahead.",
+            "example": "2026-12-05T10:00:00+05:30"
+          },
+          "tripType": {
+            "default": "ONE_WAY",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Round trips only, and required for them (null or absent for one way): when the return flight leaves the destination. ISO 8601 with offset, at least an hour after `departureAt` and within 30 days of it.",
+            "example": "2026-12-07T16:00:00+05:30"
+          },
+          "passengerCount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "example": 4
+          }
+        },
+        "required": [
+          "originId",
+          "destinationId",
+          "departureAt",
+          "passengerCount"
+        ]
+      },
+      "FareCalendarDayDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "example": "2026-12-05"
+          },
+          "availableCount": {
+            "type": "number",
+            "description": "Aircraft that can fly the route at 10:00 India time."
+          },
+          "lowest": {
+            "nullable": true,
+            "description": "The lowest estimate that day. Null when none is priced.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "availableCount",
+          "lowest"
+        ]
+      },
+      "FareCalendarResponseDto": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "example": "2026-12"
+          },
+          "days": {
+            "description": "Days inside the minimum notice are left out.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FareCalendarDayDto"
+            }
+          }
+        },
+        "required": [
+          "month",
+          "days"
+        ]
+      },
+      "BreakdownLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "FLYING",
+            "description": "`FLYING` is every flight (the legs, priced hourly, per sector or at a fixed route price, with any minimum billable hours, positioning, any return to base between them and Flyviman's markup) in one line; other codes as the engine sets them (`WAITING`, `OVERNIGHT`, `CREW`, `PARKING`, `FUEL_SURCHARGE`, `PERMIT`, `NAVIGATION`, `OTHER` under the operator's label, `LANDING_HANDLING`, `MIN_CHARGE`, `PLATFORM_FEE`, `SERVICE_FEE`, `DISCOUNT` as a negative amount under the promotion's name, `TAX`)."
+          },
+          "label": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise."
+          },
+          "basis": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "amountMinor"
+        ]
+      },
+      "BookingMode": {
+        "type": "string",
+        "enum": [
+          "INSTANT",
+          "REQUEST"
+        ],
+        "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator."
+      },
+      "SearchResultDetailDto": {
+        "type": "object",
+        "properties": {
+          "resultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/SearchAircraftDto"
+          },
+          "operatorName": {
+            "type": "string"
+          },
+          "distanceKm": {
+            "type": "number",
+            "description": "The flying the customer books: out and back for a round trip."
+          },
+          "flightMinutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Out and back for a round trip. Null when unknown."
+          },
+          "tripType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTripType"
+              }
+            ]
+          },
+          "returnAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The return departure; null for a one-way trip."
+          },
+          "roundTripStrategy": {
+            "nullable": true,
+            "description": "How the round trip was priced: the aircraft waits at the destination, or returns to base between the flights. Null for a one-way trip or a price on request.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoundTripStrategy"
+              }
+            ]
+          },
+          "price": {
+            "nullable": true,
+            "description": "Always an `ESTIMATE`. Null when the price is on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchPriceDto"
+              }
+            ]
+          },
+          "incomplete": {
+            "type": "boolean",
+            "description": "True when the estimate leaves something out (landing, handling, positioning, waiting, tax and so on): the result detail lists what, under `exclusions`. False for a price on request."
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "searchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BreakdownLineDto"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exclusions": {
+            "description": "What the estimate leaves out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bookingMode": {
+            "description": "How a booking made from this result is handled: the category's configuration with the operator's override (C2). A booking from an estimate still waits for the operator.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "confirmationRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cancellationNote": {
+            "type": "string",
+            "description": "Shown before the customer commits (business rule 9): `cancellationTerms.summary`, word for word."
+          },
+          "cancellationTerms": {
+            "description": "Flyviman's cancellation tiers, the same for every operator (D-172). Send `version` as `cancellationTermsVersion` with the booking request.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CancellationTierTableDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "resultId",
+          "aircraft",
+          "operatorName",
+          "distanceKm",
+          "flightMinutes",
+          "tripType",
+          "returnAt",
+          "roundTripStrategy",
+          "price",
+          "incomplete",
+          "validUntil",
+          "warnings",
+          "searchId",
+          "legs",
+          "passengerCount",
+          "breakdown",
+          "assumptions",
+          "exclusions",
+          "bookingMode",
+          "confirmationRequirements",
+          "cancellationNote",
+          "cancellationTerms"
+        ]
+      },
+      "ApplyPromoCodeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "WINTER10",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "PromoPriceDto": {
+        "type": "object",
+        "properties": {
+          "priceType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriceType"
+              }
+            ]
+          },
+          "amountMinor": {
+            "type": "number",
+            "description": "Paise, with the code applied."
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "priceType",
+          "amountMinor",
+          "currency",
+          "validUntil"
+        ]
+      },
+      "PromoLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "amountMinor"
+        ]
+      },
+      "PromoPreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "WINTER10"
+          },
+          "name": {
+            "type": "string",
+            "description": "The label of the discount line."
+          },
+          "amountOffMinor": {
+            "type": "number",
+            "description": "Paise the code takes off this trip; 0 when it lowers nothing here (it is then not worth sending)."
+          },
+          "price": {
+            "$ref": "#/components/schemas/PromoPriceDto"
+          },
+          "breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromoLineDto"
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "amountOffMinor",
+          "price",
+          "breakdown",
+          "assumptions"
+        ]
+      },
+      "PaymentModel": {
+        "type": "string",
+        "enum": [
+          "A_INSTANT",
+          "B_OPERATOR_CONFIRMED",
+          "C_DEPOSIT"
+        ],
+        "description": "Platform setting. Operators may override it per category."
+      },
+      "CategoryConfigResponseDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "region": {
+            "type": "string",
+            "example": "IN"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "bookingMode": {
+            "description": "Platform setting. Operators may override it per category; air ambulance is always REQUEST.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingMode"
+              }
+            ]
+          },
+          "paymentModel": {
+            "description": "Platform setting. Operators may override it per category.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentModel"
+              }
+            ]
+          },
+          "depositPercent": {
+            "type": "number",
+            "example": 25,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "The deposit taken under payment model C, in whole percent of the confirmed total, rounded up to the next paisa."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "category",
+          "region",
+          "isEnabled",
+          "bookingMode",
+          "paymentModel",
+          "depositPercent",
+          "updatedAt"
+        ]
+      },
       "CreateBookingDto": {
         "type": "object",
         "properties": {
@@ -16478,6 +16682,34 @@
           "passengerCapacity"
         ]
       },
+      "ItineraryEmptyLegDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string",
+            "example": "FLY-EL-7K2M9Q"
+          },
+          "departureTo": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The end of the departure window; the leg’s `departureAt` is its start. The operator confirms the time."
+          },
+          "conditions": {
+            "type": "string",
+            "description": "The offer’s conditions as shown before the request."
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "departureTo",
+          "conditions"
+        ]
+      },
       "ItineraryDto": {
         "type": "object",
         "properties": {
@@ -16490,16 +16722,22 @@
           "source": {
             "type": "string",
             "enum": [
-              "SEARCH"
-            ]
+              "SEARCH",
+              "EMPTY_LEG"
+            ],
+            "description": "A search result, or an empty-leg offer (`emptyLeg`)."
           },
           "searchId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an empty-leg booking."
           },
           "resultId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an empty-leg booking."
           },
           "tripType": {
             "allOf": [
@@ -16538,6 +16776,16 @@
           "flightMinutes": {
             "type": "number",
             "nullable": true
+          },
+          "emptyLeg": {
+            "nullable": true,
+            "description": "The offer, for an empty-leg booking; null otherwise.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ItineraryEmptyLegDto"
+              }
+            ]
           }
         },
         "required": [
@@ -16552,7 +16800,8 @@
           "aircraft",
           "operatorName",
           "distanceKm",
-          "flightMinutes"
+          "flightMinutes",
+          "emptyLeg"
         ]
       },
       "CancellationChargeDto": {
@@ -17246,6 +17495,12 @@
             "nullable": true,
             "description": "The operations owner."
           },
+          "escalatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set while operations have the booking escalated."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -17265,6 +17520,7 @@
           "departureAt",
           "passengerCount",
           "assignedToId",
+          "escalatedAt",
           "createdAt"
         ]
       },
@@ -17278,7 +17534,9 @@
           "NOTE",
           "MESSAGE",
           "CHANGE_REQUESTED",
-          "CANCELLATION_REQUESTED"
+          "CANCELLATION_REQUESTED",
+          "ESCALATED",
+          "ESCALATION_RESOLVED"
         ]
       },
       "AdminBookingEventDto": {
@@ -17327,7 +17585,7 @@
           "overrideReason": {
             "type": "string",
             "nullable": true,
-            "description": "The reason of a status override (also in the audit trail)."
+            "description": "The reason of a status override, an escalation or its resolution (also in the audit trail)."
           },
           "createdAt": {
             "type": "string",
@@ -17589,6 +17847,29 @@
           "createdAt"
         ]
       },
+      "AdminBookingEscalationDto": {
+        "type": "object",
+        "properties": {
+          "escalatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "description": "The reason given (also in the audit trail)."
+          },
+          "escalatedById": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "escalatedAt",
+          "reason",
+          "escalatedById"
+        ]
+      },
       "AdminBookingDetailDto": {
         "type": "object",
         "properties": {
@@ -17663,6 +17944,12 @@
             "format": "uuid",
             "nullable": true,
             "description": "The operations owner."
+          },
+          "escalatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set while operations have the booking escalated."
           },
           "createdAt": {
             "type": "string",
@@ -17751,6 +18038,16 @@
             "items": {
               "$ref": "#/components/schemas/AdminBookingPaymentDto"
             }
+          },
+          "escalation": {
+            "nullable": true,
+            "description": "The open escalation, or null.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminBookingEscalationDto"
+              }
+            ]
           }
         },
         "required": [
@@ -17767,6 +18064,7 @@
           "departureAt",
           "passengerCount",
           "assignedToId",
+          "escalatedAt",
           "createdAt",
           "bookingMode",
           "paymentModel",
@@ -17781,7 +18079,8 @@
           "notes",
           "quotes",
           "changeRequests",
-          "payments"
+          "payments",
+          "escalation"
         ]
       },
       "AssignBookingDto": {
@@ -18303,6 +18602,120 @@
           "operatorPriceMinor",
           "currency",
           "conditions"
+        ]
+      },
+      "CreateEmptyLegBookingDto": {
+        "type": "object",
+        "properties": {
+          "emptyLegId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "From `GET /empty-legs`."
+          },
+          "passengerCount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Who is flying; at most the offer’s `seatsAvailable`."
+          },
+          "expectedTotalMinor": {
+            "type": "number",
+            "description": "Paise: the offer’s price as the customer saw it. If the operator changed it since, 409 `BOOKING_PRICE_CHANGED` carries the new one in `details` (`totalMinor`, `currency`, `priceType`, `validUntil`); send it back with a new `Idempotency-Key` to agree to it."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ],
+            "example": "INR"
+          },
+          "cancellationTermsVersion": {
+            "type": "number",
+            "minimum": 1,
+            "description": "The `cancellationTerms.version` the offer detail showed (rule 9). If Flyviman's tiers have changed since, 409 `BOOKING_TERMS_CHANGED` carries the current `version` and `summary`."
+          },
+          "passengerIds": {
+            "description": "Saved passengers (`/me/passengers`) to copy onto the booking, at most `passengerCount`. May be left out and set later.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "specialRequests": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "emptyLegId",
+          "passengerCount",
+          "expectedTotalMinor",
+          "currency",
+          "cancellationTermsVersion"
+        ]
+      },
+      "BookingDocumentKind": {
+        "type": "string",
+        "enum": [
+          "CONFIRMATION",
+          "RECEIPT",
+          "CANCELLATION_TERMS"
+        ],
+        "description": "`CONFIRMATION`: the confirmed itinerary, from the booking (`GET /bookings/:reference`). `RECEIPT`: a payment whose money arrived (`GET /payments/:paymentReference/receipt`). `CANCELLATION_TERMS`: the terms the customer accepted when requesting (`cancellationTerms` on the booking)."
+      },
+      "BookingDocumentDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "description": "`CONFIRMATION`: the confirmed itinerary, from the booking (`GET /bookings/:reference`). `RECEIPT`: a payment whose money arrived (`GET /payments/:paymentReference/receipt`). `CANCELLATION_TERMS`: the terms the customer accepted when requesting (`cancellationTerms` on the booking).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingDocumentKind"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "example": "Booking confirmation"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether it can be opened now. The confirmation is listed before the booking is confirmed, unavailable, so the customer knows it is coming."
+          },
+          "paymentReference": {
+            "type": "string",
+            "nullable": true,
+            "example": "FLY-PY-7K2M9Q",
+            "description": "For a `RECEIPT`, the payment; null otherwise."
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When it was issued: confirmed, paid, or the terms accepted. Null while unavailable."
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "available",
+          "paymentReference",
+          "issuedAt"
+        ]
+      },
+      "BookingEscalationInputDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why the booking is escalated, or how the escalation was resolved. Kept on the timeline and in the audit trail; never put passenger or medical details here."
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "PaymentPriceDto": {

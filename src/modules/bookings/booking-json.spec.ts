@@ -41,6 +41,7 @@ const ITINERARY: Itinerary = {
   operatorName: 'Skyline Aviation',
   distanceKm: 860,
   flightMinutes: 130,
+  emptyLeg: null,
 };
 
 const TERMS: CancellationTerms = {

@@ -23,6 +23,7 @@ import {
   PriceType,
 } from '../../../generated/prisma/enums.js';
 import { MAX_PRICE_MINOR } from '../empty-leg-rules.js';
+import { CancellationTierTableDto } from '../../pricing/dto/cancellation-terms.dto.js';
 
 const OFFSET = /(Z|[+-]\d{2}:\d{2})$/;
 const trim = ({ value }: { value: unknown }) =>
@@ -363,6 +364,13 @@ export class EmptyLegDetailResponseDto extends EmptyLegResponseDto {
       'Whether the signed-in customer follows this offer for change alerts. False when not signed in as a customer.',
   })
   interested: boolean;
+
+  @ApiProperty({
+    type: CancellationTierTableDto,
+    description:
+      "Flyviman's cancellation tiers, shown before a booking request (rule 9). Send `version` as `cancellationTermsVersion` with `POST /bookings/empty-leg`.",
+  })
+  cancellationTerms: CancellationTierTableDto;
 }
 
 /** The operator's and operations' view. */

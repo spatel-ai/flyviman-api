@@ -3,6 +3,7 @@ import { AircraftModule } from '../aircraft/aircraft.module.js';
 import { LocationsModule } from '../locations/locations.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OperatorsModule } from '../operators/operators.module.js';
+import { PricingModule } from '../pricing/pricing.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { AdminEmptyLegsController } from './admin-empty-legs.controller.js';
 import { DevEmptyLegsController } from './dev-empty-legs.controller.js';
@@ -18,6 +19,7 @@ import { OperatorEmptyLegsController } from './operator-empty-legs.controller.js
     LocationsModule,
     UsersModule,
     NotificationsModule,
+    PricingModule,
   ],
   controllers: [
     EmptyLegsController,
