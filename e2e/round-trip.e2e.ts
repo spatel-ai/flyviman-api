@@ -189,6 +189,8 @@ test.describe('round trips', () => {
       expect.arrayContaining(['INTERIM_REPOSITIONING', 'INTERIM_POSITIONING']),
     );
     expect(shown.assumptions.join(' ')).toMatch(/returns to .* between/i);
+    // Customers are not told why one option was chosen (D-099).
+    expect(shown.assumptions.join(' ')).not.toMatch(/priced below/);
   });
 
   test('an aircraft not offered for the whole trip is left out', async ({

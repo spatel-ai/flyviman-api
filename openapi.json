@@ -16167,7 +16167,8 @@
             "format": "date-time"
           },
           "warningCount": {
-            "type": "number"
+            "type": "number",
+            "description": "Warnings the caller may see: commission and revenue warnings count for finance and super administrators only."
           },
           "createdAt": {
             "type": "string",
@@ -16307,7 +16308,8 @@
             "format": "date-time"
           },
           "warningCount": {
-            "type": "number"
+            "type": "number",
+            "description": "Warnings the caller may see: commission and revenue warnings count for finance and super administrators only."
           },
           "createdAt": {
             "type": "string",
@@ -16358,6 +16360,7 @@
             }
           },
           "warnings": {
+            "description": "Commission and revenue warnings are for finance and super administrators only; operations see the others.",
             "type": "array",
             "items": {
               "type": "string"

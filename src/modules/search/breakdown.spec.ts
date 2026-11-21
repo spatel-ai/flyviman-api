@@ -5,8 +5,17 @@ import {
   type EngineInput,
   type PricePoint,
 } from '../pricing/engine.js';
+import { priceEmptyLegTotal } from '../pricing/empty-leg-price.js';
+import { ASSUMPTION_CODES } from '../pricing/notes.js';
+import { priceOperatorQuote } from '../pricing/quote-price.js';
 import { resolveRules, type RuleRow } from '../pricing/rules.js';
-import { customerBreakdown, FLIGHT_LINES, SHOWN_LINES } from './breakdown.js';
+import {
+  CUSTOMER_ASSUMPTIONS,
+  customerAssumptions,
+  customerBreakdown,
+  FLIGHT_LINES,
+  SHOWN_LINES,
+} from './breakdown.js';
 
 const line = (code: string, amountMinor: number, extra: object = {}) => ({
   code,
@@ -49,6 +58,19 @@ describe('customerBreakdown', () => {
       lines.reduce((total, entry) => total + entry.amountMinor, 0);
     expect(sum(shown)).toBe(sum(stored));
     expect(JSON.stringify(shown)).not.toMatch(/basis|INTERIM|OPERATING|MARKUP/);
+  });
+
+  it('shows an override line as it is, so the lines still add up (D-179)', () => {
+    const stored = [
+      line('OPERATING', 1_000_000),
+      line('TAX', 180_000),
+      line('OVERRIDE', -80_000, { basis: 'Manual override' }),
+    ];
+    const shown = customerBreakdown(stored);
+    expect(shown).toContainEqual(line('OVERRIDE', -80_000));
+    expect(shown.reduce((sum, entry) => sum + entry.amountMinor, 0)).toBe(
+      1_100_000,
+    );
   });
 
   it('shows no Flying line when there is no flight line, and nothing for none', () => {
@@ -124,7 +146,15 @@ describe('customer lines from real engine output', () => {
     rule('DISCOUNT', { name: 'Launch', percent: 1 }),
     rule('TAX', { name: 'GST', percent: 18 }),
   ];
-  const price = (overnight: number, returnAt: string | null) =>
+  const price = (
+    overnight: number,
+    returnAt: string | null,
+    extra: {
+      rows?: RuleRow[];
+      base?: PricePoint;
+      promotion?: EngineInput['promotion'];
+    } = {},
+  ) =>
     calculatePrice({
       now: new Date('2026-12-01T00:00:00Z'),
       origin: ORIGIN,
@@ -137,10 +167,14 @@ describe('customer lines from real engine output', () => {
         category: 'LIGHT_JET',
         pricingModel: 'HOURLY',
         cruiseSpeedKmh: 600,
-        base: BASE,
+        base: extra.base ?? BASE,
       },
+      promotion: extra.promotion ?? null,
       rules: resolveRules(
-        [...ROWS, rule('OVERNIGHT', { amountMinor: overnight })],
+        [
+          ...(extra.rows ?? ROWS),
+          rule('OVERNIGHT', { amountMinor: overnight }),
+        ],
         { aircraftId: 'ac1', operatorId: 'op1', category: 'LIGHT_JET' },
       ),
       rawDistanceKm: (a, b) => Math.abs(a.longitude - b.longitude) * 100,
@@ -187,4 +221,108 @@ describe('customer lines from real engine output', () => {
       expect(result.exclusions.join(' ')).not.toMatch(/Secret Base/);
     },
   );
+
+  describe('customer assumptions (D-099)', () => {
+    const scope = {
+      aircraftId: 'ac1',
+      operatorId: 'op1',
+      category: 'LIGHT_JET',
+    } as const;
+    const withoutDiscount = ROWS.filter((row) => row.type !== 'DISCOUNT');
+    // Every assumption each pricing path can write, as stored.
+    const stored = {
+      ...Object.fromEntries(
+        Object.entries(cases).map(([name, result]) => [
+          name,
+          result.assumptions,
+        ]),
+      ),
+      atBase: price(3_000_000, '2026-12-07T12:00:00Z', { base: DESTINATION })
+        .assumptions,
+      discountCapped: price(3_000_000, null, {
+        rows: [
+          ...withoutDiscount,
+          rule('DISCOUNT', { name: 'Launch', percent: 100 }),
+        ],
+      }).assumptions,
+      promotionCapped: price(3_000_000, null, {
+        promotion: {
+          id: 'p1',
+          code: 'BIG',
+          name: 'Big code',
+          kind: 'FIXED',
+          amountMinor: 1_000_000_000,
+        },
+      }).assumptions,
+      quote: priceOperatorQuote({
+        operatorPriceMinor: 1_000_000,
+        rules: resolveRules(ROWS, scope),
+      }).assumptions,
+      emptyLeg: priceEmptyLegTotal({
+        totalMinor: 1_000_000,
+        rules: resolveRules(ROWS, scope),
+      }).assumptions,
+      // Appended by PricingService.saveOverride.
+      override: [
+        {
+          code: 'PRICE_OVERRIDE',
+          text: 'Price set by hand by Flyviman; tax was not worked out again',
+        },
+      ],
+    };
+
+    it('the cases write every assumption code, and the stored text names the base', () => {
+      const written = new Set(
+        Object.values(stored).flatMap((list) => list.map((a) => a.code)),
+      );
+      expect([...written].sort()).toEqual([...ASSUMPTION_CODES].sort());
+      expect(Object.keys(CUSTOMER_ASSUMPTIONS).sort()).toEqual(
+        [...ASSUMPTION_CODES].sort(),
+      );
+      // So the checks below mean something: finance's wording keeps both.
+      const said = Object.values(stored)
+        .flatMap((list) => list.map((a) => a.text))
+        .join(' ');
+      expect(said).toMatch(/Secret Base/);
+      expect(said).toMatch(/priced below/);
+    });
+
+    it.each(Object.entries(stored))(
+      '%s: customers read no place name and no commercial reasoning',
+      (_name, assumptions) => {
+        for (const sentence of customerAssumptions(assumptions)) {
+          expect(sentence).not.toMatch(
+            /Secret Base|Destination Town|Origin City|priced below|costs the same|could not|not time|tax was not/,
+          );
+        }
+      },
+    );
+
+    it('generalises the base and the strategy, keeps safe wording, and hides the override note', () => {
+      expect(customerAssumptions(cases.oneWay.assumptions)).toEqual([
+        'Great-circle distance with routing factor 1.00',
+        "Includes the aircraft's positioning flights",
+      ]);
+      expect(customerAssumptions(stored.override)).toEqual([]);
+      // Based at the destination reads the same as waiting there.
+      expect(customerAssumptions(stored.atBase)).toEqual(
+        customerAssumptions(cases.nightsWaiting.assumptions),
+      );
+      expect(customerAssumptions(stored.discountCapped)).toContain(
+        'Launch applied up to its limit for this trip',
+      );
+    });
+
+    it('leaves out plain strings stored before codes, and says each sentence once', () => {
+      expect(
+        customerAssumptions([
+          'Aircraft returns to Secret Base after drop-off',
+          { code: 'REPOSITIONING', text: 'Aircraft returns to A' },
+          { code: 'REPOSITIONING', text: 'Aircraft returns to B' },
+          { code: 'UNKNOWN', text: 'Something new' },
+        ]),
+      ).toEqual(["Includes the aircraft's positioning flights"]);
+      expect(customerAssumptions(null)).toEqual([]);
+    });
+  });
 });

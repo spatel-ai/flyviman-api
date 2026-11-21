@@ -30,6 +30,7 @@ import type {
   PricingRuleResponseDto,
 } from './dto/admin-pricing.dto.js';
 import type { AppliedRule, LineItem } from './engine.js';
+import { entryTexts, visibleWarnings } from './notes.js';
 import { lockRuleKey } from './rule-lock.js';
 
 /** Roles that see operator payable, platform revenue, rule settings and line bases. */
@@ -315,7 +316,10 @@ export class AdminPricingService {
 
   // --- Calculations -------------------------------------------------------
 
-  async listCalculations(query: ListPriceCalculationsDto): Promise<{
+  async listCalculations(
+    user: AuthUser,
+    query: ListPriceCalculationsDto,
+  ): Promise<{
     items: PriceCalculationSummaryDto[];
     total: number;
   }> {
@@ -342,7 +346,11 @@ export class AdminPricingService {
       this.prisma.priceCalculation.count({ where }),
     ]);
     const labels = await this.labels(rows);
-    return { items: rows.map((row) => toSummary(row, labels)), total };
+    const finance = FINANCE_VIEW.has(user.role);
+    return {
+      items: rows.map((row) => toSummary(row, labels, finance)),
+      total,
+    };
   }
 
   async calculation(
@@ -373,7 +381,7 @@ export class AdminPricingService {
       : new Map<string, unknown>();
     const labels = await this.labels([row]);
 
-    return Object.assign(toSummary(row, labels), {
+    return Object.assign(toSummary(row, labels, finance), {
       inputs: asObject(row.inputs),
       breakdown: asArray<LineItem>(row.breakdown).map((line) => ({
         code: line.code,
@@ -398,9 +406,11 @@ export class AdminPricingService {
             null)
           : null,
       })),
-      assumptions: asArray<string>(row.assumptions),
+      assumptions: entryTexts(row.assumptions),
       exclusions: asArray<string>(row.exclusions),
-      warnings: asArray<string>(row.warnings),
+      // Commission and revenue warnings (a negative revenue after an
+      // override says its sign) are for finance only, like the amounts.
+      warnings: visibleWarnings(row.warnings, finance),
       availabilityCheckedAt: row.availabilityCheckedAt.toISOString(),
       overrideReason: row.overrideReason,
       finance: finance
@@ -507,6 +517,8 @@ function toRuleDto(
 function toSummary(
   row: Prisma.PriceCalculationGetPayload<{ select: typeof SUMMARY_SELECT }>,
   labels: { aircraft: Map<string, string>; operators: Map<string, string> },
+  /** Finance and super admins: the count includes finance-only warnings. */
+  finance: boolean,
 ): PriceCalculationSummaryDto {
   return {
     id: row.id,
@@ -519,7 +531,7 @@ function toSummary(
     currency: row.currency,
     priceType: row.priceType,
     validUntil: row.validUntil.toISOString(),
-    warningCount: asArray(row.warnings).length,
+    warningCount: visibleWarnings(row.warnings, finance).length,
     createdAt: row.createdAt.toISOString(),
   };
 }
