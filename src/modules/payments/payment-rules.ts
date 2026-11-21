@@ -82,6 +82,20 @@ function isDepositPercent(percent: number): boolean {
 }
 
 /**
+ * Whether an amount is above the online payment limit
+ * (`PAYMENT_MAX_ORDER_MINOR`, set to the gateway account's per-order
+ * maximum); never when no limit is set. The payment route refuses such an
+ * amount before asking the gateway, and the booking's `amountDue` says so,
+ * so the page and the route cannot disagree.
+ */
+export function overOnlineLimit(
+  amountMinor: bigint,
+  maxOrderMinor: number | undefined,
+): boolean {
+  return maxOrderMinor !== undefined && amountMinor > BigInt(maxOrderMinor);
+}
+
+/**
  * What the customer pays now. A booking `AWAITING_PAYMENT` with a
  * `CONFIRMED` price and nothing paid owes its first payment: an estimate is
  * never charged (rule 1). Model A and B take the full total (B only once the

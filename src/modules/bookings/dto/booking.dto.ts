@@ -51,6 +51,12 @@ export class BookingAmountDueDto {
       '`FULL` (models A and B), `DEPOSIT` (model C) or `BALANCE` (the rest after a model C deposit).',
   })
   kind: PaymentPurpose;
+
+  @ApiProperty({
+    description:
+      'True when the amount is above the online payment limit (`PAYMENT_MAX_ORDER_MINOR`): `POST /bookings/:reference/payments` refuses it with 422 `PAYMENT_AMOUNT_OVER_LIMIT`, so the page offers another way to pay. Always false when no limit is set.',
+  })
+  overOnlineLimit: boolean;
 }
 
 /** ₹10 crore in paise: far above any charter, far below 2^53. */

@@ -63,7 +63,11 @@ import {
   statusTimestamps,
   type TransitionContext,
 } from './booking-transitions.js';
-import { amountDue, confirmationKeptMinor } from '../payments/payment-rules.js';
+import {
+  amountDue,
+  confirmationKeptMinor,
+  overOnlineLimit,
+} from '../payments/payment-rules.js';
 import type {
   BookingAmountDueDto,
   BookingCreatedDto,
@@ -543,6 +547,10 @@ export class BookingsService implements OnApplicationBootstrap {
           currency: booking.currency,
           priceType: PriceType.CONFIRMED,
           kind: due.purpose,
+          overOnlineLimit: overOnlineLimit(
+            due.amountMinor,
+            this.config.get<number>('PAYMENT_MAX_ORDER_MINOR'),
+          ),
         }
       : null;
   }

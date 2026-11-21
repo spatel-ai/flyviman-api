@@ -61,6 +61,14 @@ const RECEIPT_MAX_LENGTH = 40;
  * settles it.
  */
 const NOT_FINAL_400 = /another \w+ operation is in progress|duplicate receipt/i;
+/**
+ * An order above the account's per-order maximum
+ * (https://razorpay.com/docs/api/orders/create/, errors): 400
+ * `BAD_REQUEST_ERROR` "Amount exceeds maximum amount allowed.", with
+ * `reason` "NA" and no `field`, so the description is what identifies it.
+ * The maximum is set per account by Razorpay, not in the request.
+ */
+const OVER_LIMIT_400 = /amount exceeds maximum amount allowed/i;
 
 const ORDER_STATUSES = new Set<string>([
   'created',
@@ -153,11 +161,14 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
       );
     }
     const receipt = attemptReceipt(input.receipt);
-    const json = await this.call('createOrder', 'POST', '/orders', {
-      amount: input.amountMinor,
-      currency: input.currency,
-      receipt,
-    });
+    const json = await this.call(
+      'createOrder',
+      'POST',
+      '/orders',
+      { amount: input.amountMinor, currency: input.currency, receipt },
+      {},
+      OVER_LIMIT_400,
+    );
     const { id, amount, currency, status } = json;
     if (
       !isId(id) ||
@@ -288,17 +299,21 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
     return payments;
   }
 
-  /** One call, a read tried once more if Razorpay could not answer. */
+  /**
+   * One call, a read tried once more if Razorpay could not answer. A 400
+   * whose description matches `overLimit` is `AMOUNT_OVER_LIMIT`.
+   */
   private async call(
     operation: Operation,
     method: 'GET' | 'POST',
     path: string,
     body?: Record<string, unknown>,
     headers: Record<string, string> = {},
+    overLimit?: RegExp,
   ): Promise<Record<string, unknown>> {
     const tries = method === 'GET' ? 2 : 1;
     for (let attempt = 1; ; attempt += 1) {
-      const answer = await this.send(method, path, body, headers);
+      const answer = await this.send(method, path, body, headers, overLimit);
       if (answer.ok) return answer.json;
       if (answer.reason === 'UNAVAILABLE' && attempt < tries) continue;
       this.logger.warn(`Razorpay ${operation} failed (${answer.detail})`);
@@ -311,6 +326,7 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
     path: string,
     body: Record<string, unknown> | undefined,
     headers: Record<string, string>,
+    overLimit?: RegExp,
   ): Promise<Answer> {
     let response: Response;
     let text: string;
@@ -348,10 +364,18 @@ export class RazorpayPaymentGatewayProvider extends PaymentGatewayProvider {
         ? ` ${error.code}`
         : '';
     // Razorpay's description is read to classify, never kept or logged.
-    const notFinal =
-      response.status === 400 &&
-      typeof error?.description === 'string' &&
-      NOT_FINAL_400.test(error.description);
+    const description =
+      response.status === 400 && typeof error?.description === 'string'
+        ? error.description
+        : '';
+    if (overLimit?.test(description)) {
+      return {
+        ok: false,
+        reason: 'AMOUNT_OVER_LIMIT',
+        detail: `HTTP ${response.status}${code}, over limit`,
+      };
+    }
+    const notFinal = NOT_FINAL_400.test(description);
     return {
       ok: false,
       reason: notFinal ? 'UNAVAILABLE' : reasonFor(response.status),
@@ -370,6 +394,8 @@ const MESSAGES: Record<PaymentGatewayError['reason'], string> = {
   INVALID_REQUEST: 'The payment gateway refused the request.',
   NOT_FOUND: 'The payment gateway does not know this record.',
   UNAVAILABLE: 'The payment gateway could not be reached.',
+  AMOUNT_OVER_LIMIT:
+    "The amount is above the payment gateway account's per-order maximum.",
 };
 
 /**

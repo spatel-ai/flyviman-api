@@ -151,11 +151,14 @@ export type WebhookParseResult =
 
 /**
  * A refused gateway call. `message` is ours and holds no payment or personal
- * data; callers map `reason` to an error code (`PAYMENT_PROVIDER_ERROR`).
+ * data; callers map `reason` to an error code (`PAYMENT_PROVIDER_ERROR`;
+ * `AMOUNT_OVER_LIMIT`, an order above the gateway account's per-order
+ * maximum, to `PAYMENT_AMOUNT_OVER_LIMIT`).
  */
 export class PaymentGatewayError extends Error {
   constructor(
-    readonly reason: 'INVALID_REQUEST' | 'NOT_FOUND' | 'UNAVAILABLE',
+    readonly reason:
+      'INVALID_REQUEST' | 'NOT_FOUND' | 'UNAVAILABLE' | 'AMOUNT_OVER_LIMIT',
     message: string,
   ) {
     super(message);

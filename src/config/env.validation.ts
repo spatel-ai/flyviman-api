@@ -417,6 +417,23 @@ export class EnvironmentVariables {
   ALLOW_LIVE_PAYMENTS: boolean = false;
 
   /**
+   * Optional: the largest single online payment, in paise. Set it to the
+   * gateway account's per-transaction limit (Razorpay sets one per
+   * account). Above it, `POST /bookings/:reference/payments` refuses with
+   * 422 `PAYMENT_AMOUNT_OVER_LIMIT` before asking the gateway, and the
+   * booking's `amountDue` says so. Unset: no check here; the gateway's own
+   * refusal answers the same code.
+   */
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined ? undefined : Number(value),
+  )
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  @Max(Number.MAX_SAFE_INTEGER)
+  PAYMENT_MAX_ORDER_MINOR?: number;
+
+  /**
    * Razorpay's API key (Dashboard, API keys): the key ID is public (the
    * browser's checkout opens with it), the secret signs API calls and the
    * checkout result. Required with PAYMENT_PROVIDER=razorpay, ignored with

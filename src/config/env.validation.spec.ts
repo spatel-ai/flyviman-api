@@ -289,6 +289,23 @@ describe('validateEnv', () => {
     ).toThrow(/SETTLEMENT_MODE/);
   });
 
+  it('leaves PAYMENT_MAX_ORDER_MINOR unset by default and takes only whole paise from 100', () => {
+    expect(validateEnv(valid).PAYMENT_MAX_ORDER_MINOR).toBeUndefined();
+    expect(
+      validateEnv({ ...valid, PAYMENT_MAX_ORDER_MINOR: '' })
+        .PAYMENT_MAX_ORDER_MINOR,
+    ).toBeUndefined();
+    expect(
+      validateEnv({ ...valid, PAYMENT_MAX_ORDER_MINOR: '12345678' })
+        .PAYMENT_MAX_ORDER_MINOR,
+    ).toBe(12_345_678);
+    for (const bad of ['99', '1.5', 'lots', '-100']) {
+      expect(() =>
+        validateEnv({ ...valid, PAYMENT_MAX_ORDER_MINOR: bad }),
+      ).toThrow(/PAYMENT_MAX_ORDER_MINOR/);
+    }
+  });
+
   it('defaults the payment secrets outside production and needs real ones in production', () => {
     const env = validateEnv(valid);
     expect(env.PAYMENT_KEY_SECRET).toBe(DEV_PAYMENT_KEY_SECRET);

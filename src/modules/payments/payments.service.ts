@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppException } from '../../common/errors/app.exception.js';
 import {
   type IdempotencyClaim,
@@ -28,11 +29,17 @@ import { readCreditedMinor } from '../bookings/paid-amount.js';
 import { CategoryConfigService } from '../configuration/category-config.service.js';
 import type {
   CreatePaymentDto,
+  PaymentPrefillDto,
   PaymentResponseDto,
   VerifyPaymentDto,
 } from './dto/payment.dto.js';
 import { PaymentWebhooksService } from './payment-webhooks.service.js';
-import { amountDue, nextPaymentStatus, providerOf } from './payment-rules.js';
+import {
+  amountDue,
+  nextPaymentStatus,
+  overOnlineLimit,
+  providerOf,
+} from './payment-rules.js';
 
 /** Attempts at a fresh reference before giving up (31^6 codes). */
 const REFERENCE_ATTEMPTS = 5;
@@ -73,6 +80,26 @@ function providerError(): AppException {
 }
 
 /**
+ * 422: above the online payment limit, ours (`PAYMENT_MAX_ORDER_MINOR`) or
+ * the gateway account's. No details: the limit is an account setting.
+ * Retrying cannot help; the customer is pointed to another way to pay.
+ */
+function overLimitError(): AppException {
+  return new AppException(
+    'PAYMENT_AMOUNT_OVER_LIMIT',
+    'This amount is above the limit for online payment.',
+    HttpStatus.UNPROCESSABLE_ENTITY,
+  );
+}
+
+/** A refused gateway order, as the customer's answer. */
+export function gatewayRefusal(error: PaymentGatewayError): AppException {
+  return error.reason === 'AMOUNT_OVER_LIMIT'
+    ? overLimitError()
+    : providerError();
+}
+
+/**
  * Customer payments (M9): an order for what a booking owes now, and the
  * checkout result. Neither ever makes a payment `SUCCEEDED` (only a verified
  * gateway notice does, `PaymentWebhooksService`), and nothing here changes a
@@ -88,6 +115,7 @@ export class PaymentsService {
     private readonly categories: CategoryConfigService,
     private readonly gateway: PaymentGatewayProvider,
     private readonly webhooks: PaymentWebhooksService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -111,9 +139,19 @@ export class PaymentsService {
     });
     if (!booking) throw notFound('Booking');
     const due = await this.due(this.prisma, booking, input);
+    if (
+      overOnlineLimit(
+        due.amountMinor,
+        this.config.get<number>('PAYMENT_MAX_ORDER_MINOR'),
+      )
+    ) {
+      throw overLimitError();
+    }
+    // The caller is the booking's owner (`forPayment` by customer).
+    const prefill = await this.prefill(user);
 
     const open = await this.openPayment(this.prisma, booking.id, due);
-    if (open) return this.toResponse(open, booking.reference);
+    if (open) return this.toResponse(open, booking.reference, prefill);
 
     let order: { providerOrderId: string };
     try {
@@ -123,7 +161,7 @@ export class PaymentsService {
         receipt: booking.reference,
       });
     } catch (error) {
-      if (error instanceof PaymentGatewayError) throw providerError();
+      if (error instanceof PaymentGatewayError) throw gatewayRefusal(error);
       throw error;
     }
 
@@ -137,7 +175,7 @@ export class PaymentsService {
           if (!locked) throw notFound('Booking');
           const now = await this.due(tx, locked, input);
           const again = await this.openPayment(tx, locked.id, now);
-          if (again) return this.toResponse(again, locked.reference);
+          if (again) return this.toResponse(again, locked.reference, prefill);
           const reused = await tx.payment.findUnique({
             where: { idempotencyKey: storedKey },
             select: { id: true },
@@ -180,7 +218,7 @@ export class PaymentsService {
             },
             tx,
           );
-          return this.toResponse(payment, locked.reference);
+          return this.toResponse(payment, locked.reference, prefill);
         });
       } catch (error) {
         const clash =
@@ -352,6 +390,28 @@ export class PaymentsService {
     return due;
   }
 
+  /**
+   * The caller's own name, email and phone for the gateway's checkout form,
+   * so the customer does not type them again. Null where not on file (no
+   * phone: no contact). Never logged or audited.
+   */
+  private async prefill(user: AuthUser): Promise<PaymentPrefillDto> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        email: true,
+        phone: true,
+        customerProfile: { select: { firstName: true, lastName: true } },
+      },
+    });
+    const profile = row?.customerProfile;
+    return {
+      name: profile ? `${profile.firstName} ${profile.lastName}`.trim() : null,
+      email: row?.email ?? null,
+      contact: row?.phone ?? null,
+    };
+  }
+
   private openPayment(
     db: Pick<Prisma.TransactionClient, 'payment'>,
     bookingId: string,
@@ -374,6 +434,7 @@ export class PaymentsService {
   private toResponse(
     payment: PaymentRow,
     bookingReference: string,
+    prefill?: PaymentPrefillDto,
   ): PaymentResponseDto {
     return {
       reference: payment.reference,
@@ -389,6 +450,7 @@ export class PaymentsService {
         provider: this.gateway.name,
         keyId: this.gateway.checkoutKeyId,
         orderId: payment.providerOrderId ?? '',
+        ...(prefill ? { prefill } : {}),
       },
       paidAt: payment.paidAt?.toISOString() ?? null,
       createdAt: payment.createdAt.toISOString(),

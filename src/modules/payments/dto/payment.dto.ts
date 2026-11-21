@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsIn,
   IsInt,
@@ -71,6 +71,22 @@ export class PaymentPriceDto {
   currency: string;
 }
 
+/** The customer's own details for the gateway's checkout form. */
+export class PaymentPrefillDto {
+  @ApiProperty({ type: String, nullable: true })
+  name: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  email: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The phone on file (E.164); null when there is none.',
+  })
+  contact: string | null;
+}
+
 export class PaymentCheckoutDto {
   @ApiProperty({
     example: 'mock',
@@ -83,6 +99,13 @@ export class PaymentCheckoutDto {
 
   @ApiProperty({ example: 'order_mock_000001' })
   orderId: string;
+
+  @ApiPropertyOptional({
+    type: PaymentPrefillDto,
+    description:
+      'Only in the answer to `POST /bookings/:reference/payments`, to the booking’s owner: their own name, email and phone, to fill the checkout form.',
+  })
+  prefill?: PaymentPrefillDto;
 }
 
 /** One payment attempt, as the customer who owes it sees it. */

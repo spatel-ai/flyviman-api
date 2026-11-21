@@ -20,6 +20,7 @@ import {
   isDuplicateCapture,
   nextPaymentStatus,
   outcomeOfGatewayStatus,
+  overOnlineLimit,
   type PayableBooking,
   paymentStatusFromRefunds,
   refundableRemainderMinor,
@@ -55,6 +56,19 @@ describe('depositMinor', () => {
       expect(() => depositMinor(1_000n, percent)).toThrow(RangeError);
     }
     expect(() => depositMinor(0n, 25)).toThrow(RangeError);
+  });
+});
+
+describe('overOnlineLimit', () => {
+  it('is over only above a set limit, compared in whole paise', () => {
+    expect(overOnlineLimit(62_953_000n, 50_000_000)).toBe(true);
+    expect(overOnlineLimit(50_000_001n, 50_000_000)).toBe(true);
+    expect(overOnlineLimit(50_000_000n, 50_000_000)).toBe(false);
+    expect(overOnlineLimit(31_152_000n, 50_000_000)).toBe(false);
+  });
+
+  it('is never over when no limit is set', () => {
+    expect(overOnlineLimit(10_000_000_000n, undefined)).toBe(false);
   });
 });
 

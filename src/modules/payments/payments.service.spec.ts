@@ -1,12 +1,16 @@
+import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
-import type { PaymentGatewayProvider } from '../../integrations/payment/payment-gateway.provider.js';
+import {
+  PaymentGatewayError,
+  type PaymentGatewayProvider,
+} from '../../integrations/payment/payment-gateway.provider.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import type { BookingsService } from '../bookings/bookings.service.js';
 import type { CategoryConfigService } from '../configuration/category-config.service.js';
 import type { PaymentWebhooksService } from './payment-webhooks.service.js';
-import { PaymentsService } from './payments.service.js';
+import { gatewayRefusal, PaymentsService } from './payments.service.js';
 
 const customer = {
   id: 'u-1',
@@ -21,7 +25,7 @@ const result = {
 };
 
 /** One payment on a booking, as `verify` reads and writes it. */
-function world(status: string, settles = false) {
+function world(status: string, settles = false, maxOrderMinor?: number) {
   const row = {
     id: 'p-1',
     reference: 'FLY-PY-AAAAAA',
@@ -59,12 +63,20 @@ function world(status: string, settles = false) {
         }),
       ),
     },
+    user: {
+      findUnique: vi.fn().mockResolvedValue({
+        email: 'asha@example.com',
+        phone: null,
+        customerProfile: { firstName: 'Asha', lastName: 'Rao' },
+      }),
+    },
     $transaction: vi.fn((work: (t: typeof tx) => unknown) => work(tx)),
   };
   const gateway = {
     name: 'razorpay',
     checkoutKeyId: 'rzp_test_key',
     verifyCheckoutSignature: vi.fn().mockReturnValue(true),
+    createOrder: vi.fn(),
   };
   const webhooks = { settleFromGateway: vi.fn().mockResolvedValue(settles) };
   const service = new PaymentsService(
@@ -79,8 +91,12 @@ function world(status: string, settles = false) {
     {} as CategoryConfigService,
     gateway as unknown as PaymentGatewayProvider,
     webhooks as unknown as PaymentWebhooksService,
+    {
+      get: (key: string) =>
+        key === 'PAYMENT_MAX_ORDER_MINOR' ? maxOrderMinor : undefined,
+    } as unknown as ConfigService,
   );
-  return { service, gateway, webhooks, prisma };
+  return { service, gateway, webhooks, prisma, row };
 }
 
 describe('PaymentsService.verify', () => {
@@ -143,5 +159,103 @@ describe('PaymentsService.verify', () => {
     expect(forged.webhooks.settleFromGateway).not.toHaveBeenCalled();
     expect(other.webhooks.settleFromGateway).not.toHaveBeenCalled();
     expect(forged.prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('gatewayRefusal', () => {
+  it('an amount over the gateway account’s maximum is 422 PAYMENT_AMOUNT_OVER_LIMIT, with no details', () => {
+    const refusal = gatewayRefusal(
+      new PaymentGatewayError('AMOUNT_OVER_LIMIT', 'over'),
+    );
+    expect(refusal.getStatus()).toBe(422);
+    expect(refusal.code).toBe('PAYMENT_AMOUNT_OVER_LIMIT');
+    expect(refusal.details).toEqual([]);
+  });
+
+  it.each(['INVALID_REQUEST', 'NOT_FOUND', 'UNAVAILABLE'] as const)(
+    '%s stays 502 PAYMENT_PROVIDER_ERROR',
+    (reason) => {
+      const refusal = gatewayRefusal(new PaymentGatewayError(reason, 'x'));
+      expect(refusal.getStatus()).toBe(502);
+      expect(refusal.code).toBe('PAYMENT_PROVIDER_ERROR');
+    },
+  );
+});
+
+describe('PaymentsService.createOrder', () => {
+  const claim = {} as Parameters<PaymentsService['createOrder']>[3];
+  const input = {
+    expectedAmountMinor: 62_953_000,
+    currency: 'INR',
+  } as const;
+
+  /** `due` and `openPayment` stubbed: the booking owes `amountMinor`. */
+  function ordering(amountMinor: bigint, maxOrderMinor?: number) {
+    const w = world('INITIATED', false, maxOrderMinor);
+    const internals = w.service as unknown as {
+      due: () => Promise<unknown>;
+      openPayment: () => Promise<unknown>;
+    };
+    vi.spyOn(internals, 'due').mockResolvedValue({
+      due: true,
+      amountMinor,
+      purpose: 'FULL',
+    });
+    const open = vi.spyOn(internals, 'openPayment').mockResolvedValue(null);
+    return { ...w, open };
+  }
+
+  it('refuses an amount above PAYMENT_MAX_ORDER_MINOR before asking the gateway', async () => {
+    const { service, gateway } = ordering(62_953_000n, 50_000_000);
+
+    await expect(
+      service.createOrder(customer, 'FLY-BK-AAAAAA', input, claim, 'k'),
+    ).rejects.toMatchObject({ code: 'PAYMENT_AMOUNT_OVER_LIMIT' });
+    expect(gateway.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('with no limit set, the gateway’s own over-limit refusal is 422 too', async () => {
+    const { service, gateway } = ordering(62_953_000n);
+    gateway.createOrder.mockRejectedValue(
+      new PaymentGatewayError('AMOUNT_OVER_LIMIT', 'over'),
+    );
+
+    await expect(
+      service.createOrder(customer, 'FLY-BK-AAAAAA', input, claim, 'k'),
+    ).rejects.toMatchObject({ code: 'PAYMENT_AMOUNT_OVER_LIMIT' });
+    expect(gateway.createOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('an amount at the limit goes ahead, with the owner’s own details to fill the checkout', async () => {
+    const { service, gateway, open, row, prisma } = ordering(
+      50_000_000n,
+      50_000_000,
+    );
+    open.mockResolvedValue(row);
+
+    const answer = await service.createOrder(
+      customer,
+      'FLY-BK-AAAAAA',
+      { ...input, expectedAmountMinor: 50_000_000 },
+      claim,
+      'k',
+    );
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: customer.id } }),
+    );
+    // No phone on file: no contact.
+    expect(answer.checkout.prefill).toEqual({
+      name: 'Asha Rao',
+      email: 'asha@example.com',
+      contact: null,
+    });
+    expect(gateway.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('verify never carries the prefill', async () => {
+    const { service } = world('INITIATED', false);
+    const answer = await service.verify(customer, 'FLY-PY-AAAAAA', result);
+    expect(answer.checkout).not.toHaveProperty('prefill');
   });
 });

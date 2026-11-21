@@ -255,6 +255,46 @@ describe('RazorpayPaymentGatewayProvider', () => {
       }
     });
 
+    it("an amount above the account's maximum is AMOUNT_OVER_LIMIT, logged by code and tag only", async () => {
+      // Razorpay's test-mode answer, 2026-11-22: reason NA, no field.
+      const fetchStub = stub(
+        answer(400, {
+          error: {
+            code: 'BAD_REQUEST_ERROR',
+            description: 'Amount exceeds maximum amount allowed.',
+            metadata: {},
+            reason: 'NA',
+            source: 'internal',
+            step: 'NA',
+          },
+        }),
+      );
+      const error = await gateway(fetchStub)
+        .createOrder(input)
+        .catch((caught: unknown) => caught);
+
+      expect(fetchStub).toHaveBeenCalledTimes(1);
+      expect(error).toBeInstanceOf(PaymentGatewayError);
+      expect((error as PaymentGatewayError).reason).toBe('AMOUNT_OVER_LIMIT');
+      expect((error as Error).message).not.toContain('exceeds');
+      expect(logged()).toContain(
+        'createOrder failed (HTTP 400 BAD_REQUEST_ERROR, over limit)',
+      );
+      expect(logged()).not.toContain('exceeds');
+    });
+
+    it('other 400s on an order stay INVALID_REQUEST', async () => {
+      const error = await gateway(
+        stub(
+          answer(400, razorpayError('The amount must be at least INR 1.00')),
+        ),
+      )
+        .createOrder(input)
+        .catch((caught: unknown) => caught);
+
+      expect((error as PaymentGatewayError).reason).toBe('INVALID_REQUEST');
+    });
+
     it('an unknown order status is an unreadable answer, not an order', async () => {
       const fetchStub = stub(
         answer(200, {
@@ -548,6 +588,11 @@ describe('RazorpayPaymentGatewayProvider', () => {
 
     it('only a final refusal fails the refund; anything not final leaves it to be asked again', async () => {
       const cases: [Response, string][] = [
+        [
+          // Only an order is ever over the limit.
+          answer(400, razorpayError('Amount exceeds maximum amount allowed.')),
+          'INVALID_REQUEST',
+        ],
         [
           answer(
             400,
