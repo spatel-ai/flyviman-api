@@ -356,23 +356,55 @@ export class EnvironmentVariables {
   AIRLINE_OFFER_TTL_MINUTES: number = 15;
 
   /**
-   * The payment gateway. Only `mock` exists in this build: it moves no
-   * money, and payments must not go live until the commercial decisions
-   * are settled (docs/open-decisions.md, Hard gate). Razorpay will be added
-   * as another value with its own adapter.
+   * The payment gateway: `mock` (default, every test; moves no money) or
+   * `razorpay` (needs `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`).
+   * Payments must not go live until the commercial decisions are settled
+   * (docs/open-decisions.md, Hard gate).
    */
-  @IsIn(['mock'], {
-    message:
-      'PAYMENT_PROVIDER must be mock: only the mock payment gateway exists in this build',
+  @IsIn(['mock', 'razorpay'], {
+    message: 'PAYMENT_PROVIDER must be mock or razorpay',
   })
   PAYMENT_PROVIDER: string = 'mock';
 
   /**
-   * The gateway's key secret (signs the checkout result) and webhook secret
-   * (signs every notification). Only in the API's environment, never logged
-   * or sent to the browser. Required in production; elsewhere they default
-   * to the mock's development values (`DEV_PAYMENT_KEY_SECRET`,
-   * `DEV_PAYMENT_WEBHOOK_SECRET`), which tests sign with.
+   * Razorpay's API key (Dashboard, API keys): the key ID is public (the
+   * browser's checkout opens with it), the secret signs API calls and the
+   * checkout result. Required with PAYMENT_PROVIDER=razorpay, ignored with
+   * the mock. Never logged or sent to the browser.
+   */
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @Matches(/^rzp_(test|live)_[A-Za-z0-9]+$/, {
+    message:
+      'RAZORPAY_KEY_ID must be a Razorpay key ID (rzp_test_… or rzp_live_…)',
+  })
+  RAZORPAY_KEY_ID?: string;
+
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
+  @MinLength(16)
+  RAZORPAY_KEY_SECRET?: string;
+
+  /**
+   * The secret set with the webhook in the Razorpay Dashboard; it signs
+   * every notification. Optional: without it Razorpay webhooks are refused
+   * and payments settle through the status sweep only. Never the mock's
+   * PAYMENT_WEBHOOK_SECRET, whose development value is public.
+   */
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
+  @MinLength(16)
+  RAZORPAY_WEBHOOK_SECRET?: string;
+
+  /**
+   * The mock gateway's key secret (signs the checkout result) and webhook
+   * secret (signs every notification). Only in the API's environment, never
+   * logged or sent to the browser. Required in production with the mock;
+   * elsewhere they default to the mock's development values
+   * (`DEV_PAYMENT_KEY_SECRET`, `DEV_PAYMENT_WEBHOOK_SECRET`), which tests
+   * sign with.
    */
   @IsOptional()
   @IsString()
@@ -501,9 +533,21 @@ export function validateEnv(
     throw new Error(`Invalid environment configuration: ${problems}`);
   }
 
+  if (
+    validated.PAYMENT_PROVIDER === 'razorpay' &&
+    (!validated.RAZORPAY_KEY_ID || !validated.RAZORPAY_KEY_SECRET)
+  ) {
+    throw new Error(
+      'Invalid environment configuration: PAYMENT_PROVIDER=razorpay needs RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+    );
+  }
+
   // A deployed server signs with its own secrets: the development values
   // are in the repository, so anyone could forge a payment with them.
-  if (validated.NODE_ENV === NodeEnv.Production) {
+  if (
+    validated.NODE_ENV === NodeEnv.Production &&
+    validated.PAYMENT_PROVIDER === 'mock'
+  ) {
     for (const name of [
       'PAYMENT_KEY_SECRET',
       'PAYMENT_WEBHOOK_SECRET',
