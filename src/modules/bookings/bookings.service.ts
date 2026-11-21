@@ -39,6 +39,7 @@ import { CancellationTermsService } from '../pricing/cancellation-terms.service.
 import { PromotionsService } from '../pricing/promotions.service.js';
 import { QuotesService } from '../quotes/quotes.service.js';
 import { SearchService } from '../search/search.service.js';
+import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import { encryptLegacyFreeText } from './free-text-backfill.js';
@@ -163,6 +164,7 @@ export class BookingsService implements OnApplicationBootstrap {
     private readonly promotions: PromotionsService,
     private readonly events: NotificationEventsService,
     private readonly emptyLegs: EmptyLegsService,
+    private readonly users: UsersService,
   ) {}
 
   /**
@@ -281,12 +283,12 @@ export class BookingsService implements OnApplicationBootstrap {
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.prisma.$transaction(async (tx) => {
-          await markIdempotencyCommitted(tx, claim);
           // One request per customer at a time past this point, so two at
-          // once cannot both slip under the cap. Always before the
-          // aircraft's lock (`placeBookingHold`), never after.
-          const key = `booking_customer:${user.id}`;
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+          // once cannot both slip under the cap, and none once the account
+          // is erased. The first lock: before the idempotency key's row,
+          // which erasure deletes, and the aircraft's (`placeBookingHold`).
+          await this.users.lockLiveCustomer(user.id, tx);
+          await markIdempotencyCommitted(tx, claim);
           await this.assertNoDuplicate(tx, user.id, aircraftId, trip);
           const open = await tx.booking.count({
             where: { customerId: user.id, status: { in: OPEN_STATUSES } },

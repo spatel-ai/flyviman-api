@@ -2,6 +2,7 @@ import {
   AirAmbulanceStatus,
   BookingPaymentStatus,
   BookingStatus,
+  PaymentReviewReason,
   PaymentStatus,
   RefundStatus,
   UserStatus,
@@ -42,6 +43,13 @@ function booking(
   return { status, paymentStatus, updatedAt };
 }
 
+function payment(
+  status: PaymentStatus,
+  reviewReason: PaymentReviewReason | null = null,
+) {
+  return { status, reviewReason };
+}
+
 describe('closed statuses', () => {
   it('lets only finished bookings through, so a status added later blocks', () => {
     expect([...CLOSED_BOOKING_STATUSES].sort()).toEqual(
@@ -75,9 +83,9 @@ describe('erasureBlockers', () => {
             booking(status, BookingPaymentStatus.REFUNDED),
           ),
           payments: [
-            { status: PaymentStatus.REFUNDED },
-            { status: PaymentStatus.FAILED },
-            { status: PaymentStatus.INITIATED },
+            payment(PaymentStatus.REFUNDED),
+            payment(PaymentStatus.FAILED),
+            payment(PaymentStatus.INITIATED),
           ],
           refunds: [
             { status: RefundStatus.COMPLETED },
@@ -119,7 +127,7 @@ describe('erasureBlockers', () => {
   it('blocks while a payment waits for the gateway', () => {
     expect(
       erasureBlockers(
-        facts({ payments: [{ status: PaymentStatus.PENDING }] }),
+        facts({ payments: [payment(PaymentStatus.PENDING)] }),
         POLICY,
       ),
     ).toEqual(['PAYMENT_IN_PROGRESS']);
@@ -128,7 +136,7 @@ describe('erasureBlockers', () => {
   it.each([
     facts({ refunds: [{ status: RefundStatus.REQUESTED }] }),
     facts({ refunds: [{ status: RefundStatus.PENDING }] }),
-    facts({ payments: [{ status: PaymentStatus.REFUND_PENDING }] }),
+    facts({ payments: [payment(PaymentStatus.REFUND_PENDING)] }),
     facts({
       bookings: [
         booking(BookingStatus.CANCELLED, BookingPaymentStatus.REFUND_PENDING),
@@ -143,6 +151,36 @@ describe('erasureBlockers', () => {
       'REFUND_DUE',
     ]);
   });
+
+  it.each([
+    PaymentReviewReason.AMOUNT_MISMATCH,
+    PaymentReviewReason.DUPLICATE_CAPTURE,
+  ])(
+    'blocks while a payment flagged %s holds money the refund queue leaves out',
+    (reason) => {
+      expect(
+        erasureBlockers(
+          facts({ payments: [payment(PaymentStatus.SUCCEEDED, reason)] }),
+          POLICY,
+        ),
+      ).toEqual(['PAYMENT_UNDER_REVIEW']);
+    },
+  );
+
+  it.each([
+    PaymentReviewReason.BOOKING_CLOSED,
+    PaymentReviewReason.ALREADY_PAID,
+  ])(
+    'leaves a payment flagged %s to the refund queue (REFUND_DUE)',
+    (reason) => {
+      expect(
+        erasureBlockers(
+          facts({ payments: [payment(PaymentStatus.SUCCEEDED, reason)] }),
+          POLICY,
+        ),
+      ).toEqual([]);
+    },
+  );
 
   it.each([BookingPaymentStatus.UNPAID, BookingPaymentStatus.PARTIALLY_PAID])(
     'blocks while a flown trip is %s',
@@ -189,8 +227,11 @@ describe('erasureBlockers', () => {
             ),
           ],
           payments: [
-            { status: PaymentStatus.PENDING },
-            { status: PaymentStatus.PENDING },
+            payment(PaymentStatus.PENDING),
+            payment(
+              PaymentStatus.SUCCEEDED,
+              PaymentReviewReason.DUPLICATE_CAPTURE,
+            ),
           ],
           refundsDue: 2,
           airAmbulance: [
@@ -204,6 +245,7 @@ describe('erasureBlockers', () => {
       'PAYMENT_IN_PROGRESS',
       'REFUND_IN_PROGRESS',
       'REFUND_DUE',
+      'PAYMENT_UNDER_REVIEW',
       'BALANCE_DUE',
       'OPEN_AIR_AMBULANCE',
       'RECENT_ACTIVITY',

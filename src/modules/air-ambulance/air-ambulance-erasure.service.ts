@@ -11,6 +11,19 @@ import type { Prisma } from '../../generated/prisma/client.js';
  */
 @Injectable()
 export class AirAmbulanceErasureService {
+  /**
+   * Locks the requester's requests (`FOR UPDATE`, by id), after their
+   * bookings and before their account row, as every request change locks
+   * its row before it queues a notification. No request can be added
+   * meanwhile (creation takes the customer's lock).
+   */
+  async lockAll(
+    requesterId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.$queryRaw`SELECT 1 FROM "AirAmbulanceRequest"
+      WHERE "requesterId" = ${requesterId}::uuid ORDER BY "id" FOR UPDATE`;
+  }
   /** The requester's requests, for the decision. */
   async facts(
     requesterId: string,

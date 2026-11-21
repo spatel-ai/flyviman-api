@@ -25,6 +25,7 @@ function withAvailability() {
     none,
     none,
     none,
+    none,
   );
   return { service, availability, tx: {} as Prisma.TransactionClient };
 }

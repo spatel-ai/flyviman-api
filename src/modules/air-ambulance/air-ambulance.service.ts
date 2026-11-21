@@ -24,6 +24,7 @@ import { DocumentsService } from '../documents/documents.service.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
 import { OperatorsService } from '../operators/operators.service.js';
+import { UsersService } from '../users/users.service.js';
 import { CLOSED } from './air-ambulance-transitions.js';
 
 /** The signed-in caller, from the session (never from the request body). */
@@ -194,6 +195,7 @@ export class AirAmbulanceService implements OnModuleInit {
     private readonly documents: DocumentsService,
     private readonly events: NotificationEventsService,
     private readonly aircraft: AircraftService,
+    private readonly users: UsersService,
   ) {}
 
   onModuleInit(): void {
@@ -273,6 +275,8 @@ export class AirAmbulanceService implements OnModuleInit {
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.prisma.$transaction(async (tx) => {
+          // First: the requester's lock, refused once the account is erased.
+          await this.users.lockLiveCustomer(actor.id, tx);
           await markIdempotencyCommitted(tx, claim);
           const row = await tx.airAmbulanceRequest.create({
             data: {

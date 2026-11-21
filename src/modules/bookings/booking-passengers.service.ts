@@ -14,6 +14,7 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { CustomersService } from '../customers/customers.service.js';
 import { NotificationEventsService } from '../notifications/events/notification-events.service.js';
+import { UsersService } from '../users/users.service.js';
 import { parseItinerary } from './booking-json.js';
 import { passengerSnapshot } from './booking-snapshot.js';
 import type {
@@ -66,6 +67,7 @@ export class BookingPassengersService {
     private readonly customers: CustomersService,
     private readonly cipher: FieldCipher,
     private readonly events: NotificationEventsService,
+    private readonly users: UsersService,
   ) {}
 
   async replace(
@@ -83,6 +85,8 @@ export class BookingPassengersService {
       passengerSnapshot(passenger, (plain) => this.cipher.encrypt(plain)),
     );
     return this.prisma.$transaction(async (tx) => {
+      // First: the customer's lock, refused once the account is erased.
+      await this.users.lockLiveCustomer(user.id, tx);
       await markIdempotencyCommitted(tx, claim);
       const found = await tx.booking.findFirst({
         where: { reference, customerId: user.id },

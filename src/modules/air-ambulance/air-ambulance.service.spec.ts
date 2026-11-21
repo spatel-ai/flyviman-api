@@ -14,6 +14,7 @@ import type { AuditService } from '../audit/audit.service.js';
 import type { DocumentsService } from '../documents/documents.service.js';
 import type { LocationsService } from '../locations/locations.service.js';
 import type { OperatorsService } from '../operators/operators.service.js';
+import type { UsersService } from '../users/users.service.js';
 import {
   type AirAmbulanceActor,
   AirAmbulanceService,
@@ -146,6 +147,7 @@ function setup(
       return { id, status: suspended.includes(id) ? 'SUSPENDED' : 'APPROVED' };
     }),
   };
+  const users = { lockLiveCustomer: vi.fn(async () => undefined) };
   const service = new AirAmbulanceService(
     prisma,
     audit as unknown as AuditService,
@@ -155,6 +157,7 @@ function setup(
     {} as DocumentsService,
     { notify: vi.fn() } as unknown as NotificationEventsService,
     aircraft as unknown as AircraftService,
+    users as unknown as UsersService,
   );
   return { service, stored, events, audit, tx, locations, findMany, operators };
 }

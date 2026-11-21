@@ -541,10 +541,46 @@ export class UsersService {
   // --- Erasure (privacy module) ---------------------------------------------
 
   /**
+   * The customer's lock (`booking_customer:<id>`), held to the end of the
+   * caller's transaction. Taken first, before any other lock, by every write
+   * that attaches personal data to a customer (bookings, passengers, air
+   * ambulance requests) and by their erasure, so the two never interleave.
+   * Then 401 `UNAUTHENTICATED`, as the session guard answers, if the account
+   * was erased meanwhile: read after the lock (READ COMMITTED), it sees an
+   * erasure that held the lock before.
+   */
+  async lockLiveCustomer(
+    id: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.lockCustomer(id, tx);
+    const account = await tx.user.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!account || account.status === UserStatus.ERASED) {
+      throw new AppException(
+        'UNAUTHENTICATED',
+        'Sign in to continue.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+  }
+
+  /** The customer's lock alone (`lockLiveCustomer`), for their erasure. */
+  async lockCustomer(id: string, tx: Prisma.TransactionClient): Promise<void> {
+    const key = `booking_customer:${id}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+  }
+
+  /**
    * Locks the account row for the rest of the caller's transaction and
    * returns what an erasure is decided on. The row lock also holds back any
    * record being created for the account at the same moment (its foreign key
    * check waits for the lock), so the erasure sees it or it comes after.
+   * Taken last, after the customer's lock and the rows of their records: a
+   * change that holds such a row may insert a notification, whose foreign
+   * key waits for this lock.
    */
   async lockForErasure(
     id: string,

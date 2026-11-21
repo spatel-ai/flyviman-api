@@ -3,6 +3,7 @@ import {
   BookingPaymentStatus,
   BookingStatus,
   Gender,
+  PaymentReviewReason,
   PaymentStatus,
   RefundStatus,
   UserStatus,
@@ -43,6 +44,7 @@ export const ERASURE_BLOCKERS = [
   'PAYMENT_IN_PROGRESS',
   'REFUND_IN_PROGRESS',
   'REFUND_DUE',
+  'PAYMENT_UNDER_REVIEW',
   'BALANCE_DUE',
   'OPEN_AIR_AMBULANCE',
   'RECENT_ACTIVITY',
@@ -56,8 +58,11 @@ export interface ErasureFacts {
     paymentStatus: BookingPaymentStatus;
     updatedAt: Date;
   }[];
-  /** Every payment on the customer's bookings. */
-  payments: readonly { status: PaymentStatus }[];
+  /** Every payment on the customer's bookings, with its operations flag. */
+  payments: readonly {
+    status: PaymentStatus;
+    reviewReason: PaymentReviewReason | null;
+  }[];
   /** Every refund of those payments. */
   refunds: readonly { status: RefundStatus }[];
   /** Payments the finance refund queue says are owed back to the customer. */
@@ -77,6 +82,12 @@ export interface ErasurePolicy {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Flags on money the refund queue does not list (`refunds.due`). */
+const GATEWAY_FLAGS: readonly PaymentReviewReason[] = [
+  PaymentReviewReason.AMOUNT_MISMATCH,
+  PaymentReviewReason.DUPLICATE_CAPTURE,
+];
 
 /**
  * The reasons an account cannot be erased now; empty when it can. A payment
@@ -113,6 +124,15 @@ export function erasureBlockers(
     found.add('REFUND_IN_PROGRESS');
   }
   if (facts.refundsDue > 0) found.add('REFUND_DUE');
+  // Money held that the refund queue leaves out (another amount, or a
+  // second capture, at the gateway): operations must settle it first.
+  if (
+    facts.payments.some(
+      (p) => p.reviewReason !== null && GATEWAY_FLAGS.includes(p.reviewReason),
+    )
+  ) {
+    found.add('PAYMENT_UNDER_REVIEW');
+  }
   // A trip flown before it was paid in full: the customer still owes.
   if (
     facts.bookings.some(

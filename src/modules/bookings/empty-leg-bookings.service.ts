@@ -28,6 +28,7 @@ import {
 } from '../empty-legs/empty-legs.service.js';
 import { CancellationTermsService } from '../pricing/cancellation-terms.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
+import { UsersService } from '../users/users.service.js';
 import { type Itinerary, parseItinerary } from './booking-json.js';
 import {
   holdExpiry,
@@ -138,6 +139,7 @@ export class EmptyLegBookingsService {
     private readonly pricing: PricingService,
     private readonly cipher: FieldCipher,
     private readonly config: ConfigService,
+    private readonly users: UsersService,
   ) {}
 
   async create(
@@ -200,11 +202,11 @@ export class EmptyLegBookingsService {
       holdHours: number;
     },
   ): Promise<BookingCreatedDto> {
+    // The customer's lock first, as for a search booking (refused once the
+    // account is erased), then the idempotency key's row, the offer's and
+    // the aircraft's (`placeBookingHold`).
+    await this.users.lockLiveCustomer(user.id, tx);
     await markIdempotencyCommitted(tx, claim);
-    // The customer's lock first, as for a search booking, then the offer's,
-    // then the aircraft's (`placeBookingHold`).
-    const key = `booking_customer:${user.id}`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
     const open = await tx.booking.count({
       where: { customerId: user.id, status: { in: OPEN_STATUSES } },
     });

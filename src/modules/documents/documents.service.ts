@@ -213,8 +213,9 @@ export class DocumentsService {
 
   /**
    * Erasure (privacy module): deletes the metadata of every file the user
-   * owns, in the caller's transaction, and returns their storage keys for
-   * `deleteStored` once it commits. The records the files were attached to
+   * owns, in the caller's transaction, queues their files for deletion
+   * (`StoragePurge`, committed with it) and returns their storage keys for
+   * `purgeStored` once it commits. The records the files were attached to
    * must already be gone (each link is RESTRICT).
    */
   async forgetOwnedFiles(
@@ -226,19 +227,50 @@ export class DocumentsService {
       select: { storageKey: true },
     });
     await tx.storedFile.deleteMany({ where: { ownerId } });
-    return files.map((file) => file.storageKey);
+    const keys = files.map((file) => file.storageKey);
+    await tx.storagePurge.createMany({
+      data: keys.map((storageKey) => ({ storageKey })),
+      skipDuplicates: true,
+    });
+    return keys;
   }
 
   /**
-   * Deletes files from storage after their metadata is gone. Never throws:
-   * the keys that could not be deleted are returned (a storage key is ours,
-   * never a file name, so it may be logged).
+   * Deletes queued files from storage, then their `StoragePurge` rows. A
+   * file that could not be deleted keeps its row, with one more attempt
+   * counted, for the purge job (`StoragePurgeJob`) to retry. Deleting a file
+   * that is already gone succeeds. Returns the number left.
    */
-  async deleteStored(keys: string[]): Promise<string[]> {
+  async purgeStored(keys: string[]): Promise<number> {
+    if (keys.length === 0) return 0;
     const results = await Promise.allSettled(
       keys.map((key) => this.storage.delete(key)),
     );
-    return keys.filter((_, index) => results[index].status === 'rejected');
+    const done = keys.filter((_, i) => results[i].status === 'fulfilled');
+    const left = keys.filter((_, i) => results[i].status === 'rejected');
+    if (done.length > 0) {
+      await this.prisma.storagePurge.deleteMany({
+        where: { storageKey: { in: done } },
+      });
+    }
+    if (left.length > 0) {
+      await this.prisma.storagePurge.updateMany({
+        where: { storageKey: { in: left } },
+        data: { attempts: { increment: 1 } },
+      });
+    }
+    return left.length;
+  }
+
+  /** The oldest queued files, at most `limit`, through `purgeStored`. */
+  async purgeQueued(limit: number): Promise<{ tried: number; left: number }> {
+    const rows = await this.prisma.storagePurge.findMany({
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: limit,
+      select: { storageKey: true },
+    });
+    const left = await this.purgeStored(rows.map((row) => row.storageKey));
+    return { tried: rows.length, left };
   }
 
   async remove(fileId: string): Promise<void> {

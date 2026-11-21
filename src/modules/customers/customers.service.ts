@@ -12,6 +12,7 @@ import type {
   IdentityDocumentType,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { UsersService } from '../users/users.service.js';
 import { encryptLegacySpecialAssistance } from './special-assistance-backfill.js';
 
 export interface Profile {
@@ -78,6 +79,7 @@ export class CustomersService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cipher: FieldCipher,
+    private readonly users: UsersService,
   ) {}
 
   /**
@@ -131,17 +133,21 @@ export class CustomersService implements OnApplicationBootstrap {
     },
   ): Promise<Profile> {
     const { dateOfBirth, ...rest } = changes;
-    await this.profileIdOrThrow(userId);
-    return this.prisma.customerProfile.update({
-      where: { userId },
-      data: { ...rest, dateOfBirth: date(dateOfBirth) },
-      select: PROFILE,
+    return this.prisma.$transaction(async (tx) => {
+      await this.users.lockLiveCustomer(userId, tx);
+      await this.profileIdOrThrow(userId, tx);
+      return tx.customerProfile.update({
+        where: { userId },
+        data: { ...rest, dateOfBirth: date(dateOfBirth) },
+        select: PROFILE,
+      });
     });
   }
 
   // --- Saved passengers ---------------------------------------------------
   // Every query is scoped to the caller's own profile, so another customer's
-  // passenger is indistinguishable from one that does not exist.
+  // passenger is indistinguishable from one that does not exist. A write
+  // takes the customer's lock first, so none lands after their erasure.
 
   async listPassengers(userId: string): Promise<PassengerRecord[]> {
     const rows = await this.prisma.passenger.findMany({
@@ -174,24 +180,27 @@ export class CustomersService implements OnApplicationBootstrap {
     userId: string,
     input: PassengerInput & { firstName: string; lastName: string },
   ): Promise<PassengerRecord> {
-    const customerId = await this.profileIdOrThrow(userId);
-    const count = await this.prisma.passenger.count({
-      where: { customerId, deletedAt: null },
-    });
-    if (count >= MAX_PASSENGERS) {
-      throw new AppException(
-        'PASSENGER_LIMIT_REACHED',
-        `You can save up to ${MAX_PASSENGERS} passengers.`,
-        HttpStatus.UNPROCESSABLE_ENTITY,
-      );
-    }
-    const row = await this.prisma.passenger.create({
-      data: {
-        customerId,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        ...this.columns(input),
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      await this.users.lockLiveCustomer(userId, tx);
+      const customerId = await this.profileIdOrThrow(userId, tx);
+      const count = await tx.passenger.count({
+        where: { customerId, deletedAt: null },
+      });
+      if (count >= MAX_PASSENGERS) {
+        throw new AppException(
+          'PASSENGER_LIMIT_REACHED',
+          `You can save up to ${MAX_PASSENGERS} passengers.`,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      return tx.passenger.create({
+        data: {
+          customerId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          ...this.columns(input),
+        },
+      });
     });
     return this.present(row);
   }
@@ -201,14 +210,17 @@ export class CustomersService implements OnApplicationBootstrap {
     id: string,
     input: PassengerInput,
   ): Promise<PassengerRecord> {
-    await this.ownedOrThrow(userId, id);
-    const row = await this.prisma.passenger.update({
-      where: { id },
-      data: {
-        firstName: input.firstName,
-        lastName: input.lastName,
-        ...this.columns(input),
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      await this.users.lockLiveCustomer(userId, tx);
+      await this.ownedOrThrow(userId, id, tx);
+      return tx.passenger.update({
+        where: { id },
+        data: {
+          firstName: input.firstName,
+          lastName: input.lastName,
+          ...this.columns(input),
+        },
+      });
     });
     return this.present(row);
   }
@@ -244,8 +256,11 @@ export class CustomersService implements OnApplicationBootstrap {
     return { passengers: count };
   }
 
-  private async profileIdOrThrow(userId: string): Promise<string> {
-    const profile = await this.prisma.customerProfile.findUnique({
+  private async profileIdOrThrow(
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<string> {
+    const profile = await db.customerProfile.findUnique({
       where: { userId },
       select: { id: true },
     });
@@ -259,8 +274,12 @@ export class CustomersService implements OnApplicationBootstrap {
     return profile.id;
   }
 
-  private async ownedOrThrow(userId: string, id: string): Promise<void> {
-    const owned = await this.prisma.passenger.findFirst({
+  private async ownedOrThrow(
+    userId: string,
+    id: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    const owned = await db.passenger.findFirst({
       where: { id, customer: { userId }, deletedAt: null },
       select: { id: true },
     });

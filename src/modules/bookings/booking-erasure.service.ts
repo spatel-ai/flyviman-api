@@ -17,6 +17,30 @@ import type { Prisma } from '../../generated/prisma/client.js';
 export class BookingErasureService {
   constructor(private readonly cipher: FieldCipher) {}
 
+  /**
+   * Locks each of the customer's bookings as every booking change does (its
+   * request lock, `booking_request:<id>`, then its row), by id, after the
+   * customer's lock and before their account row: a change that holds a
+   * booking finishes first, even one that then queues a notification for
+   * the customer. No booking can be added meanwhile (creation takes the
+   * customer's lock).
+   */
+  async lockAll(
+    customerId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const rows = await tx.booking.findMany({
+      where: { customerId },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    for (const { id } of rows) {
+      const key = `booking_request:${id}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+      await tx.$queryRaw`SELECT 1 FROM "Booking" WHERE "id" = ${id}::uuid FOR UPDATE`;
+    }
+  }
+
   /** The customer's bookings, their payments and refunds, for the decision. */
   async facts(
     customerId: string,
@@ -28,11 +52,18 @@ export class BookingErasureService {
     });
     const payments = await tx.payment.findMany({
       where: { booking: { customerId } },
-      select: { status: true, refunds: { select: { status: true } } },
+      select: {
+        status: true,
+        reviewReason: true,
+        refunds: { select: { status: true } },
+      },
     });
     return {
       bookings,
-      payments: payments.map(({ status }) => ({ status })),
+      payments: payments.map(({ status, reviewReason }) => ({
+        status,
+        reviewReason,
+      })),
       refunds: payments.flatMap((payment) => payment.refunds),
     };
   }
