@@ -111,15 +111,25 @@ export class AuthService {
     user: { id: string; role: Role },
     client: ClientInfo,
   ): Promise<SessionTokens> {
-    const tokens = await this.issue(user.id, randomUUID(), client);
-    await this.users.recordLogin(user.id);
-    await this.audit.record({
-      action: 'auth.login',
-      entityType: 'User',
-      entityId: user.id,
-      actor: { id: user.id, role: user.role },
+    // The account row first, and only while it is still ACTIVE: a sign-in
+    // racing an erasure or a suspension never leaves a session behind it
+    // (D-202 review). The caller's status check alone was read before.
+    return this.prisma.$transaction(async (tx) => {
+      if (!(await this.users.recordLogin(user.id, tx))) {
+        throw invalidCredentials();
+      }
+      const tokens = await this.issue(user.id, randomUUID(), client, tx);
+      await this.audit.record(
+        {
+          action: 'auth.login',
+          entityType: 'User',
+          entityId: user.id,
+          actor: { id: user.id, role: user.role },
+        },
+        tx,
+      );
+      return tokens;
     });
-    return tokens;
   }
 
   /** Signs the user out everywhere, for example after a password change. */

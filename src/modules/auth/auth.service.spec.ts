@@ -29,7 +29,7 @@ function setup() {
   const users = {
     findCredentialsByEmail: vi.fn(),
     findAccount: vi.fn(),
-    recordLogin: vi.fn(),
+    recordLogin: vi.fn().mockResolvedValue(true),
   };
   const audit = { record: vi.fn() };
   const tokens = {
@@ -144,6 +144,30 @@ describe('AuthService.login', () => {
       'locked',
     );
     expect(users.findCredentialsByEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.startSession', () => {
+  it('signs in an ACTIVE account in one transaction with its audit record', async () => {
+    const { service, users, session, audit } = setup();
+    const tokens = await service.startSession(ACTIVE, CLIENT);
+    expect(tokens.accessToken).toBe('access');
+    expect(users.recordLogin).toHaveBeenCalledWith('user-1', { session });
+    expect(session.create).toHaveBeenCalledTimes(1);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auth.login' }),
+      { session },
+    );
+  });
+
+  it('leaves no session when the account stopped being ACTIVE meanwhile (an erasure won the race)', async () => {
+    const { service, users, session, audit } = setup();
+    users.recordLogin.mockResolvedValue(false);
+    await expect(service.startSession(ACTIVE, CLIENT)).rejects.toMatchObject({
+      code: 'AUTH_INVALID_CREDENTIALS',
+    });
+    expect(session.create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });
 
