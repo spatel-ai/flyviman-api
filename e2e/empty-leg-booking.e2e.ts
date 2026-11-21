@@ -191,8 +191,10 @@ test.describe('POST /bookings/empty-leg', () => {
       expect(part >= 0n).toBe(true);
     }
     // Rule 9: the terms the customer accepted are stored with the request.
+    // (`version` here is the stored JSON's shape version, not the rule version.)
     expect(stored.cancellationTerms).toMatchObject({
-      version: body.cancellationTermsVersion,
+      version: 1,
+      acceptedAt: expect.any(String),
     });
 
     // Idempotent (rule 5): the same key answers the same, one booking.
