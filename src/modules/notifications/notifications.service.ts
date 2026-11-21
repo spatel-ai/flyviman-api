@@ -422,12 +422,18 @@ export class NotificationsService {
   ): void {
     // Template key and channel only: recipients and content stay out of logs.
     // A provider's error text can repeat the recipient, so only its name
-    // is logged.
-    this.logger.error(
-      `Notification ${templateKey} over ${channel} failed: ${
-        error instanceof Error ? error.name : 'unknown error'
-      }`,
-    );
+    // is logged. It runs inside an unawaited rejection handler for secret
+    // sends, so a throw here (a broken logger) is swallowed rather than
+    // becoming an unhandled rejection.
+    try {
+      this.logger.error(
+        `Notification ${templateKey} over ${channel} failed: ${
+          error instanceof Error ? error.name : 'unknown error'
+        }`,
+      );
+    } catch {
+      // Nothing more to do: logging is best effort.
+    }
   }
 
   async listInApp(
