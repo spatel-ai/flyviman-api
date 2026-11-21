@@ -290,7 +290,8 @@ export interface AlternativeCandidate {
  * Candidates that fit the request: origin and destination each the same or
  * nearby, a departure window that comes within `ALTERNATIVE_WINDOW_DAYS` of
  * the requested time, and enough seats. Exact routes first, then the
- * closest departure; at most `ALTERNATIVE_LIMIT`.
+ * closest departure; at most `ALTERNATIVE_LIMIT`. None for a departure
+ * already past (a stored search read again later).
  */
 export function pickAlternatives<T extends AlternativeCandidate>(
   candidates: T[],
@@ -299,8 +300,10 @@ export function pickAlternatives<T extends AlternativeCandidate>(
     destination: Point;
     departureAt: Date;
     passengers: number;
+    now: Date;
   },
 ): T[] {
+  if (request.departureAt.getTime() <= request.now.getTime()) return [];
   const span = ALTERNATIVE_WINDOW_DAYS * DAY_MS;
   const at = request.departureAt.getTime();
   const gap = (c: T) =>

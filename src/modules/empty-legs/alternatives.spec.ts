@@ -17,6 +17,7 @@ const trip = {
   destination: goa,
   departureAt: at,
   passengers: 3,
+  now: new Date(at.getTime() - 7 * DAY),
 };
 
 function offer(
@@ -77,5 +78,16 @@ describe('pickAlternatives', () => {
     const many = Array.from({ length: ALTERNATIVE_LIMIT + 3 }, () => offer());
     expect(pickAlternatives(many, trip)).toHaveLength(ALTERNATIVE_LIMIT);
     expect(pickAlternatives([], trip)).toEqual([]);
+  });
+
+  it('lists none once the requested departure has passed', () => {
+    const rows = [offer(), offer({ daysFromRequest: 1 })];
+    expect(pickAlternatives(rows, { ...trip, now: at })).toEqual([]);
+    expect(
+      pickAlternatives(rows, { ...trip, now: new Date(at.getTime() + DAY) }),
+    ).toEqual([]);
+    expect(
+      pickAlternatives(rows, { ...trip, now: new Date(at.getTime() - 1) }),
+    ).toHaveLength(2);
   });
 });

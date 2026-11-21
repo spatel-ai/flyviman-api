@@ -517,6 +517,7 @@ export class EmptyLegsService {
         destination,
         departureAt: trip.departureAt,
         passengers: trip.passengers,
+        now: new Date(),
       },
     ).map((k) => this.toPublic(k.row));
   }
