@@ -567,7 +567,10 @@ test.describe('when the request ends or is confirmed', () => {
       },
     );
     expect(accepted.status()).toBe(200);
-    expect((await accepted.json()).data).toMatchObject({
+    expect((await accepted.json()).data.status).toBe('AWAITING_PAYMENT');
+    // The answer holds references only (D-128): the price is on the detail.
+    const detail = await request.get(`operator/booking-requests/${reference}`);
+    expect((await detail.json()).data).toMatchObject({
       status: 'AWAITING_PAYMENT',
       price: { priceType: 'CONFIRMED', amountMinor: PRICE },
     });
