@@ -82,6 +82,24 @@ const COPY: Record<string, Copy> = {
     text: 'Your booking {{reference}} is confirmed. Open it on Flyviman for the details and the cancellation terms.',
     short: 'your booking is confirmed. Details are on Flyviman.',
   },
+  'booking.scheduled': {
+    title: 'Your trip {{reference}} is scheduled',
+    text: 'The operator has finalised the arrangements for your trip {{reference}}. Open it on Flyviman for the details.',
+  },
+  'booking.completed': {
+    title: 'Your trip {{reference}} is completed',
+    text: 'Your trip {{reference}} has been marked as flown. Thank you for flying with Flyviman.',
+  },
+  'booking.cancelled_by_operator': {
+    title: 'Your booking {{reference}} has been cancelled by the operator',
+    text: 'The operator can no longer fly your booking {{reference}}, so it has been cancelled. No cancellation charge applies: anything you paid will be refunded by Flyviman. Open it on Flyviman for the details.',
+    short:
+      'the operator cancelled your booking. No charge applies; anything you paid will be refunded by Flyviman.',
+  },
+  'booking.cancelled_by_operator_ops': {
+    title: 'Operator cancelled booking {{reference}}',
+    text: 'The operator cancelled booking {{reference}}. No charge applies to the customer; any refund due is listed for finance in refunds due. Follow up with the customer and the operator as needed.',
+  },
   'payment.succeeded': {
     title: 'Payment received for {{reference}}',
     text: 'We received your payment for {{reference}}. Open it on Flyviman to see where your booking stands. A booking is confirmed only when Flyviman tells you so.',

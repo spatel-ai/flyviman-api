@@ -25,6 +25,8 @@ import {
 import { DevBookingJobsController } from './dev-booking-jobs.controller.js';
 import { MeBookingsController } from './me-bookings.controller.js';
 import { OperatorBookingRequestsController } from './operator-booking-requests.controller.js';
+import { OperatorBookingsController } from './operator-bookings.controller.js';
+import { OperatorBookingsService } from './operator-bookings.service.js';
 import { OperatorChangeRequestsController } from './operator-change-requests.controller.js';
 import { TripsService } from './trips.service.js';
 import { BookingReportsService } from './booking-reports.service.js';
@@ -33,6 +35,7 @@ import { BookingReportsService } from './booking-reports.service.js';
  * Bookings (M8): creation from a search result and the customer's reads;
  * the customer's trips, cancellation and change requests; the operator's
  * request inbox, quotes and answers, and the hold-expiry job; the
+ * operator's bookings (scheduled, completed, cancelled); the
  * confirmation rule; bookings and change requests for Flyviman staff.
  */
 @Module({
@@ -59,6 +62,7 @@ import { BookingReportsService } from './booking-reports.service.js';
     BookingConversationController,
     CustomerQuotesController,
     OperatorBookingRequestsController,
+    OperatorBookingsController,
     DevBookingJobsController,
   ],
   providers: [
@@ -66,6 +70,7 @@ import { BookingReportsService } from './booking-reports.service.js';
     TripsService,
     BookingRequestsService,
     AdminBookingsService,
+    OperatorBookingsService,
     ChangeRequestListsService,
     BookingReportsService,
     FieldCipher,

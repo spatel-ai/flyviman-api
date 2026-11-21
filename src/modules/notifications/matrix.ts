@@ -59,6 +59,14 @@ export const NOTIFICATION_MATRIX: readonly NotificationRule[] = [
   rule('booking.cancelled_by_customer', 'OPERATOR', 'BOOKING', BASIC, true),
   rule('booking.change_requested', 'OPERATOR', 'BOOKING', BASIC, false),
   rule('booking.confirmed_operator', 'OPERATOR', 'BOOKING', BASIC, true),
+  // Booking lifecycle after confirmation: operator cancellation (M8-B).
+  rule(
+    'booking.cancelled_by_operator_ops',
+    'OPERATIONS',
+    'BOOKING',
+    BASIC,
+    true,
+  ),
   // Booking requests: to the customer.
   rule('booking.price_confirmed', 'CUSTOMER', 'BOOKING', URGENT, false),
   rule('booking.operator_unavailable', 'CUSTOMER', 'BOOKING', BASIC, false),
@@ -69,6 +77,9 @@ export const NOTIFICATION_MATRIX: readonly NotificationRule[] = [
   rule('booking.change_decided', 'CUSTOMER', 'BOOKING', BASIC, false),
   rule('booking.cancelled', 'CUSTOMER', 'BOOKING', URGENT, true),
   rule('booking.confirmed', 'CUSTOMER', 'BOOKING', URGENT, true),
+  rule('booking.scheduled', 'CUSTOMER', 'BOOKING', BASIC, false),
+  rule('booking.completed', 'CUSTOMER', 'BOOKING', BASIC, false),
+  rule('booking.cancelled_by_operator', 'CUSTOMER', 'BOOKING', URGENT, true),
   // Payments (rule 2: a payment notice is not a confirmation).
   rule('payment.succeeded', 'CUSTOMER', 'BOOKING', URGENT, true),
   rule('payment.failed', 'CUSTOMER', 'BOOKING', URGENT, true),
@@ -105,17 +116,29 @@ export function channelsFor(
   });
 }
 
-/** The web path a message links to, relative to the site's origin. */
-export function hrefFor(rule: NotificationRule, reference: string): string {
+/**
+ * The web path a message links to, relative to the site's origin. An
+ * operator's link to a booking that has been confirmed (`confirmed`) leads
+ * to its bookings page, before that to the request inbox.
+ */
+export function hrefFor(
+  rule: NotificationRule,
+  reference: string,
+  options: { confirmed?: boolean } = {},
+): string {
   const ref = encodeURIComponent(reference);
   if (rule.subject === 'AIR_AMBULANCE') {
     return rule.audience === 'OPERATIONS'
       ? `/admin/air-ambulance/${ref}`
       : `/air-ambulance/requests/${ref}`;
   }
-  return rule.audience === 'OPERATOR'
-    ? `/operator/requests/${ref}`
-    : `/account/trips/${ref}`;
+  if (rule.audience === 'OPERATIONS') return `/admin/bookings/${ref}`;
+  if (rule.audience === 'OPERATOR') {
+    return options.confirmed
+      ? `/operator/bookings/${ref}`
+      : `/operator/requests/${ref}`;
+  }
+  return `/account/trips/${ref}`;
 }
 
 /**
@@ -136,10 +159,21 @@ export function bookingStatusEvents(
   if (to === 'CONFIRMED')
     return ['booking.confirmed', 'booking.confirmed_operator'];
   if (to === 'CANCELLED') {
-    return actor === 'CUSTOMER'
-      ? ['booking.cancelled', 'booking.cancelled_by_customer']
-      : ['booking.cancelled'];
+    if (actor === 'CUSTOMER') {
+      return ['booking.cancelled', 'booking.cancelled_by_customer'];
+    }
+    // The operator's cancellation waives the charge (M8-B): the customer is
+    // told so, and operations are told to follow up.
+    if (actor === 'OPERATOR') {
+      return [
+        'booking.cancelled_by_operator',
+        'booking.cancelled_by_operator_ops',
+      ];
+    }
+    return ['booking.cancelled'];
   }
+  if (to === 'SCHEDULED') return ['booking.scheduled'];
+  if (to === 'COMPLETED') return ['booking.completed'];
   // The customer declines a confirmed price before paying (W3-3).
   if (from === 'PRICE_CONFIRMED' && to === 'QUOTE_DECLINED') {
     return actor === 'CUSTOMER' ? ['booking.price_declined'] : [];

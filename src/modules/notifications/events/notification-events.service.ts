@@ -17,6 +17,11 @@ export interface EventContext {
   /** For an operator rule: whose aircraft, so only its team is told. */
   operatorId?: string | null;
   aircraftId?: string | null;
+  /**
+   * The booking has been confirmed (`confirmedAt` set): the operator's link
+   * then leads to its bookings page rather than the request inbox.
+   */
+  confirmed?: boolean;
   /** System-derived values only (`validUntil`, `decision`): never free text. */
   variables?: Record<string, string | number>;
 }
@@ -52,7 +57,9 @@ export class NotificationEventsService {
     const channels = channelsFor(rule, {
       whatsappEnabled: this.config.get<boolean>('WHATSAPP_ENABLED') ?? false,
     });
-    const href = hrefFor(rule, context.reference);
+    const href = hrefFor(rule, context.reference, {
+      confirmed: context.confirmed ?? false,
+    });
     const origin = this.config.getOrThrow<string>('WEB_ORIGIN');
     const variables = {
       ...context.variables,
@@ -97,9 +104,15 @@ export class NotificationEventsService {
         customerId: true,
         operatorId: true,
         aircraftId: true,
+        confirmedAt: true,
       },
     });
-    return this.notify(tx, key, { ...booking, variables });
+    const { confirmedAt, ...context } = booking;
+    return this.notify(tx, key, {
+      ...context,
+      confirmed: confirmedAt !== null,
+      variables,
+    });
   }
 
   /**

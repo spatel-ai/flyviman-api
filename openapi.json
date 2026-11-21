@@ -7223,6 +7223,239 @@
         ]
       }
     },
+    "/api/v1/operator/bookings": {
+      "get": {
+        "description": "By default the upcoming trips (`CONFIRMED`, `SCHEDULED`); filter by `status`, `aircraftId` and the first departure (`departureFrom`, `departureTo`). Each carries `status` and `paymentStatus` separately, and the customer’s total with its `priceType`. No passenger data.",
+        "operationId": "OperatorBookingsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Left out: the upcoming trips (`CONFIRMED`, `SCHEDULED`). Any status may be asked for.",
+            "schema": {
+              "$ref": "#/components/schemas/BookingStatus"
+            }
+          },
+          {
+            "name": "aircraftId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "departureFrom",
+            "required": false,
+            "in": "query",
+            "description": "First departure at or after this time.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "departureTo",
+            "required": false,
+            "in": "query",
+            "description": "First departure before this time.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperatorBookingSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Bookings on your aircraft, newest first",
+        "tags": [
+          "operator-bookings"
+        ]
+      }
+    },
+    "/api/v1/operator/bookings/{reference}": {
+      "get": {
+        "description": "The manifest (`passengers`, names only) is shown once the booking is `CONFIRMED`, `SCHEDULED` or `COMPLETED`. `actions` says which moves are open now.",
+        "operationId": "OperatorBookingsController_detail",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "A booking: trip, statuses, terms, manifest and what you can do",
+        "tags": [
+          "operator-bookings"
+        ]
+      }
+    },
+    "/api/v1/operator/bookings/{reference}/status": {
+      "patch": {
+        "description": "`CONFIRMED` → `SCHEDULED`; `SCHEDULED` → `COMPLETED` once the last leg has departed. 409 `BOOKING_INVALID_TRANSITION` from any other status, before departure, or when the booking changed meanwhile. Audited, on the booking’s timeline.",
+        "operationId": "OperatorBookingsController_changeStatus",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOperatorBookingStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Mark a booking scheduled or completed",
+        "tags": [
+          "operator-bookings"
+        ]
+      }
+    },
+    "/api/v1/operator/bookings/{reference}/cancel": {
+      "post": {
+        "description": "From any status before `COMPLETED`. Moves the booking to `CANCELLED` at once, releases the aircraft’s hold, closes any open quote and change request, and records a completed cancellation with no charge: everything the customer paid is recorded as due back, for Flyviman finance to refund (nothing is refunded here). The reason is kept for you and Flyviman, stored encrypted; the customer is told the booking was cancelled. 409 `BOOKING_NOT_CANCELLABLE` once completed or closed; 409 `BOOKING_PAYMENT_IN_PROGRESS` while a payment waits for the gateway’s final answer. Audited. A repeat with the same `Idempotency-Key` and body returns the first answer.",
+        "operationId": "OperatorBookingsController_cancel",
+        "parameters": [
+          {
+            "name": "reference",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID, new for each cancellation and reused on retry.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelOperatorBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorBookingDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Cancel a booking you cannot fly, with a reason",
+        "tags": [
+          "operator-bookings"
+        ]
+      }
+    },
     "/api/v1/bookings/{reference}/payments": {
       "get": {
         "description": "Newest first: every attempt with its status, method type, refunds, and `receipt` (null until it has succeeded; the same as `GET /payments/:reference/receipt`). What is due now is the booking’s `amountDue`. Another customer’s booking is 404.",
@@ -18857,6 +19090,252 @@
           "operatorPriceMinor",
           "currency",
           "conditions"
+        ]
+      },
+      "OperatorBookingSummaryDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "description": "Separate from `status`: a payment never confirms a booking by itself.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/BookingRequestAircraftDto"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "price": {
+            "nullable": true,
+            "description": "The customer’s total with its `priceType`. Null for a request still priced on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "paymentStatus",
+          "category",
+          "aircraft",
+          "legs",
+          "passengerCount",
+          "price",
+          "createdAt"
+        ]
+      },
+      "OperatorBookingPassengerDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName"
+        ]
+      },
+      "OperatorBookingActionsDto": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "boolean",
+            "description": "`CONFIRMED` → `SCHEDULED`."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "`SCHEDULED` → `COMPLETED`, once the last leg has departed."
+          },
+          "cancel": {
+            "type": "boolean",
+            "description": "Cancel, with a reason, before it is completed."
+          }
+        },
+        "required": [
+          "schedule",
+          "complete",
+          "cancel"
+        ]
+      },
+      "OperatorBookingDetailDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "example": "FLY-BK-7K2M9Q"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "description": "Separate from `status`: a payment never confirms a booking by itself.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceCategory"
+              }
+            ]
+          },
+          "aircraft": {
+            "$ref": "#/components/schemas/BookingRequestAircraftDto"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryLegDto"
+            }
+          },
+          "passengerCount": {
+            "type": "number"
+          },
+          "price": {
+            "nullable": true,
+            "description": "The customer’s total with its `priceType`. Null for a request still priced on request.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPriceDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "itinerary": {
+            "$ref": "#/components/schemas/ItineraryDto"
+          },
+          "cancellationTerms": {
+            "$ref": "#/components/schemas/CancellationTermsDto"
+          },
+          "specialRequests": {
+            "type": "string",
+            "nullable": true
+          },
+          "passengers": {
+            "nullable": true,
+            "description": "The manifest (names only), once the booking is `CONFIRMED`, `SCHEDULED` or `COMPLETED`; null before then and after a cancellation.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperatorBookingPassengerDto"
+            }
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actions": {
+            "$ref": "#/components/schemas/OperatorBookingActionsDto"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reference",
+          "status",
+          "paymentStatus",
+          "category",
+          "aircraft",
+          "legs",
+          "passengerCount",
+          "price",
+          "createdAt",
+          "itinerary",
+          "cancellationTerms",
+          "specialRequests",
+          "passengers",
+          "confirmedAt",
+          "cancelledAt",
+          "actions",
+          "updatedAt"
+        ]
+      },
+      "UpdateOperatorBookingStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "COMPLETED"
+            ],
+            "description": "`SCHEDULED` from `CONFIRMED`; `COMPLETED` from `SCHEDULED`, once the last leg has departed."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CancelOperatorBookingDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500,
+            "description": "Why you cannot fly it. Kept for you and Flyviman (stored encrypted); the customer is told the booking was cancelled."
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "PaymentPriceDto": {
