@@ -233,7 +233,7 @@ test.describe('GET /bookings/:reference/cancellation-quote', () => {
       amountKnown: false,
       chargeMinor: 0,
     });
-    expect(estimate.explanation).toContain('not confirmed');
+    expect(estimate.explanation).toContain('still an estimate');
 
     await setBooking(reference, { priceType: 'CONFIRMED' });
     const confirmed = await quote(customer, reference);
