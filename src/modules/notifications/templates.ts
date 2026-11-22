@@ -1,3 +1,4 @@
+import { indiaDateTime } from '../../common/india-date.js';
 import type { NotificationChannel } from '../../generated/prisma/enums.js';
 import { eventTemplates } from './event-templates.js';
 
@@ -340,13 +341,21 @@ export const PERSONAL_TEMPLATES: ReadonlySet<string> = new Set([
   'enquiry.received',
 ]);
 
+const ISO_MOMENT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+/** A stored ISO timestamp reads as India time; any other value is as given. */
+function readable(value: string | number): string {
+  const text = String(value);
+  return ISO_MOMENT.test(text) ? indiaDateTime(new Date(text)) : text;
+}
+
 /** Fills `{{name}}` placeholders. An unknown placeholder becomes empty. */
 export function render(
   text: string,
   variables: Record<string, string | number>,
 ): string {
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, name: string) =>
-    name in variables ? String(variables[name]) : '',
+    name in variables ? readable(variables[name]) : '',
   );
 }
 

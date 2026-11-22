@@ -654,7 +654,14 @@ function quoteFor(
   };
 }
 
-function explain(
+const PRICE_TYPE_WORDS: Record<PriceType, string> = {
+  ESTIMATE: 'an estimate',
+  QUOTE: 'a quote',
+  LIVE_FARE: 'a live fare',
+  CONFIRMED: 'confirmed',
+};
+
+export function explain(
   outcome: ReturnType<typeof evaluateCancellation>,
   priceType: PriceType,
 ): string {
@@ -663,7 +670,7 @@ function explain(
   }
   const percent = outcome.appliedCharge.chargePercent;
   if (!outcome.amountKnown) {
-    return `Flyviman’s cancellation terms charge ${percent}% at this notice, but the price is not confirmed yet (${priceType}), so nothing is charged.`;
+    return `Flyviman’s cancellation terms charge ${percent}% at this notice, but the price is still ${PRICE_TYPE_WORDS[priceType]}, so nothing is charged.`;
   }
   return `Flyviman’s cancellation terms charge ${percent}% of the confirmed price at this notice.`;
 }

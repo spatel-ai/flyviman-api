@@ -17,6 +17,14 @@ describe('render', () => {
       }),
     ).toBe('Hi Asha, code 123456.');
   });
+
+  it('writes a stored ISO timestamp as India time, never the raw value', () => {
+    const text = render('Review it before {{validUntil}}.', {
+      validUntil: '2026-11-24T06:40:43.598Z',
+    });
+    expect(text).toBe('Review it before 24 Nov 2026, 12:10 pm IST.');
+    expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+  });
 });
 
 describe('DEFAULT_TEMPLATES', () => {

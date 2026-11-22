@@ -26,3 +26,17 @@ export function dateAfter(today: string, days: number): Date {
 export function indiaTodayAsDate(now = new Date()): Date {
   return dateAfter(indiaToday(now), 0);
 }
+
+/** A moment as people read it in India: `24 Nov 2026, 12:10 pm IST`. */
+export function indiaDateTime(moment: Date): string {
+  const text = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(moment);
+  return `${text.replace(' at ', ', ').replace(/\b(am|pm)\b/i, (m) => m.toLowerCase())} IST`;
+}
