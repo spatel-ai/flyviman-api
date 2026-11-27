@@ -118,7 +118,13 @@ export class AuthService {
       if (!(await this.users.recordLogin(user.id, tx))) {
         throw invalidCredentials();
       }
-      const tokens = await this.issue(user.id, randomUUID(), client, tx);
+      const tokens = await this.issue(
+        user.id,
+        randomUUID(),
+        new Date(),
+        client,
+        tx,
+      );
       await this.audit.record(
         {
           action: 'auth.login',
@@ -244,6 +250,24 @@ export class AuthService {
     }
     if (session.expiresAt.getTime() <= Date.now()) throw unauthenticated();
 
+    // The sign-in began with its first row (rows are deleted only with the
+    // account), and ends SESSION_MAX_AGE_DAYS later however recently it was
+    // refreshed. Rows issued since then already end in time; this catches
+    // older ones. They are expired, not revoked, so the same cookie sent
+    // again is refused as expired rather than audited as a stolen token.
+    const family = await this.prisma.session.aggregate({
+      where: { familyId: session.familyId },
+      _min: { createdAt: true },
+    });
+    const startedAt = family._min.createdAt ?? session.createdAt;
+    if (this.sessionEndsAt(startedAt) <= Date.now()) {
+      await this.prisma.session.updateMany({
+        where: { familyId: session.familyId, revokedAt: null },
+        data: { expiresAt: new Date() },
+      });
+      throw unauthenticated();
+    }
+
     const user = await this.users.findAccount(session.userId);
     if (!user || user.status !== UserStatus.ACTIVE) {
       await this.revokeFamily(session.familyId);
@@ -263,7 +287,13 @@ export class AuthService {
           data: { revokedAt: new Date() },
         });
         if (claimed.count !== 1) return null;
-        const issued = await this.issue(user.id, session.familyId, client, tx);
+        const issued = await this.issue(
+          user.id,
+          session.familyId,
+          startedAt,
+          client,
+          tx,
+        );
         await this.keepSuccessor(retiredHash, issued, graceMs);
         return issued;
       });
@@ -345,14 +375,32 @@ export class AuthService {
     return live !== null;
   }
 
+  /** When a sign-in begun at `startedAt` ends (`SESSION_MAX_AGE_DAYS`). */
+  private sessionEndsAt(startedAt: Date): number {
+    return (
+      startedAt.getTime() +
+      this.config.getOrThrow<number>('SESSION_MAX_AGE_DAYS') * 86_400_000
+    );
+  }
+
+  /**
+   * Creates a refresh token for the sign-in begun at `startedAt`. It never
+   * outlives the sign-in, so the guard's `isFamilyActive` and the refresh
+   * expiry check end the sign-in on time with no further lookup.
+   */
   private async issue(
     userId: string,
     familyId: string,
+    startedAt: Date,
     client: ClientInfo,
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<SessionTokens> {
     const refreshToken = this.tokens.randomToken();
     const { refreshTtlSeconds } = this.tokens.cookieSettings;
+    const refreshExpiresAt = Math.min(
+      Date.now() + refreshTtlSeconds * 1000,
+      this.sessionEndsAt(startedAt),
+    );
     await db.session.create({
       data: {
         userId,
@@ -360,7 +408,7 @@ export class AuthService {
         refreshTokenHash: this.tokens.hashToken(refreshToken),
         userAgent: client.userAgent?.slice(0, 500) ?? null,
         ipAddress: client.ipAddress,
-        expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+        expiresAt: new Date(refreshExpiresAt),
       },
     });
     return {
@@ -370,6 +418,7 @@ export class AuthService {
       }),
       refreshToken,
       csrfToken: this.tokens.randomToken(),
+      refreshExpiresAt,
     };
   }
 

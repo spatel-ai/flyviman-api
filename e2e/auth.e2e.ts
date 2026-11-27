@@ -265,6 +265,56 @@ test.describe('POST /auth/refresh', () => {
     // The legitimate holder is signed out too.
     expect((await request.get('me')).status()).toBe(401);
   });
+
+  test('ends a sign-in 30 days after it began, however recently it was refreshed', async ({
+    request,
+  }) => {
+    const DAY = 86_400_000;
+    await signIn(request, 'customer');
+    const first = await cookie(request, 'refresh_token');
+    // Moves the start of this sign-in (its first row) back in time.
+    const beganAgo = (ms: number) =>
+      withPrisma(async (prisma) => {
+        const { familyId } = await prisma.session.findUniqueOrThrow({
+          where: {
+            refreshTokenHash: createHash('sha256').update(first!).digest('hex'),
+          },
+        });
+        await prisma.session.updateMany({
+          where: { familyId },
+          data: { createdAt: new Date(Date.now() - ms) },
+        });
+      });
+
+    // An hour before the limit: renewed, but the cookies end with the sign-in.
+    await beganAgo(30 * DAY - 3_600_000);
+    const capped = await request.post('auth/refresh', {
+      headers: await csrfHeaders(request),
+    });
+    expect(capped.status()).toBe(204);
+    for (const name of ['refresh_token', 'csrf_token']) {
+      const header = capped
+        .headersArray()
+        .find(
+          (entry) =>
+            entry.name.toLowerCase() === 'set-cookie' &&
+            entry.value.startsWith(`${name}=`),
+        );
+      const maxAge = Number(/Max-Age=(\d+)/.exec(header?.value ?? '')?.[1]);
+      expect(maxAge, name).toBeGreaterThan(3_500);
+      expect(maxAge, name).toBeLessThanOrEqual(3_600);
+    }
+    expect((await request.get('me')).status()).toBe(200);
+
+    // Past the limit: refused, and the access token stops working at once.
+    await beganAgo(30 * DAY + 60_000);
+    const refused = await request.post('auth/refresh', {
+      headers: await csrfHeaders(request),
+    });
+    expect(refused.status()).toBe(401);
+    expect((await refused.json()).error.code).toBe('UNAUTHENTICATED');
+    expect((await request.get('me')).status()).toBe(401);
+  });
 });
 
 // On the second server: the real 10-second grace period, and the real

@@ -325,6 +325,19 @@ describe('validateEnv', () => {
     ).toBe(5);
   });
 
+  it('ends a sign-in after 30 days by default, configurable from 1 to 365', () => {
+    expect(validateEnv(valid).SESSION_MAX_AGE_DAYS).toBe(30);
+    expect(
+      validateEnv({ ...valid, SESSION_MAX_AGE_DAYS: '365' })
+        .SESSION_MAX_AGE_DAYS,
+    ).toBe(365);
+    for (const days of ['0', '366', '1.5']) {
+      expect(() =>
+        validateEnv({ ...valid, SESSION_MAX_AGE_DAYS: days }),
+      ).toThrow(/SESSION_MAX_AGE_DAYS/);
+    }
+  });
+
   it('only warns about an unrestricted database role unless asked to refuse', () => {
     expect(validateEnv(valid).REQUIRE_RESTRICTED_DB_ROLE).toBe(false);
     expect(

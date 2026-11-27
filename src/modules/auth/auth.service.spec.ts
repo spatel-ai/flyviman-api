@@ -13,6 +13,7 @@ import type { TokenService } from './token.service.js';
 const CLIENT = { userAgent: 'vitest', ipAddress: '127.0.0.1' };
 const GRACE_SECONDS = 10;
 const ROTATIONS_PER_MINUTE = 30;
+const SESSION_MAX_AGE_DAYS = 30;
 
 function setup() {
   const session = {
@@ -20,6 +21,8 @@ function setup() {
     findFirst: vi.fn(),
     create: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    // The sign-in began just now unless a test says otherwise.
+    aggregate: vi.fn().mockResolvedValue({ _min: { createdAt: new Date() } }),
   };
   const failures = {
     assertNotLocked: vi.fn(),
@@ -42,7 +45,9 @@ function setup() {
     getOrThrow: (name: string) =>
       name === 'REFRESH_ROTATIONS_PER_MINUTE'
         ? ROTATIONS_PER_MINUTE
-        : GRACE_SECONDS,
+        : name === 'SESSION_MAX_AGE_DAYS'
+          ? SESSION_MAX_AGE_DAYS
+          : GRACE_SECONDS,
   };
   const successors = {
     keep: vi.fn().mockResolvedValue(undefined),
@@ -503,6 +508,118 @@ describe('AuthService.refresh, replay audit and suspension', () => {
       code: 'UNAUTHENTICATED',
     });
     expect(successors.take).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService, the maximum age of a sign-in (SESSION_MAX_AGE_DAYS)', () => {
+  const NOW = new Date('2026-11-27T10:00:00.000Z').getTime();
+  const DAY = 86_400_000;
+  // The mocked refresh-token lifetime (cookieSettings) is one hour.
+  const REFRESH_TTL = 3_600_000;
+  const MAX_AGE = SESSION_MAX_AGE_DAYS * DAY;
+
+  // Only Date: the Redis timeouts in the service need a real setTimeout.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  function signInBegan(context: ReturnType<typeof setup>, agoMs: number) {
+    context.session.findUnique.mockResolvedValue(storedSession());
+    context.session.aggregate.mockResolvedValue({
+      _min: { createdAt: new Date(NOW - agoMs) },
+    });
+  }
+
+  it('starts a sign-in with a token of the usual lifetime', async () => {
+    const { service, session } = setup();
+    const tokens = await service.startSession(ACTIVE, CLIENT);
+    expect(session.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        expiresAt: new Date(NOW + REFRESH_TTL),
+      }),
+    });
+    expect(tokens.refreshExpiresAt).toBe(NOW + REFRESH_TTL);
+  });
+
+  it('rotates with the usual lifetime well within the limit', async () => {
+    const context = setup();
+    signInBegan(context, DAY);
+
+    const tokens = await context.service.refresh('old', CLIENT);
+
+    expect(context.session.aggregate).toHaveBeenCalledWith({
+      where: { familyId: 'family-1' },
+      _min: { createdAt: true },
+    });
+    expect(context.session.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        expiresAt: new Date(NOW + REFRESH_TTL),
+      }),
+    });
+    expect(tokens.refreshExpiresAt).toBe(NOW + REFRESH_TTL);
+  });
+
+  it('ends the new token with the sign-in when the limit is near', async () => {
+    const context = setup();
+    // 30 minutes left, less than the token's usual hour.
+    signInBegan(context, MAX_AGE - 30 * 60_000);
+
+    const tokens = await context.service.refresh('old', CLIENT);
+
+    expect(context.session.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        expiresAt: new Date(NOW + 30 * 60_000),
+      }),
+    });
+    // The cookies end then too, and so would a racing request's replay.
+    expect(tokens.refreshExpiresAt).toBe(NOW + 30 * 60_000);
+    expect(context.successors.keep).toHaveBeenCalledWith(
+      'hash:old',
+      expect.objectContaining({ refreshExpiresAt: NOW + 30 * 60_000 }),
+      GRACE_SECONDS * 1000,
+    );
+  });
+
+  it.each([
+    ['exactly at the limit', MAX_AGE],
+    ['past the limit', MAX_AGE + DAY],
+  ])(
+    'refuses a live token %s and ends the sign-in, without calling it theft',
+    async (_name, agoMs) => {
+      const context = setup();
+      signInBegan(context, agoMs);
+
+      await expect(
+        context.service.refresh('old', CLIENT),
+      ).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+      // Expired, not revoked: the guard refuses the sign-in at once, and the
+      // same cookie presented again is refused as expired.
+      expect(context.session.updateMany).toHaveBeenCalledTimes(1);
+      expect(context.session.updateMany).toHaveBeenCalledWith({
+        where: { familyId: 'family-1', revokedAt: null },
+        data: { expiresAt: new Date(NOW) },
+      });
+      expect(context.session.create).not.toHaveBeenCalled();
+      expect(context.audit.record).not.toHaveBeenCalled();
+      expect(context.rotations.count).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses the same cookie again later as expired, with no theft record', async () => {
+    const context = setup();
+    // The row the refusal expired, presented again a minute later.
+    vi.setSystemTime(NOW + 60_000);
+    context.session.findUnique.mockResolvedValue(
+      storedSession({ expiresAt: new Date(NOW) }),
+    );
+
+    await expect(context.service.refresh('old', CLIENT)).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+    });
+    expect(context.session.updateMany).not.toHaveBeenCalled();
+    expect(context.audit.record).not.toHaveBeenCalled();
   });
 });
 
