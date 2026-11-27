@@ -1,4 +1,9 @@
-import { ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Inject,
+  Injectable,
+  SetMetadata,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import {
@@ -10,7 +15,10 @@ import {
   ThrottlerOptionsFactory,
   type ThrottlerStorage,
 } from '@nestjs/throttler';
+import type { Redis } from 'ioredis';
+import { REDIS } from '../../redis/redis.module.js';
 import { signedClientAddress } from '../middleware/client-address.middleware.js';
+import { RedisThrottlerStorage } from './redis-throttler-storage.js';
 
 export type RateTier = 'auth' | 'search' | 'webhook' | 'default';
 const RATE_TIER = 'rateTier';
@@ -60,8 +68,13 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
   constructor(
     private readonly config: ConfigService,
     private readonly reflector: Reflector,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
+  /**
+   * Counters live in Redis (`RedisThrottlerStorage`), so every instance of
+   * the API shares them and a restart does not reset them.
+   */
   createThrottlerOptions(): ThrottlerModuleOptions {
     const limits: Record<RateTier, number> = {
       auth: this.config.getOrThrow<number>('RATE_LIMIT_AUTH_PER_MINUTE'),
@@ -83,7 +96,7 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
     const bookingWindowMs =
       this.config.getOrThrow<number>('RATE_LIMIT_BOOKING_WINDOW_SECONDS') *
       1000;
-    return [
+    const throttlers = [
       {
         name: 'booking',
         ttl: bookingWindowMs,
@@ -117,6 +130,13 @@ export class RateLimitConfig implements ThrottlerOptionsFactory {
         },
       },
     ];
+    return {
+      throttlers,
+      storage: new RedisThrottlerStorage(
+        this.redis,
+        this.config.getOrThrow<string>('RATE_LIMIT_KEY_PREFIX'),
+      ),
+    };
   }
 }
 

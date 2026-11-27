@@ -2,6 +2,7 @@ import type { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Reflector } from '@nestjs/core';
 import type { ThrottlerStorage } from '@nestjs/throttler';
+import type { Redis } from 'ioredis';
 import {
   RateLimitConfig,
   RateLimitGuard,
@@ -104,14 +105,17 @@ describe('RateLimitConfig tiers', () => {
   function limitFor(tier: string | undefined): number {
     const config = { getOrThrow: (name: string) => LIMITS[name] };
     const reflector = { getAllAndOverride: () => tier };
-    const options = new RateLimitConfig(
+    const { throttlers } = new RateLimitConfig(
       config as unknown as ConfigService,
       reflector as unknown as Reflector,
-    ).createThrottlerOptions() as Array<{
-      name: string;
-      limit: (context: ExecutionContext) => number;
-    }>;
-    const fallback = options.find((option) => option.name === 'default')!;
+      {} as Redis,
+    ).createThrottlerOptions() as {
+      throttlers: Array<{
+        name: string;
+        limit: (context: ExecutionContext) => number;
+      }>;
+    };
+    const fallback = throttlers.find((option) => option.name === 'default')!;
     return fallback.limit({
       getHandler: () => undefined,
       getClass: () => undefined,

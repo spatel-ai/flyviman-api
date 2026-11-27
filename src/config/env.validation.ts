@@ -273,6 +273,15 @@ export class EnvironmentVariables {
   RATE_LIMIT_WEBHOOK_PER_MINUTE: number = 120;
 
   /**
+   * Start of every rate-limit counter's Redis key. Every instance of one
+   * deployment uses the same value, so they share counters; servers that
+   * share a Redis database but must count apart (the test servers) differ.
+   */
+  @IsString()
+  @Matches(/^[a-z0-9-]{1,64}$/)
+  RATE_LIMIT_KEY_PREFIX: string = 'rate-limit';
+
+  /**
    * Where a new enquiry from the contact page is emailed: the operations
    * inbox. Deployments set the real address.
    */
