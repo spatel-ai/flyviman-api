@@ -88,15 +88,15 @@ function within<T>(work: Promise<T>, ms: number): Promise<T> {
  * across restarts. One script per hit, so concurrent requests on several
  * instances count exactly once each.
  *
- * Redis down or slow: the request is allowed (fail-open), with one warning
- * until Redis answers again. The limiter guards every route, health and
- * payment webhooks included, so refusing would turn a Redis outage into an
- * API outage. Sign-in guessing stays bounded by the sign-in lockout, which
- * refuses sign-in while Redis is unavailable.
+ * Redis down or slow: that hit is counted in this process's memory instead,
+ * so limits still apply per process (as before Redis), with one warning
+ * until Redis answers again. Refusing outright would turn a Redis outage
+ * into an API outage, health and payment webhooks included.
  */
 export class RedisThrottlerStorage implements ThrottlerStorage {
   private readonly logger = new Logger(RedisThrottlerStorage.name);
   private failing = false;
+  private fallback?: ThrottlerStorage;
 
   constructor(
     private readonly redis: Redis,
@@ -133,14 +133,22 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
     } catch {
       if (!this.failing) {
         this.failing = true;
-        this.logger.warn('Could not count a request in Redis; allowed');
+        this.logger.warn(
+          'Could not count a request in Redis; counting in memory',
+        );
       }
-      return {
-        totalHits: 0,
-        timeToExpire: Math.ceil(ttl / 1000),
-        isBlocked: false,
-        timeToBlockExpire: 0,
-      };
+      // Loaded on first use: Playwright's loader cannot import the package,
+      // and e2e/rate-limit-storage.e2e.ts imports this file.
+      this.fallback ??= new (
+        await import('@nestjs/throttler')
+      ).ThrottlerStorageService();
+      return this.fallback.increment(
+        key,
+        ttl,
+        limit,
+        blockDuration,
+        _throttlerName,
+      );
     }
     this.failing = false;
     const [totalHits, timeToExpire, isBlocked, timeToBlockExpire] = reply;

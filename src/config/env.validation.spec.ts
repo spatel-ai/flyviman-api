@@ -84,6 +84,10 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...production, COOKIE_DOMAIN: '' })).toThrow(
       refused,
     );
+    // Whitespace is unset too, never a domain that skips the secret.
+    expect(() => validateEnv({ ...production, COOKIE_DOMAIN: '  ' })).toThrow(
+      refused,
+    );
     expect(
       validateEnv({ ...production, ...PROXY_SECRET }).WEB_PROXY_SECRET,
     ).toBe(PROXY_SECRET.WEB_PROXY_SECRET);
@@ -94,6 +98,33 @@ describe('validateEnv', () => {
     ).toBeUndefined();
     // Not required outside production.
     expect(validateEnv(valid).WEB_PROXY_SECRET).toBeUndefined();
+  });
+
+  it('takes a cookie domain that looks like one, and refuses anything else', () => {
+    for (const good of ['.flyviman.com', 'flyviman.com', 'localhost']) {
+      expect(validateEnv({ ...valid, COOKIE_DOMAIN: good }).COOKIE_DOMAIN).toBe(
+        good,
+      );
+    }
+    expect(
+      validateEnv({ ...valid, COOKIE_DOMAIN: ' .flyviman.com ' }).COOKIE_DOMAIN,
+    ).toBe('.flyviman.com');
+    expect(validateEnv({ ...valid, COOKIE_DOMAIN: ' ' }).COOKIE_DOMAIN).toBe(
+      undefined,
+    );
+    for (const bad of [
+      'https://flyviman.com',
+      'flyviman.com/path',
+      'flyviman.com:443',
+      '..flyviman.com',
+      '-bad.com',
+      'a b.com',
+      'flyviman.com; Secure',
+    ]) {
+      expect(() => validateEnv({ ...valid, COOKIE_DOMAIN: bad })).toThrow(
+        /COOKIE_DOMAIN/,
+      );
+    }
   });
 
   it('caps the token lifetimes and the refresh grace period', () => {
@@ -134,7 +165,17 @@ describe('validateEnv', () => {
       validateEnv({ ...production, TRUST_PROXY_HOPS: '' }).TRUST_PROXY_HOPS,
     ).toBe(1);
     expect(
-      validateEnv({ ...production, TRUST_PROXY_HOPS: '0' }).TRUST_PROXY_HOPS,
+      validateEnv({ ...production, TRUST_PROXY_HOPS: '  ' }).TRUST_PROXY_HOPS,
+    ).toBe(1);
+    expect(
+      validateEnv({ ...valid, TRUST_PROXY_HOPS: ' ' }).TRUST_PROXY_HOPS,
+    ).toBe(0);
+    // 0 in production would make every caller the load balancer's address.
+    expect(() => validateEnv({ ...production, TRUST_PROXY_HOPS: '0' })).toThrow(
+      /TRUST_PROXY_HOPS must be at least 1 in production/,
+    );
+    expect(
+      validateEnv({ ...valid, TRUST_PROXY_HOPS: '0' }).TRUST_PROXY_HOPS,
     ).toBe(0);
     expect(
       validateEnv({ ...production, TRUST_PROXY_HOPS: '2' }).TRUST_PROXY_HOPS,

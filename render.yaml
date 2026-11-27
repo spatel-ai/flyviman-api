@@ -23,8 +23,9 @@ services:
     name: flyviman-redis
     plan: free
     region: singapore
-    # One-time codes, sessions' reset tokens and idempotency keys must not be
-    # evicted to make room.
+    # One-time codes, sessions' reset tokens, idempotency keys and rate-limit
+    # counters must not be evicted to make room. A full Redis refuses writes;
+    # rate limiting then falls back to per-process counting.
     maxmemoryPolicy: noeviction
     # No public access: only services in this account, over the private network.
     ipAllowList: []

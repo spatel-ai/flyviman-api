@@ -19,8 +19,13 @@ export function demoSeedRefusal(env: {
   }
   let host = '';
   try {
-    host = new URL(env.MIGRATION_DATABASE_URL || env.DATABASE_URL || '')
-      .hostname;
+    const url = new URL(env.MIGRATION_DATABASE_URL || env.DATABASE_URL || '');
+    // The driver prefers a `host`/`hostaddr` parameter over the URL's host.
+    const redirected = [...url.searchParams.keys()].some((name) =>
+      ['host', 'hostaddr'].includes(name.toLowerCase()),
+    );
+    // A tunnel to 127.0.0.1 still passes, by design.
+    host = redirected ? '' : url.hostname;
   } catch {
     // Unparseable or missing: refused below.
   }

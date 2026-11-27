@@ -23,6 +23,10 @@ import {
 
 export { DEV_PAYMENT_KEY_SECRET, DEV_PAYMENT_WEBHOOK_SECRET };
 
+/** Optional leading dot, then dot-separated hostname labels. */
+const COOKIE_DOMAIN_PATTERN =
+  /^\.?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
 export enum NodeEnv {
   Development = 'development',
   Test = 'test',
@@ -157,10 +161,16 @@ export class EnvironmentVariables {
 
   /**
    * Parent domain shared by the web app and the API, for example
-   * `.flyviman.com`. Leave unset locally so cookies are host-only.
+   * `.flyviman.com`. Leave unset locally so cookies are host-only. Blank
+   * counts as unset; otherwise an optional leading dot and a hostname.
    */
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
   @IsOptional()
-  @IsString()
+  @Matches(COOKIE_DOMAIN_PATTERN, {
+    message: 'COOKIE_DOMAIN must be a domain such as .flyviman.com',
+  })
   COOKIE_DOMAIN?: string;
 
   /**
@@ -178,10 +188,13 @@ export class EnvironmentVariables {
   /**
    * Proxies in front of the API that append to `X-Forwarded-For` (Express
    * `trust proxy`), so `request.ip` is the caller's address. Unset: 1 in
-   * production (the host's load balancer), 0 elsewhere. 0 trusts no header.
+   * production (the host's load balancer), 0 elsewhere. 0 trusts no header
+   * and is refused in production. Blank counts as unset.
    */
   @Transform(({ value }: { value: unknown }) =>
-    value === '' || value === undefined ? undefined : Number(value),
+    value === undefined || (typeof value === 'string' && value.trim() === '')
+      ? undefined
+      : Number(value),
   )
   @IsOptional()
   @IsInt()
@@ -662,6 +675,16 @@ export function validateEnv(
   ) {
     throw new Error(
       'Invalid environment configuration: WEB_PROXY_SECRET is required in production when COOKIE_DOMAIN is unset (the web host proxies /api/v1); set the same value on the web host.',
+    );
+  }
+
+  // 0 would make every caller the load balancer's address, one shared limit.
+  if (
+    validated.NODE_ENV === NodeEnv.Production &&
+    validated.TRUST_PROXY_HOPS === 0
+  ) {
+    throw new Error(
+      'Invalid environment configuration: TRUST_PROXY_HOPS must be at least 1 in production (the host proxies every request).',
     );
   }
 

@@ -58,7 +58,7 @@ describe('RedisThrottlerStorage', () => {
     });
   });
 
-  it('allows the request when Redis fails, warning once until it recovers', async () => {
+  it('counts in memory when Redis fails, warning once until it recovers', async () => {
     const redis = {
       eval: vi
         .fn()
@@ -78,25 +78,44 @@ describe('RedisThrottlerStorage', () => {
       )
       .mockImplementation(() => undefined);
 
-    const allowed = {
-      totalHits: 0,
-      timeToExpire: 600,
-      isBlocked: false,
-      timeToBlockExpire: 0,
-    };
     await expect(
       storage.increment('abc', 600_000, 5, 600_000, 'enquiry'),
-    ).resolves.toEqual(allowed);
+    ).resolves.toMatchObject({ totalHits: 1, isBlocked: false });
     await expect(
       storage.increment('abc', 600_000, 5, 600_000, 'enquiry'),
-    ).resolves.toEqual(allowed);
+    ).resolves.toMatchObject({ totalHits: 2, isBlocked: false });
     expect(warn).toHaveBeenCalledTimes(1);
     await storage.increment('abc', 600_000, 5, 600_000, 'enquiry');
     await storage.increment('abc', 600_000, 5, 600_000, 'enquiry');
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
-  it('allows the request when Redis is slow', async () => {
+  it('still blocks over the limit while Redis is down', async () => {
+    const redis = { eval: vi.fn().mockRejectedValue(new Error('down')) };
+    const storage = new RedisThrottlerStorage(
+      redis as unknown as Redis,
+      'rate-limit',
+    );
+    vi.spyOn(
+      (storage as unknown as { logger: { warn: () => void } }).logger,
+      'warn',
+    ).mockImplementation(() => undefined);
+
+    for (let hit = 1; hit <= 3; hit += 1) {
+      await expect(
+        storage.increment('abc', 60_000, 3, 60_000, 'default'),
+      ).resolves.toMatchObject({ totalHits: hit, isBlocked: false });
+    }
+    await expect(
+      storage.increment('abc', 60_000, 3, 60_000, 'default'),
+    ).resolves.toMatchObject({ totalHits: 4, isBlocked: true });
+    // Another key is counted separately.
+    await expect(
+      storage.increment('other', 60_000, 3, 60_000, 'default'),
+    ).resolves.toMatchObject({ totalHits: 1, isBlocked: false });
+  });
+
+  it('falls back to memory when Redis is slow', async () => {
     vi.useFakeTimers();
     const redis = { eval: vi.fn(() => new Promise(() => undefined)) };
     const storage = new RedisThrottlerStorage(
@@ -110,7 +129,10 @@ describe('RedisThrottlerStorage', () => {
 
     const result = storage.increment('abc', 60_000, 5, 60_000, 'default');
     await vi.advanceTimersByTimeAsync(RATE_LIMIT_REDIS_TIMEOUT_MS);
-    await expect(result).resolves.toMatchObject({ isBlocked: false });
+    await expect(result).resolves.toMatchObject({
+      totalHits: 1,
+      isBlocked: false,
+    });
   });
 
   it('refuses a throttler without a block duration', async () => {

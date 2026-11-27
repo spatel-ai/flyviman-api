@@ -33,6 +33,22 @@ describe('demoSeedRefusal', () => {
       demoSeedRefusal({ ...local, MIGRATION_DATABASE_URL: remote }),
     ).toMatch(/this machine/);
   });
+  it('refuses a host or hostaddr query parameter, which the driver prefers', () => {
+    for (const param of ['host=evil.example.com', 'hostaddr=203.0.113.9']) {
+      expect(
+        demoSeedRefusal({
+          ...local,
+          DATABASE_URL: `postgresql://u:p@localhost/db?${param}`,
+        }),
+      ).toMatch(/this machine/);
+    }
+    expect(
+      demoSeedRefusal({
+        ...local,
+        DATABASE_URL: 'postgresql://u:p@localhost/db?sslmode=disable&HOST=x',
+      }),
+    ).toMatch(/this machine/);
+  });
   it('refuses a missing database URL', () => {
     expect(
       demoSeedRefusal({ NODE_ENV: 'test', ENABLE_DEV_TOOLS: 'true' }),

@@ -255,6 +255,8 @@ export class AuthService {
     // refreshed. Rows issued since then already end in time; this catches
     // older ones. They are expired, not revoked, so the same cookie sent
     // again is refused as expired rather than audited as a stolen token.
+    // The sign-in's start is its family's earliest row, so Session rows of a
+    // live family must never be pruned (database-design.md).
     const family = await this.prisma.session.aggregate({
       where: { familyId: session.familyId },
       _min: { createdAt: true },
