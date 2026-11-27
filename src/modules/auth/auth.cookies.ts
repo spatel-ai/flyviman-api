@@ -44,8 +44,11 @@ export function setSessionCookies(
 ): void {
   const options = base(settings);
   // The browser drops the refresh cookie when the token ends, which is
-  // sooner than its usual lifetime near the end of the sign-in.
-  const refreshMaxAge = Math.max(0, tokens.refreshExpiresAt - Date.now());
+  // sooner than its usual lifetime near the end of the sign-in. A pair kept
+  // for replay before tokens carried their end has the usual lifetime.
+  const refreshMaxAge = Number.isFinite(tokens.refreshExpiresAt)
+    ? Math.max(0, tokens.refreshExpiresAt - Date.now())
+    : settings.refreshTtlSeconds * 1000;
   response.cookie(ACCESS_COOKIE, tokens.accessToken, {
     ...options,
     httpOnly: true,
