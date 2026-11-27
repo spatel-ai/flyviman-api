@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
@@ -29,6 +29,9 @@ import {
 import { PASSWORD_MIN_LENGTH } from '../../../common/crypto/password.js';
 import { E164, IsDateOnly } from '../../../common/validation/formats.js';
 import { OperatorAccessDto } from './operator-staff.dto.js';
+
+/** GSTIN: state code, PAN, entity number, 'Z', check character. No checksum. */
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
 const present = (_object: unknown, value: unknown) =>
   value !== null && value !== undefined;
@@ -134,8 +137,13 @@ export class UpdateOperatorProfileDto {
 
   @ApiPropertyOptional({ type: String, nullable: true, description: 'GSTIN.' })
   @ValidateIf(present)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
   @IsString()
-  @MaxLength(50)
+  @Matches(GSTIN, {
+    message: 'Enter a valid 15-character GSTIN, for example 27AAPFU0939F1ZV.',
+  })
   taxNumber?: string | null;
 
   @ApiPropertyOptional({ type: AddressDto, nullable: true })

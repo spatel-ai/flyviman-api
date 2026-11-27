@@ -185,6 +185,32 @@ test.describe('operator profile', () => {
     expect((await cleared.json()).data.missing).toContain('businessAddress');
   });
 
+  test('checks the GSTIN format and upper-cases a valid one', async ({
+    request,
+  }) => {
+    await registerOperator(request);
+    const bad = await request.patch('operator/profile', {
+      headers: await csrfHeaders(request),
+      data: { taxNumber: 'not-a-gstin' },
+    });
+    expect(bad.status()).toBe(400);
+    const details = (await bad.json()).error.details;
+    expect(details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'taxNumber',
+          issue: expect.stringContaining('valid 15-character GSTIN'),
+        }),
+      ]),
+    );
+    const ok = await request.patch('operator/profile', {
+      headers: await csrfHeaders(request),
+      data: { taxNumber: ' 27aapfu0939f1zv ' },
+    });
+    expect(ok.status()).toBe(200);
+    expect((await ok.json()).data.taxNumber).toBe('27AAPFU0939F1ZV');
+  });
+
   test('rejects an invalid address and a category operators cannot offer', async ({
     request,
   }) => {
