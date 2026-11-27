@@ -103,7 +103,7 @@ export function configureApp(app: INestApplication): void {
   // Behind the load balancer in deployed environments, so `request.ip` is the
   // caller's address (rate limiting and audit records depend on it).
   // TRUST_PROXY_HOPS: 1 in production unless set, 0 elsewhere.
-  const proxyHops = config.get<number>('TRUST_PROXY_HOPS') ?? 0;
+  const proxyHops = config.getOrThrow<number>('TRUST_PROXY_HOPS');
   if (proxyHops > 0) {
     (app as NestExpressApplication).set('trust proxy', proxyHops);
   }
