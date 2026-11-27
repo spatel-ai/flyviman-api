@@ -103,20 +103,25 @@ export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   @Min(60)
+  @Max(3600)
   ACCESS_TOKEN_TTL_SECONDS: number = 900;
 
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(90)
   REFRESH_TOKEN_TTL_DAYS: number = 30;
 
   /**
    * A rotated refresh token presented again within this many seconds is
    * treated as two requests racing, not as theft. See AuthService.refresh.
+   * At most a minute: a longer window would let a stolen token slip past
+   * reuse detection.
    */
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(60)
   REFRESH_ROTATION_GRACE_SECONDS: number = 10;
 
   /**
@@ -152,12 +157,27 @@ export class EnvironmentVariables {
    * Shared with the web host (its own WEB_PROXY_SECRET), which signs the
    * visitor's address into `x-flyviman-client-ip` when it proxies `/api/v1`.
    * Unset, that header is ignored and every caller is its connection's
-   * address. At least 32 characters.
+   * address. At least 32 characters. Required in production when
+   * COOKIE_DOMAIN is unset: there the web host proxies every visitor.
    */
   @IsOptional()
   @IsString()
   @MinLength(32)
   WEB_PROXY_SECRET?: string;
+
+  /**
+   * Proxies in front of the API that append to `X-Forwarded-For` (Express
+   * `trust proxy`), so `request.ip` is the caller's address. Unset: 1 in
+   * production (the host's load balancer), 0 elsewhere. 0 trusts no header.
+   */
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' || value === undefined ? undefined : Number(value),
+  )
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  TRUST_PROXY_HOPS?: number;
 
   /** Requests per minute, per address, on each sign-in route. */
   @Type(() => Number)
@@ -544,6 +564,8 @@ export function validateEnv(
   ) {
     validated.WHATSAPP_ENABLED = false;
   }
+  validated.TRUST_PROXY_HOPS ??=
+    validated.NODE_ENV === NodeEnv.Production ? 1 : 0;
   const errors = validateSync(validated, { skipMissingProperties: false });
 
   if (validated.ENABLE_DEV_TOOLS && validated.NODE_ENV === NodeEnv.Production) {
@@ -608,6 +630,19 @@ export function validateEnv(
   ) {
     throw new Error(
       'Invalid environment configuration: API_PUBLIC_URL must use https in production.',
+    );
+  }
+
+  // Without COOKIE_DOMAIN the web host proxies /api/v1 (D-065), so every
+  // visitor arrives from its address: without the signed visitor address,
+  // one caller could lock any email out of signing in for everyone.
+  if (
+    validated.NODE_ENV === NodeEnv.Production &&
+    !validated.COOKIE_DOMAIN &&
+    !validated.WEB_PROXY_SECRET
+  ) {
+    throw new Error(
+      'Invalid environment configuration: WEB_PROXY_SECRET is required in production when COOKIE_DOMAIN is unset (the web host proxies /api/v1); set the same value on the web host.',
     );
   }
 

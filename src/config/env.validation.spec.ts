@@ -11,6 +11,9 @@ const PAYMENT_SECRETS = {
   PAYMENT_WEBHOOK_SECRET: 'w'.repeat(24),
 };
 
+/** What a deployed server behind the web host's proxy sets (D-065). */
+const PROXY_SECRET = { WEB_PROXY_SECRET: 'p'.repeat(32) };
+
 const valid = {
   NODE_ENV: 'development',
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
@@ -37,6 +40,7 @@ describe('validateEnv', () => {
     const production = {
       ...valid,
       ...PAYMENT_SECRETS,
+      ...PROXY_SECRET,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'sink',
@@ -64,6 +68,85 @@ describe('validateEnv', () => {
     expect(() =>
       validateEnv({ ...valid, WEB_PROXY_SECRET: 'too-short' }),
     ).toThrow(/WEB_PROXY_SECRET/);
+  });
+
+  it('needs WEB_PROXY_SECRET in production behind the web host proxy (no COOKIE_DOMAIN)', () => {
+    const production = {
+      ...valid,
+      ...PAYMENT_SECRETS,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'sink',
+    };
+    const refused =
+      /WEB_PROXY_SECRET is required in production when COOKIE_DOMAIN is unset/;
+    expect(() => validateEnv(production)).toThrow(refused);
+    expect(() => validateEnv({ ...production, COOKIE_DOMAIN: '' })).toThrow(
+      refused,
+    );
+    expect(
+      validateEnv({ ...production, ...PROXY_SECRET }).WEB_PROXY_SECRET,
+    ).toBe(PROXY_SECRET.WEB_PROXY_SECRET);
+    // One domain for the site and the API: no proxy, so no secret needed.
+    expect(
+      validateEnv({ ...production, COOKIE_DOMAIN: '.flyviman.com' })
+        .WEB_PROXY_SECRET,
+    ).toBeUndefined();
+    // Not required outside production.
+    expect(validateEnv(valid).WEB_PROXY_SECRET).toBeUndefined();
+  });
+
+  it('caps the token lifetimes and the refresh grace period', () => {
+    for (const [name, min, max] of [
+      ['ACCESS_TOKEN_TTL_SECONDS', 60, 3600],
+      ['REFRESH_TOKEN_TTL_DAYS', 1, 90],
+      ['REFRESH_ROTATION_GRACE_SECONDS', 0, 60],
+    ] as const) {
+      expect(validateEnv({ ...valid, [name]: String(min) })[name]).toBe(min);
+      expect(validateEnv({ ...valid, [name]: String(max) })[name]).toBe(max);
+      for (const bad of [min - 1, max + 1]) {
+        expect(() => validateEnv({ ...valid, [name]: String(bad) })).toThrow(
+          new RegExp(name),
+        );
+      }
+    }
+    const env = validateEnv(valid);
+    expect(env.REFRESH_TOKEN_TTL_DAYS).toBe(30);
+    expect(env.REFRESH_ROTATION_GRACE_SECONDS).toBe(10);
+  });
+
+  it('trusts one proxy hop by default in production only, and takes 0 to 5', () => {
+    const production = {
+      ...valid,
+      ...PAYMENT_SECRETS,
+      ...PROXY_SECRET,
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://flyviman-web.example.com',
+      MESSAGING_PROVIDER: 'sink',
+    };
+    expect(validateEnv(valid).TRUST_PROXY_HOPS).toBe(0);
+    expect(
+      validateEnv({ ...valid, TRUST_PROXY_HOPS: '' }).TRUST_PROXY_HOPS,
+    ).toBe(0);
+    expect(validateEnv(production).TRUST_PROXY_HOPS).toBe(1);
+    // A blank value is unset, never 0, which would stop trusting the proxy.
+    expect(
+      validateEnv({ ...production, TRUST_PROXY_HOPS: '' }).TRUST_PROXY_HOPS,
+    ).toBe(1);
+    expect(
+      validateEnv({ ...production, TRUST_PROXY_HOPS: '0' }).TRUST_PROXY_HOPS,
+    ).toBe(0);
+    expect(
+      validateEnv({ ...production, TRUST_PROXY_HOPS: '2' }).TRUST_PROXY_HOPS,
+    ).toBe(2);
+    expect(
+      validateEnv({ ...valid, TRUST_PROXY_HOPS: '5' }).TRUST_PROXY_HOPS,
+    ).toBe(5);
+    for (const bad of ['6', '-1', '1.5', 'abc']) {
+      expect(() => validateEnv({ ...valid, TRUST_PROXY_HOPS: bad })).toThrow(
+        /TRUST_PROXY_HOPS/,
+      );
+    }
   });
 
   it('keeps the development helpers off unless asked, and never in production', () => {
@@ -106,6 +189,7 @@ describe('validateEnv', () => {
     const poc = {
       ...valid,
       ...PAYMENT_SECRETS,
+      ...PROXY_SECRET,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'sink',
@@ -149,6 +233,7 @@ describe('validateEnv', () => {
     const production = {
       ...valid,
       ...PAYMENT_SECRETS,
+      ...PROXY_SECRET,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'mock',
@@ -206,6 +291,7 @@ describe('validateEnv', () => {
     const production = {
       ...valid,
       ...PAYMENT_SECRETS,
+      ...PROXY_SECRET,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'smtp',
@@ -314,6 +400,7 @@ describe('validateEnv', () => {
     const production = {
       ...valid,
       ...PAYMENT_SECRETS,
+      ...PROXY_SECRET,
       NODE_ENV: 'production',
       WEB_ORIGIN: 'https://flyviman-web.example.com',
       MESSAGING_PROVIDER: 'sink',
@@ -425,6 +512,7 @@ describe('validateEnv', () => {
     it('in production needs the Razorpay keys, not the mock secrets', () => {
       const production = {
         ...valid,
+        ...PROXY_SECRET,
         NODE_ENV: 'production',
         WEB_ORIGIN: 'https://flyviman-web.example.com',
         MESSAGING_PROVIDER: 'sink',

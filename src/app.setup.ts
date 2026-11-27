@@ -102,8 +102,10 @@ export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix(API_PREFIX);
   // Behind the load balancer in deployed environments, so `request.ip` is the
   // caller's address (rate limiting and audit records depend on it).
-  if (config.get('NODE_ENV') === 'production') {
-    (app as NestExpressApplication).set('trust proxy', 1);
+  // TRUST_PROXY_HOPS: 1 in production unless set, 0 elsewhere.
+  const proxyHops = config.get<number>('TRUST_PROXY_HOPS') ?? 0;
+  if (proxyHops > 0) {
+    (app as NestExpressApplication).set('trust proxy', proxyHops);
   }
   // Behind the web host's /api/v1 proxy, the visitor's address arrives in a
   // header signed with WEB_PROXY_SECRET; it is used only when it verifies.

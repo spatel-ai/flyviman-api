@@ -7,7 +7,8 @@ const STRICT_ORIGIN = `http://localhost:${PORT + 1}`;
 export const POC_ORIGIN = `http://localhost:${PORT + 2}`;
 /**
  * Shared with the web host on a hosted deployment: it signs the visitor's
- * address (`e2e/support/visitor.ts`). Set on the main and strict servers.
+ * address (`e2e/support/visitor.ts`). Set on every server; production
+ * refuses to start without it unless COOKIE_DOMAIN is set.
  */
 export const WEB_PROXY_SECRET = 'e2e-web-proxy-secret-of-32-characters-or-more';
 
@@ -90,6 +91,8 @@ export default defineConfig({
         // Production needs its own payment secrets (never the defaults).
         PAYMENT_KEY_SECRET: 'e2e-poc-payment-key-secret',
         PAYMENT_WEBHOOK_SECRET: 'e2e-poc-payment-webhook-secret',
+        // Proxied (no COOKIE_DOMAIN), so production needs the shared secret.
+        WEB_PROXY_SECRET,
         PORT: String(PORT + 2),
       },
     },
