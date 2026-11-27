@@ -121,7 +121,7 @@ describe('hrefFor', () => {
       '/operator/requests/FV-1',
     );
     expect(hrefFor(ruleFor('air_ambulance.quoted'), 'AA-1')).toBe(
-      '/air-ambulance/requests/AA-1',
+      '/account/air-ambulance/AA-1',
     );
     expect(hrefFor(ruleFor('air_ambulance.received'), 'AA-1')).toBe(
       '/admin/air-ambulance/AA-1',
@@ -216,5 +216,44 @@ describe('optedOutChannels', () => {
     expect(
       optedOutChannels({ smsOptedOut: true, whatsappOptedOut: true }),
     ).toEqual(['SMS', 'WHATSAPP']);
+  });
+});
+
+/**
+ * The web app's page routes a link may lead to: the folders under
+ * `flyviman-web/src/app` ((customer), (operator), (admin) groups). Keep in
+ * step with them; a link to a route not listed here is a 404.
+ */
+const WEB_ROUTES: readonly RegExp[] = [
+  /^\/account\/trips\/[^/]+$/,
+  /^\/account\/air-ambulance\/[^/]+$/,
+  /^\/operator\/bookings\/[^/]+$/,
+  /^\/operator\/requests\/[^/]+$/,
+  /^\/operator\/air-ambulance\/[^/]+$/,
+  /^\/operator\/settlements$/,
+  /^\/admin\/bookings\/[^/]+$/,
+  /^\/admin\/air-ambulance\/[^/]+$/,
+  /^\/admin\/refunds$/,
+];
+
+describe('hrefFor leads to a real web route', () => {
+  it.each(NOTIFICATION_MATRIX.map((r) => [r.key, r] as const))(
+    '%s',
+    (_key, rule) => {
+      for (const confirmed of [false, true]) {
+        const href = hrefFor(rule, 'FV-1', { confirmed });
+        expect(WEB_ROUTES.some((route) => route.test(href))).toBe(true);
+      }
+    },
+  );
+
+  it('sends air ambulance links to the page of the audience', () => {
+    const customer = hrefFor(ruleFor('air_ambulance.quoted'), 'AA-1');
+    expect(customer).toBe('/account/air-ambulance/AA-1');
+    const operator = hrefFor(
+      { ...ruleFor('air_ambulance.quoted'), audience: 'OPERATOR' },
+      'AA-1',
+    );
+    expect(operator).toBe('/operator/air-ambulance/AA-1');
   });
 });

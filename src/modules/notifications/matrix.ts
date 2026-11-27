@@ -155,9 +155,9 @@ export function hrefFor(
   if (rule.subject === 'SETTLEMENT') return '/operator/settlements';
   if (rule.subject === 'REFUND') return '/admin/refunds';
   if (rule.subject === 'AIR_AMBULANCE') {
-    return rule.audience === 'OPERATIONS'
-      ? `/admin/air-ambulance/${ref}`
-      : `/air-ambulance/requests/${ref}`;
+    if (rule.audience === 'OPERATIONS') return `/admin/air-ambulance/${ref}`;
+    if (rule.audience === 'OPERATOR') return `/operator/air-ambulance/${ref}`;
+    return `/account/air-ambulance/${ref}`;
   }
   if (rule.audience === 'OPERATIONS') return `/admin/bookings/${ref}`;
   if (rule.audience === 'OPERATOR') {
