@@ -22,7 +22,8 @@ import { cookie, csrfHeaders, signIn } from './support/session.js';
  * Proof that every route is protected and reachable only by the roles
  * allowed (security-rbac.md, Authorisation). The golden file is the reviewed
  * table: a change to who may call what fails here until it is reviewed and
- * the file updated. Development tools (`/dev/*`) are left out: they exist
+ * the file updated. The anonymous sweep calls public GET routes only; public
+ * non-GET routes are covered by their own feature files. Development tools (`/dev/*`) are left out: they exist
  * only where `ENABLE_DEV_TOOLS` is on.
  */
 
@@ -349,6 +350,13 @@ test.describe('cross-tenant', () => {
     ).toContainEqual(
       expect.objectContaining({ id: memberId, status: 'INVITED' }),
     );
+
+    // Positive control: the owner's administrator can remove that member.
+    const ownRemoved = await request.delete(`operator/staff/${memberId}`, {
+      headers: await csrfHeaders(request),
+      data: { reason: 'Left the team' },
+    });
+    expect(ownRemoved.status()).toBeLessThan(300);
     await rival.dispose();
   });
 
@@ -426,10 +434,7 @@ test.describe('cross-tenant', () => {
     // Operator A staff with bookings rights but only another aircraft in reach.
     const other = await request.post('operator/aircraft', {
       headers: await csrfHeaders(request),
-      data: aircraftBody(
-        await locationId(request, 'BOM'),
-        `VT-${randomUUID().slice(0, 3).toUpperCase()}`,
-      ),
+      data: aircraftBody(await locationId(request, 'BOM')),
     });
     expect(other.status()).toBe(201);
     const otherId = ((await other.json()) as { data: { id: string } }).data.id;
@@ -477,6 +482,17 @@ test.describe('cross-tenant', () => {
     ).toContainEqual(
       expect.objectContaining({ id: changeId, status: 'REQUESTED' }),
     );
+
+    // Positive control: the owner's administrator can decide it, so the 404s
+    // above are about ownership and not a route that refuses everyone.
+    const ownDecided = await request.post(
+      `operator/change-requests/${changeId}/decide`,
+      {
+        headers: await csrfHeaders(request),
+        data: { decision: 'APPROVED', note: 'Yes, an hour later works' },
+      },
+    );
+    expect(ownDecided.status()).toBeLessThan(300);
     await Promise.all([customer.dispose(), rival.dispose(), staff.dispose()]);
   });
 });

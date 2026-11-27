@@ -59,6 +59,9 @@ export default defineConfig({
         RATE_LIMIT_SEARCH_PER_MINUTE: '100000',
         RATE_LIMIT_WEBHOOK_PER_MINUTE: '100000',
         REFRESH_ROTATION_GRACE_SECONDS: '0',
+        // The 30-day session test must not depend on a developer's .env.
+        SESSION_MAX_AGE_DAYS: '30',
+        REFRESH_TOKEN_TTL_DAYS: '30',
         WEB_PROXY_SECRET,
         OTP_RESEND_COOLDOWN_SECONDS: '0',
         OTP_MAX_PER_HOUR: '100000',
