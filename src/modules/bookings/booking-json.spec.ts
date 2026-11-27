@@ -86,6 +86,16 @@ describe('parseItinerary', () => {
       },
     ],
     [
+      'a departure time with an offset (the departure sort needs Z)',
+      {
+        ...ITINERARY,
+        legs: [
+          { ...ITINERARY.legs[0], departureAt: '2026-12-01T10:00:00+05:30' },
+          ITINERARY.legs[1],
+        ],
+      },
+    ],
+    [
       'an unknown aircraft category',
       { ...ITINERARY, aircraft: { ...ITINERARY.aircraft, category: 'UFO' } },
     ],

@@ -138,6 +138,14 @@ function whole(value: unknown, what: string, min: number, max: number) {
   return value as number;
 }
 
+/**
+ * Only UTC instants ending in `Z` pass. `bookingIdsByDeparture`
+ * (departure-order.ts) sorts `legs[0].departureAt` as text and relies on
+ * this: an offset such as `+05:30` would break text order = time order.
+ * Every writer stores `Date.toISOString()` (fixed width, milliseconds
+ * included), so stored values also compare correctly below one second; a
+ * value written without the `.sss` part would misorder only within its second.
+ */
 function instant(value: unknown, what: string): string {
   if (
     typeof value !== 'string' ||

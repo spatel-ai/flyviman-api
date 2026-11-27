@@ -13,6 +13,10 @@ export const CREATED_DESC: Prisma.BookingOrderByWithRelationInput[] = [
  * departure (`itinerary.legs[0].departureAt`, stored as an ISO string, so
  * text order is time order; rows without one come last).
  *
+ * Text order equals time order only because `instant()` in booking-json.ts
+ * accepts UTC instants ending in `Z` alone and every writer stores
+ * `Date.toISOString()` (fixed width). Loosening either breaks this sort.
+ *
  * The caller's scope stays in `where`: Prisma picks the ids, and the raw
  * statement only orders and slices those ids. The two statements below are
  * fixed text; `sort` chooses between them and no input is spliced in.
