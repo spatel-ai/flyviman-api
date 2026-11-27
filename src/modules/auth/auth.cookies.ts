@@ -16,6 +16,12 @@ export interface SessionTokens {
   accessToken: string;
   refreshToken: string;
   csrfToken: string;
+  /**
+   * When the refresh token ends (epoch milliseconds): its own lifetime, or
+   * the end of the sign-in if sooner. Kept with a replayed pair, so the
+   * cookies of every request it serves end at the same moment.
+   */
+  refreshExpiresAt: number;
 }
 
 function base(settings: CookieSettings): CookieOptions {
@@ -37,6 +43,9 @@ export function setSessionCookies(
   settings: CookieSettings,
 ): void {
   const options = base(settings);
+  // The browser drops the refresh cookie when the token ends, which is
+  // sooner than its usual lifetime near the end of the sign-in.
+  const refreshMaxAge = Math.max(0, tokens.refreshExpiresAt - Date.now());
   response.cookie(ACCESS_COOKIE, tokens.accessToken, {
     ...options,
     httpOnly: true,
@@ -45,12 +54,12 @@ export function setSessionCookies(
   response.cookie(REFRESH_COOKIE, tokens.refreshToken, {
     ...options,
     httpOnly: true,
-    maxAge: settings.refreshTtlSeconds * 1000,
+    maxAge: refreshMaxAge,
   });
   response.cookie(CSRF_COOKIE, tokens.csrfToken, {
     ...options,
     httpOnly: false,
-    maxAge: settings.refreshTtlSeconds * 1000,
+    maxAge: refreshMaxAge,
   });
 }
 

@@ -7,6 +7,8 @@ const PAIR = {
   accessToken: 'access-jwt',
   refreshToken: 'refresh-secret',
   csrfToken: 'csrf-secret',
+  // Replayed with the pair, so a racing request's cookies end no later.
+  refreshExpiresAt: 1_800_000_000_000,
 };
 
 function setup() {

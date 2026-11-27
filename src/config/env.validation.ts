@@ -128,6 +128,16 @@ export class EnvironmentVariables {
   @Min(1)
   REFRESH_ROTATIONS_PER_MINUTE: number = 30;
 
+  /**
+   * Days a sign-in lasts at most, however often it is refreshed (owner,
+   * 2026-11-27). Each rotation's refresh token ends by then.
+   */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  SESSION_MAX_AGE_DAYS: number = 30;
+
   /** Seconds before another one-time code can be sent to the same address. */
   @Type(() => Number)
   @IsInt()
