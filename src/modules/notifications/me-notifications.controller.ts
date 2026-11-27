@@ -1,9 +1,11 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
 } from '@nestjs/common';
 import {
@@ -16,7 +18,11 @@ import { PageQueryDto } from '../../common/dto/page-query.dto.js';
 import { Paginated } from '../../common/dto/paginated.js';
 import type { AuthUser } from '../auth/auth-user.js';
 import { AnyRole, CurrentUser } from '../auth/auth.decorators.js';
-import { NotificationResponseDto } from './dto/notification-response.dto.js';
+import {
+  MarkedReadDto,
+  NotificationResponseDto,
+  UnreadCountDto,
+} from './dto/notification-response.dto.js';
 import {
   InAppNotification,
   NotificationsService,
@@ -59,6 +65,25 @@ export class MeNotificationsController {
       result.pageSize,
       result.total,
     );
+  }
+
+  @Get('unread-count')
+  @ApiOperation({ summary: 'How many in-app notifications are unread' })
+  @ApiOkResponse({ type: UnreadCountDto })
+  async unreadCount(@CurrentUser() user: AuthUser): Promise<UnreadCountDto> {
+    return { unread: await this.notifications.unreadCount(user.id) };
+  }
+
+  @Post('read-all')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Mark all of the caller’s notifications as read',
+    description:
+      'Only the caller’s own. Idempotent: a second call marks none. Answers how many were marked.',
+  })
+  @ApiOkResponse({ type: MarkedReadDto })
+  async readAll(@CurrentUser() user: AuthUser): Promise<MarkedReadDto> {
+    return { marked: await this.notifications.markAllRead(user.id) };
   }
 
   @Patch(':id/read')

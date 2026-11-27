@@ -1,5 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
-import { expect, test } from '@playwright/test';
+import { type APIRequestContext, expect, test } from '@playwright/test';
 import { FieldCipher, isEncrypted } from '../src/common/crypto/field-cipher.js';
 import { encryptLegacySpecialAssistance } from '../src/modules/customers/special-assistance-backfill.js';
 import { registerCustomer } from './support/data.js';
@@ -329,7 +329,45 @@ test.describe('in-app notifications', () => {
     await other.dispose();
   });
 
+  test('counts unread, and mark-all-read touches only the caller’s own', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    await registerCustomer(request);
+    const other = await playwright.request.newContext({ baseURL });
+    await registerCustomer(other);
+    const count = async (who: APIRequestContext) =>
+      (await (await who.get('me/notifications/unread-count')).json()).data
+        .unread;
+    expect(await count(request)).toBe(1);
+    expect(await count(other)).toBe(1);
+
+    // CSRF-protected like the other state-changing routes.
+    expect((await request.post('me/notifications/read-all')).status()).toBe(
+      403,
+    );
+    const done = await request.post('me/notifications/read-all', {
+      headers: await csrfHeaders(request),
+    });
+    expect(done.status()).toBe(200);
+    expect((await done.json()).data.marked).toBe(1);
+    expect(await count(request)).toBe(0);
+    // The second user's notification is untouched.
+    expect(await count(other)).toBe(1);
+
+    // Idempotent: a second call marks none.
+    const again = await request.post('me/notifications/read-all', {
+      headers: await csrfHeaders(request),
+    });
+    expect((await again.json()).data.marked).toBe(0);
+    await other.dispose();
+  });
+
   test('refuses a caller who is not signed in', async ({ request }) => {
     expect((await request.get('me/notifications')).status()).toBe(401);
+    expect((await request.get('me/notifications/unread-count')).status()).toBe(
+      401,
+    );
   });
 });

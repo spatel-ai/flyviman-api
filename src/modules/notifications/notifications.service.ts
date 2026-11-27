@@ -455,6 +455,22 @@ export class NotificationsService {
     return new Paginated(items, page, pageSize, total);
   }
 
+  /** How many of the caller's in-app notifications are unread. */
+  async unreadCount(userId: string): Promise<number> {
+    return this.prisma.notification.count({
+      where: { userId, channel: NotificationChannel.IN_APP, readAt: null },
+    });
+  }
+
+  /** Marks all of the caller's own unread in-app notifications read. */
+  async markAllRead(userId: string): Promise<number> {
+    const { count } = await this.prisma.notification.updateMany({
+      where: { userId, channel: NotificationChannel.IN_APP, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return count;
+  }
+
   async markRead(userId: string, id: string): Promise<InAppNotification> {
     // Scoped to the owner: another user's notification is simply not found.
     const row = await this.prisma.notification.findFirst({

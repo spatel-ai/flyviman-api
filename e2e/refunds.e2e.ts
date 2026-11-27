@@ -709,6 +709,8 @@ test.describe('GET /payments/:reference/receipt', () => {
       refundedMinor: 0,
       netPaidMinor: totalMinor,
     });
+    // Issued when paid, so it does not move when the receipt is read again.
+    expect(receipt.issuedAt).toBe(receipt.paidAt);
     // The method type only: no card details (rule 10).
     expect(JSON.stringify(receipt)).not.toMatch(/last4|network|4242/);
 

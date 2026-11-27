@@ -146,6 +146,8 @@
   "GET /me/notification-preferences": ["CUSTOMER", "OPERATOR_ADMIN", "OPERATOR_STAFF"],
   "PATCH /me/notification-preferences": ["CUSTOMER", "OPERATOR_ADMIN", "OPERATOR_STAFF"],
   "GET /me/notifications": ["CUSTOMER", "FINANCE_ADMIN", "OPERATOR_ADMIN", "OPERATOR_STAFF", "OPS", "SUPER_ADMIN"],
+  "GET /me/notifications/unread-count": ["CUSTOMER", "FINANCE_ADMIN", "OPERATOR_ADMIN", "OPERATOR_STAFF", "OPS", "SUPER_ADMIN"],
+  "POST /me/notifications/read-all": ["CUSTOMER", "FINANCE_ADMIN", "OPERATOR_ADMIN", "OPERATOR_STAFF", "OPS", "SUPER_ADMIN"],
   "PATCH /me/notifications/:id/read": ["CUSTOMER", "FINANCE_ADMIN", "OPERATOR_ADMIN", "OPERATOR_STAFF", "OPS", "SUPER_ADMIN"],
   "GET /me/passengers": ["CUSTOMER"],
   "POST /me/passengers": ["CUSTOMER"],

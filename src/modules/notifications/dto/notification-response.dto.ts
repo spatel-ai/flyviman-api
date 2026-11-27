@@ -28,3 +28,13 @@ export class NotificationResponseDto {
   @ApiProperty({ format: 'date-time' })
   createdAt: string;
 }
+
+export class UnreadCountDto {
+  @ApiProperty({ example: 3 })
+  unread: number;
+}
+
+export class MarkedReadDto {
+  @ApiProperty({ example: 3, description: 'How many were marked read.' })
+  marked: number;
+}

@@ -222,7 +222,8 @@ export class ReceiptsService {
       documentType: 'PAYMENT_RECEIPT',
       notice: RECEIPT_NOTICE,
       receiptNumber: row.reference,
-      issuedAt: new Date().toISOString(),
+      // Issued when the payment was confirmed, not when it is viewed (W1-026).
+      issuedAt: row.paidAt.toISOString(),
       issuer: {
         name: this.config.getOrThrow<string>('RECEIPT_ISSUER_NAME'),
         address: this.config.get<string>('RECEIPT_ISSUER_ADDRESS') ?? null,

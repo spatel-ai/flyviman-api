@@ -1186,6 +1186,61 @@
         ]
       }
     },
+    "/api/v1/me/notifications/unread-count": {
+      "get": {
+        "operationId": "MeNotificationsController_unreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "How many in-app notifications are unread",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/notifications/read-all": {
+      "post": {
+        "description": "Only the caller’s own. Idempotent: a second call marks none. Answers how many were marked.",
+        "operationId": "MeNotificationsController_readAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkedReadDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "summary": "Mark all of the caller’s notifications as read",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/notifications/{id}/read": {
       "patch": {
         "operationId": "MeNotificationsController_read",
@@ -11214,6 +11269,31 @@
           "href",
           "readAt",
           "createdAt"
+        ]
+      },
+      "UnreadCountDto": {
+        "type": "object",
+        "properties": {
+          "unread": {
+            "type": "number",
+            "example": 3
+          }
+        },
+        "required": [
+          "unread"
+        ]
+      },
+      "MarkedReadDto": {
+        "type": "object",
+        "properties": {
+          "marked": {
+            "type": "number",
+            "example": 3,
+            "description": "How many were marked read."
+          }
+        },
+        "required": [
+          "marked"
         ]
       },
       "ProfileResponseDto": {
