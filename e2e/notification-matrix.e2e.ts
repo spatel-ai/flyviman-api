@@ -317,7 +317,7 @@ test.describe('notification matrix', () => {
     const own = (await inApp(customer)).find(
       (n) => n.templateKey === 'air_ambulance.cancelled',
     );
-    expect(own?.href).toBe(`/air-ambulance/requests/${reference}`);
+    expect(own?.href).toBe(`/account/air-ambulance/${reference}`);
     expect(own?.body).toMatch(/emergency/i);
     const text = (await outbox(request, phone)).filter((m) =>
       m.body.includes(reference),
