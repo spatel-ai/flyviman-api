@@ -6,10 +6,16 @@ import { RedisThrottlerStorage } from '../src/common/rate-limit/redis-throttler-
 
 // The rate limiter's counting script against the real Redis the API uses:
 // counters shared by every instance and kept across restarts.
-const PREFIX = 'e2e-storage';
 const MINUTE = 60_000;
 
+// Each test has its own prefix, so tests running in parallel never clear
+// each other's counters.
+let PREFIX = '';
 let connections: Redis[] = [];
+
+test.beforeEach(() => {
+  PREFIX = `e2e-storage-${randomUUID()}`;
+});
 
 /** A storage on its own connection, as another API instance would have. */
 function instance(): RedisThrottlerStorage {
