@@ -20,6 +20,7 @@ import {
   WingType,
 } from './generated/prisma/enums.js';
 import { hashPassword } from './common/crypto/password.js';
+import { demoSeedRefusal } from './seed-demo-guard.js';
 import { emptyLegReference } from './common/reference.js';
 import type { StaffPermissions } from './modules/operators/operator-access.js';
 
@@ -35,12 +36,14 @@ try {
  * an empty leg. Run after the base seed (`npm run seed:demo` does both).
  * Safe to run again: rows are found by a stable key and left alone, except
  * the demo passwords and the open time, which are reset so the demo always
- * works. Local and test databases only.
+ * works. Local databases only: it refuses unless ENABLE_DEV_TOOLS=true and the
+ * database host is this machine.
  *
  *   npm run seed:demo
  */
-if (process.env.NODE_ENV === 'production') {
-  throw new Error('The demo data is never seeded in production.');
+const refusal = demoSeedRefusal(process.env);
+if (refusal) {
+  throw new Error(refusal);
 }
 
 const PASSWORD = 'Flyviman@Demo1';
