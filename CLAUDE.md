@@ -17,8 +17,8 @@ Workspace rules, the business rules that must never be broken, and the index of 
 | API reference | `@nestjs/swagger`, served at `/api/docs` (JSON at `/api/docs-json`) |
 | Configuration | `@nestjs/config`, validated at start-up in `src/config/env.validation.ts` |
 | Sessions | `@nestjs/jwt` access tokens and rotating opaque refresh tokens in cookies; passwords hashed with `argon2` |
-| Redis | `ioredis` (`src/redis`): one-time codes, reset and invitation tokens, sign-in failure counts (idempotency keys are in PostgreSQL) |
-| Rate limiting | `@nestjs/throttler` (in-memory counters) |
+| Redis | `ioredis` (`src/redis`): one-time codes, reset and invitation tokens, sign-in failure counts, rate-limit counters (idempotency keys are in PostgreSQL) |
+| Rate limiting | `@nestjs/throttler`, counters in Redis (`RedisThrottlerStorage`, shared by every instance) |
 | Logging | `nestjs-pino`, structured JSON with the request ID |
 | Unit tests | Vitest, `*.spec.ts` next to the code |
 | Integration tests | Playwright request client, `e2e/*.e2e.ts` |

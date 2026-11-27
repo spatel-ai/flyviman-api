@@ -10,6 +10,12 @@ export const POC_ORIGIN = `http://localhost:${PORT + 2}`;
  * address (`e2e/support/visitor.ts`). Set on the main and strict servers.
  */
 export const WEB_PROXY_SECRET = 'e2e-web-proxy-secret-of-32-characters-or-more';
+/**
+ * The three servers share one Redis database but have different limits, so
+ * each counts under its own rate-limit prefix; the run's own prefix keeps a
+ * rerun from inheriting the last run's counts, as a restart once did.
+ */
+const RATE_LIMIT_RUN = `e2e-${Date.now().toString(36)}`;
 
 /**
  * API integration tests. They call the running API over HTTP through
@@ -44,6 +50,7 @@ export default defineConfig({
         // Tests always use the mock, whatever a developer's .env says.
         MESSAGING_PROVIDER: 'mock',
         PORT: String(PORT),
+        RATE_LIMIT_KEY_PREFIX: `${RATE_LIMIT_RUN}-main`,
         RATE_LIMIT_AUTH_PER_MINUTE: '100000',
         RATE_LIMIT_BOOKING_PER_WINDOW: '100000',
         RATE_LIMIT_DEFAULT_PER_MINUTE: '100000',
@@ -70,6 +77,7 @@ export default defineConfig({
         ENABLE_DEV_TOOLS: 'true',
         MESSAGING_PROVIDER: 'mock',
         PORT: String(PORT + 1),
+        RATE_LIMIT_KEY_PREFIX: `${RATE_LIMIT_RUN}-strict`,
         WEB_PROXY_SECRET,
       },
     },
@@ -91,6 +99,7 @@ export default defineConfig({
         PAYMENT_KEY_SECRET: 'e2e-poc-payment-key-secret',
         PAYMENT_WEBHOOK_SECRET: 'e2e-poc-payment-webhook-secret',
         PORT: String(PORT + 2),
+        RATE_LIMIT_KEY_PREFIX: `${RATE_LIMIT_RUN}-poc`,
       },
     },
   ],
