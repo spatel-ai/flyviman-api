@@ -222,6 +222,37 @@ test.describe('POST /bookings/:reference/payments', () => {
   });
 });
 
+test.describe('GET /bookings/:reference holdExpiresAt', () => {
+  test('the owner sees the booking hold expiry, equal to the hold; another customer gets 404', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { customer, reference } = await bookingAwaitingPayment({
+      request,
+      playwright,
+      baseURL,
+    });
+    const hold = await withPrisma(async (prisma) => {
+      const booking = await prisma.booking.findUniqueOrThrow({
+        where: { reference },
+      });
+      return prisma.availabilityBlock.findFirstOrThrow({
+        where: { bookingId: booking.id, reason: 'SOFT_HOLD' },
+      });
+    });
+    const response = await customer.get(`bookings/${reference}`);
+    expect(response.status()).toBe(200);
+    const body = (await response.json()).data;
+    expect(body.holdExpiresAt).toBe(hold.expiresAt?.toISOString());
+    expect(Date.parse(body.holdExpiresAt)).toBeGreaterThan(Date.now());
+
+    const other = await playwright.request.newContext({ baseURL });
+    await registerCustomer(other);
+    expect((await other.get(`bookings/${reference}`)).status()).toBe(404);
+  });
+});
+
 test.describe('POST /payments/:reference/verify', () => {
   test('a signed checkout result makes the payment PENDING, never paid; a forged one is refused', async ({
     request,

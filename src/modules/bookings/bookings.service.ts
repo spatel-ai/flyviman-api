@@ -18,6 +18,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import {
   AircraftAvailabilityStatus,
   AircraftListingStatus,
+  AvailabilityBlockReason,
   BookingEventType,
   type BookingPaymentStatus,
   BookingStatus,
@@ -465,6 +466,13 @@ export class BookingsService implements OnApplicationBootstrap {
         passengers: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         calculation: { select: { validUntil: true } },
         changeRequests: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] },
+        // The booking's own soft hold: when it lapses the unpaid booking closes.
+        holds: {
+          where: { reason: AvailabilityBlockReason.SOFT_HOLD },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+          select: { expiresAt: true },
+        },
       },
     });
     if (!booking) throw notFound();
@@ -476,6 +484,7 @@ export class BookingsService implements OnApplicationBootstrap {
       status: booking.status,
       paymentStatus: booking.paymentStatus,
       amountDue: await this.amountDueNow(booking),
+      holdExpiresAt: booking.holds[0]?.expiresAt?.toISOString() ?? null,
       bookingMode: booking.bookingMode,
       paymentModel: booking.paymentModel,
       price: isQuoteRequest(booking)

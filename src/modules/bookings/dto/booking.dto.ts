@@ -415,6 +415,15 @@ export class BookingResponseDto {
   })
   amountDue: BookingAmountDueDto | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the booking’s hold on the aircraft lapses: an unpaid `AWAITING_PAYMENT` booking is closed as `EXPIRED` by the hold-expiry job after this time (a payment waiting at the gateway delays the close). Null when the booking holds no aircraft. Read-only; the owner sees it.',
+  })
+  holdExpiresAt: string | null;
+
   // Not `enumName`: that would replace the shared schema's description.
   @ApiProperty({
     enum: BookingMode,
