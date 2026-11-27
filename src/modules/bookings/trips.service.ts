@@ -24,6 +24,11 @@ import { NotificationEventsService } from '../notifications/events/notification-
 import { OperatorsService } from '../operators/operators.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { CANCELLABLE } from './booking-transitions.js';
+import {
+  bookingIdsByDeparture,
+  CREATED_DESC,
+  inIdOrder,
+} from './departure-order.js';
 import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
 import { evaluateCancellation } from './cancellation.js';
@@ -106,15 +111,34 @@ export class TripsService {
       customerId: user.id,
       status: upcoming ? { in: [...CANCELLABLE] } : { notIn: [...CANCELLABLE] },
     };
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.booking.findMany({
+    let rows: Prisma.BookingGetPayload<object>[];
+    let total: number;
+    if (query.sort === 'created_desc') {
+      [rows, total] = await this.prisma.$transaction([
+        this.prisma.booking.findMany({
+          where,
+          orderBy: CREATED_DESC,
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        }),
+        this.prisma.booking.count({ where }),
+      ]);
+    } else {
+      const picked = await bookingIdsByDeparture(
+        this.prisma,
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.booking.count({ where }),
-    ]);
+        query.sort,
+        query.page,
+        query.pageSize,
+      );
+      total = picked.total;
+      rows = inIdOrder(
+        await this.prisma.booking.findMany({
+          where: { AND: [where, { id: { in: picked.ids } }] },
+        }),
+        picked.ids,
+      );
+    }
     return {
       items: rows.map((row) => {
         const itinerary = parseItinerary(row.itinerary);

@@ -9,7 +9,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
+import { SortedPageQueryDto } from '../../../common/dto/list-sort.js';
 import { IsPlainText } from '../../../common/validation/text.js';
 import {
   BookingPaymentStatus,
@@ -24,7 +24,7 @@ import {
 } from './booking.dto.js';
 import { BookingRequestAircraftDto } from './booking-request.dto.js';
 
-export class OperatorBookingQueryDto extends PageQueryDto {
+export class OperatorBookingQueryDto extends SortedPageQueryDto {
   @ApiPropertyOptional({
     enum: BookingStatus,
     enumName: 'BookingStatus',

@@ -3,6 +3,7 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import type { Redis } from 'ioredis';
+import type { ListSort } from '../../common/dto/list-sort.js';
 import { Paginated } from '../../common/dto/paginated.js';
 import { AppException } from '../../common/errors/app.exception.js';
 import { uniqueOrNull } from '../../common/errors/unique.js';
@@ -245,6 +246,16 @@ function routeLabel(row: OfferRow): string {
  * listing; customers' interest; and the expiry job. Owns EmptyLeg and
  * EmptyLegInterest.
  */
+/** One fixed order per `sort` value, each with `id` to keep paging stable. */
+const EMPTY_LEG_ORDER: Record<
+  ListSort,
+  Prisma.EmptyLegOrderByWithRelationInput[]
+> = {
+  created_desc: [{ createdAt: 'desc' }, { id: 'asc' }],
+  departure_asc: [{ departureWindowStart: 'asc' }, { id: 'asc' }],
+  departure_desc: [{ departureWindowStart: 'desc' }, { id: 'desc' }],
+};
+
 @Injectable()
 export class EmptyLegsService {
   private readonly logger = new Logger(EmptyLegsService.name);
@@ -638,7 +649,12 @@ export class EmptyLegsService {
 
   async operatorList(
     user: AuthUser,
-    query: { page: number; pageSize: number; status?: EmptyLegStatus },
+    query: {
+      page: number;
+      pageSize: number;
+      status?: EmptyLegStatus;
+      sort: ListSort;
+    },
   ): Promise<Paginated<OfferRow>> {
     const { access } = await this.scope(user);
     const where = { ...this.ownWhere(access), status: query.status };
@@ -646,7 +662,7 @@ export class EmptyLegsService {
       this.prisma.emptyLeg.findMany({
         where,
         include: OFFER_INCLUDE,
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        orderBy: EMPTY_LEG_ORDER[query.sort],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),

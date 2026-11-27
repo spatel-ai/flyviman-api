@@ -6,6 +6,7 @@ import { encryptLegacyFreeText } from '../src/modules/bookings/free-text-backfil
 import { registerCustomer } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { approvedOperator } from './support/fleet.js';
+import { pagedReferences, threeDepartures } from './support/list-sort.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
@@ -178,6 +179,51 @@ test.describe('GET /me/bookings', () => {
     expect((await customer.get('me/bookings?pageSize=51')).status()).toBe(400);
     expect((await customer.get('me/bookings?view=all')).status()).toBe(400);
     expect((await request.get('me/bookings')).status()).toBe(403);
+  });
+});
+
+test.describe('GET /me/bookings sort', () => {
+  test('orders by departure across pages, keeps the default, rejects unknown values and stays scoped', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { customer, reference } = await bookedTrip(contexts);
+    const own = (await (await customer.get('me/bookings')).json()).data[0]
+      .departureAt as string;
+    const { earlier, later } = await threeDepartures(reference, own);
+
+    const get = (url: string) => customer.get(url);
+    // Default: newest created first, as before the parameter existed.
+    expect(await pagedReferences(get, 'me/bookings', 3)).toEqual([
+      later,
+      earlier,
+      reference,
+    ]);
+    expect(
+      await pagedReferences(get, 'me/bookings?sort=created_desc', 3),
+    ).toEqual([later, earlier, reference]);
+    expect(
+      await pagedReferences(get, 'me/bookings?sort=departure_asc', 3),
+    ).toEqual([earlier, reference, later]);
+    expect(
+      await pagedReferences(get, 'me/bookings?sort=departure_desc', 3),
+    ).toEqual([later, reference, earlier]);
+    const total = (
+      await (
+        await customer.get('me/bookings?sort=departure_asc&pageSize=1&page=2')
+      ).json()
+    ).meta.total;
+    expect(total).toBe(3);
+
+    const invalid = await customer.get('me/bookings?sort=price_asc');
+    expect(invalid.status()).toBe(400);
+    expect((await invalid.json()).error.code).toBe('VALIDATION_ERROR');
+
+    const stranger = await newCustomer(contexts);
+    const theirs = await stranger.get('me/bookings?sort=departure_asc');
+    expect((await theirs.json()).data).toHaveLength(0);
   });
 });
 

@@ -11,7 +11,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../common/dto/optional.js';
-import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
+import { SortedPageQueryDto } from '../../../common/dto/list-sort.js';
 import { IsPlainText } from '../../../common/validation/text.js';
 import {
   BookingPaymentStatus,
@@ -34,7 +34,7 @@ const MAX_MINOR = 10_000_000_000;
 export const TRIP_VIEWS = ['upcoming', 'past'] as const;
 export type TripView = (typeof TRIP_VIEWS)[number];
 
-export class TripsQueryDto extends PageQueryDto {
+export class TripsQueryDto extends SortedPageQueryDto {
   @ApiPropertyOptional({
     enum: TRIP_VIEWS,
     default: 'upcoming',

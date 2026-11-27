@@ -4099,6 +4099,21 @@
             "schema": {
               "$ref": "#/components/schemas/EmptyLegStatus"
             }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "`created_desc`: newest first (the default). `departure_asc` / `departure_desc`: by the first departure, soonest or latest first, across all pages; rows with no departure time come last. Ties are broken by id, so paging is stable.",
+            "schema": {
+              "default": "created_desc",
+              "type": "string",
+              "enum": [
+                "created_desc",
+                "departure_asc",
+                "departure_desc"
+              ]
+            }
           }
         ],
         "responses": {
@@ -4121,7 +4136,7 @@
             "cookie": []
           }
         ],
-        "summary": "List own offers, newest first",
+        "summary": "List own offers, newest first or by departure",
         "tags": [
           "operator-empty-legs"
         ]
@@ -6144,6 +6159,21 @@
             }
           },
           {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "`created_desc`: newest first (the default). `departure_asc` / `departure_desc`: by the first departure, soonest or latest first, across all pages; rows with no departure time come last. Ties are broken by id, so paging is stable.",
+            "schema": {
+              "default": "created_desc",
+              "type": "string",
+              "enum": [
+                "created_desc",
+                "departure_asc",
+                "departure_desc"
+              ]
+            }
+          },
+          {
             "name": "view",
             "required": false,
             "in": "query",
@@ -7032,6 +7062,21 @@
             }
           },
           {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "`created_desc`: newest first (the default). `departure_asc` / `departure_desc`: by the first departure, soonest or latest first, across all pages; rows with no departure time come last. Ties are broken by id, so paging is stable.",
+            "schema": {
+              "default": "created_desc",
+              "type": "string",
+              "enum": [
+                "created_desc",
+                "departure_asc",
+                "departure_desc"
+              ]
+            }
+          },
+          {
             "name": "status",
             "required": false,
             "in": "query",
@@ -7372,6 +7417,21 @@
               "maximum": 100,
               "default": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "`created_desc`: newest first (the default). `departure_asc` / `departure_desc`: by the first departure, soonest or latest first, across all pages; rows with no departure time come last. Ties are broken by id, so paging is stable.",
+            "schema": {
+              "default": "created_desc",
+              "type": "string",
+              "enum": [
+                "created_desc",
+                "departure_asc",
+                "departure_desc"
+              ]
             }
           },
           {

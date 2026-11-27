@@ -98,6 +98,66 @@ async function listedIds(request: APIRequestContext, params = {}) {
   return ids;
 }
 
+test.describe('GET /operator/empty-legs sort', () => {
+  test('orders by departure across pages, keeps the default, rejects unknown values and stays scoped', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const { trip, offer } = await draftOffer(request, playwright, baseURL);
+    const make = async (departure: [number, number], to: [number, number]) => {
+      const created = await request.post('operator/empty-legs', {
+        headers: await csrfHeaders(request),
+        data: {
+          ...offerBody(trip),
+          departureFrom: inDays(...departure).toISOString(),
+          departureTo: inDays(...to).toISOString(),
+        },
+      });
+      expect(created.status()).toBe(201);
+      return (await created.json()).data.id as string;
+    };
+    // Made after `offer` (departs in 6 days): one sooner, then one later.
+    const earlier = await make([5, 4], [5, 12]);
+    const later = await make([8, 4], [8, 12]);
+
+    const ids = async (query: string) => {
+      const found: string[] = [];
+      for (let page = 1; page <= 3; page += 1) {
+        const response = await request.get(
+          `operator/empty-legs?${query}page=${page}&pageSize=1`,
+        );
+        expect(response.status()).toBe(200);
+        found.push(
+          ...(await response.json()).data.map((o: { id: string }) => o.id),
+        );
+      }
+      return found;
+    };
+    expect(await ids('')).toEqual([later, earlier, offer.id]);
+    expect(await ids('sort=created_desc&')).toEqual([later, earlier, offer.id]);
+    expect(await ids('sort=departure_asc&')).toEqual([
+      earlier,
+      offer.id,
+      later,
+    ]);
+    expect(await ids('sort=departure_desc&')).toEqual([
+      later,
+      offer.id,
+      earlier,
+    ]);
+
+    const invalid = await request.get('operator/empty-legs?sort=price_asc');
+    expect(invalid.status()).toBe(400);
+    expect((await invalid.json()).error.code).toBe('VALIDATION_ERROR');
+
+    const other = await playwright.request.newContext({ baseURL });
+    await listedJet({ request: other, playwright, baseURL });
+    const theirs = await other.get('operator/empty-legs?sort=departure_asc');
+    expect((await theirs.json()).data).toHaveLength(0);
+  });
+});
+
 test.describe('operator offers and the public listing', () => {
   test('a published offer is listed with a labelled quote, filters apply, and withdrawal ends it', async ({
     request,

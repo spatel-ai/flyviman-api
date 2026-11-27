@@ -14,6 +14,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../common/dto/optional.js';
+import { type ListSort, SortField } from '../../../common/dto/list-sort.js';
 import { PageQueryDto } from '../../../common/dto/page-query.dto.js';
 import { IsDateOnly } from '../../../common/validation/formats.js';
 import { IsPlainText } from '../../../common/validation/text.js';
@@ -188,6 +189,12 @@ export class OperatorEmptyLegQueryDto extends PageQueryDto {
   @IsOptional()
   @IsEnum(EmptyLegStatus)
   status?: EmptyLegStatus;
+}
+
+/** The operator's list: the admin's filters do not apply, but the order does. */
+export class OperatorEmptyLegListQueryDto extends OperatorEmptyLegQueryDto {
+  @SortField()
+  sort: ListSort = 'created_desc';
 }
 
 export class AdminEmptyLegQueryDto extends OperatorEmptyLegQueryDto {

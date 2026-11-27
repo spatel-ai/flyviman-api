@@ -56,6 +56,11 @@ import { UsersService } from '../users/users.service.js';
 import { parseCancellationTerms, parseItinerary } from './booking-json.js';
 import { isQuoteRequest } from './booking-snapshot.js';
 import { BookingsService } from './bookings.service.js';
+import {
+  bookingIdsByDeparture,
+  CREATED_DESC,
+  inIdOrder,
+} from './departure-order.js';
 import { changeRequestView, decisionNotes } from './change-requests.js';
 import {
   holdsHoldExpiry,
@@ -194,16 +199,36 @@ export class BookingRequestsService {
       status: query.status ?? { in: WAITING },
       ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
     };
-    const [rows, total] = await Promise.all([
-      this.prisma.booking.findMany({
+    let rows: Prisma.BookingGetPayload<{ include: typeof BOOKING_INCLUDE }>[];
+    let total: number;
+    if (query.sort === 'created_desc') {
+      [rows, total] = await Promise.all([
+        this.prisma.booking.findMany({
+          where,
+          include: BOOKING_INCLUDE,
+          orderBy: CREATED_DESC,
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        }),
+        this.prisma.booking.count({ where }),
+      ]);
+    } else {
+      const picked = await bookingIdsByDeparture(
+        this.prisma,
         where,
-        include: BOOKING_INCLUDE,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.booking.count({ where }),
-    ]);
+        query.sort,
+        query.page,
+        query.pageSize,
+      );
+      total = picked.total;
+      rows = inIdOrder(
+        await this.prisma.booking.findMany({
+          where: { AND: [where, { id: { in: picked.ids } }] },
+          include: BOOKING_INCLUDE,
+        }),
+        picked.ids,
+      );
+    }
     const now = new Date();
     return new Paginated(
       rows.map((row) => this.toOperator(row, now)),

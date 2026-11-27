@@ -29,6 +29,11 @@ import type {
   OPERATOR_STATUS_MOVES,
 } from './dto/operator-booking.dto.js';
 import { TripsService } from './trips.service.js';
+import {
+  bookingIdsByDeparture,
+  CREATED_DESC,
+  inIdOrder,
+} from './departure-order.js';
 
 /** The list's default view: the trips still to fly. */
 const UPCOMING: BookingStatus[] = [
@@ -115,16 +120,36 @@ export class OperatorBookingsService {
       ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
       ...departure,
     };
-    const [rows, total] = await Promise.all([
-      this.prisma.booking.findMany({
+    let rows: Prisma.BookingGetPayload<{ include: typeof SUMMARY_INCLUDE }>[];
+    let total: number;
+    if (query.sort === 'created_desc') {
+      [rows, total] = await Promise.all([
+        this.prisma.booking.findMany({
+          where,
+          include: SUMMARY_INCLUDE,
+          orderBy: CREATED_DESC,
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        }),
+        this.prisma.booking.count({ where }),
+      ]);
+    } else {
+      const picked = await bookingIdsByDeparture(
+        this.prisma,
         where,
-        include: SUMMARY_INCLUDE,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.booking.count({ where }),
-    ]);
+        query.sort,
+        query.page,
+        query.pageSize,
+      );
+      total = picked.total;
+      rows = inIdOrder(
+        await this.prisma.booking.findMany({
+          where: { AND: [where, { id: { in: picked.ids } }] },
+          include: SUMMARY_INCLUDE,
+        }),
+        picked.ids,
+      );
+    }
     return new Paginated(
       rows.map((row) => summaryOf(row)),
       query.page,

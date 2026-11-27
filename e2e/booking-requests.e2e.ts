@@ -10,6 +10,7 @@ import {
 } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { aircraftBody } from './support/fleet.js';
+import { pagedReferences, threeDepartures } from './support/list-sort.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
@@ -214,6 +215,49 @@ async function staffMember(
   ).toBe(200);
   return staff;
 }
+
+test.describe('operator booking request inbox sort', () => {
+  test('orders by departure across pages, keeps the default, rejects unknown values and stays scoped', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { reference } = await requested(contexts);
+    const detail = await request.get(`operator/booking-requests/${reference}`);
+    const own = (await detail.json()).data.itinerary.legs[0]
+      .departureAt as string;
+    const { earlier, later } = await threeDepartures(reference, own);
+
+    const get = (url: string) => request.get(url);
+    const path = 'operator/booking-requests';
+    expect(await pagedReferences(get, path, 3)).toEqual([
+      later,
+      earlier,
+      reference,
+    ]);
+    expect(await pagedReferences(get, `${path}?sort=created_desc`, 3)).toEqual([
+      later,
+      earlier,
+      reference,
+    ]);
+    expect(await pagedReferences(get, `${path}?sort=departure_asc`, 3)).toEqual(
+      [earlier, reference, later],
+    );
+    expect(
+      await pagedReferences(get, `${path}?sort=departure_desc`, 3),
+    ).toEqual([later, reference, earlier]);
+
+    const invalid = await request.get(`${path}?sort=price_asc`);
+    expect(invalid.status()).toBe(400);
+    expect((await invalid.json()).error.code).toBe('VALIDATION_ERROR');
+
+    const other = await playwright.request.newContext({ baseURL });
+    await listedJet({ request: other, playwright, baseURL });
+    const theirs = await other.get(`${path}?sort=departure_asc`);
+    expect((await theirs.json()).data).toHaveLength(0);
+  });
+});
 
 test.describe('operator booking request inbox', () => {
   test('lists and shows the operator’s own requests, with no passenger identity', async ({

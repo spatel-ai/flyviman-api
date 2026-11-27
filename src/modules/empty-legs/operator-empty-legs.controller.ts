@@ -23,7 +23,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators.js';
 import {
   CreateEmptyLegDto,
   OperatorEmptyLegAircraftDto,
-  OperatorEmptyLegQueryDto,
+  OperatorEmptyLegListQueryDto,
   OperatorEmptyLegResponseDto,
   UpdateEmptyLegDto,
 } from './dto/empty-leg.dto.js';
@@ -42,11 +42,11 @@ export class OperatorEmptyLegsController {
   constructor(private readonly emptyLegs: EmptyLegsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List own offers, newest first' })
+  @ApiOperation({ summary: 'List own offers, newest first or by departure' })
   @ApiOkResponse({ type: [OperatorEmptyLegResponseDto] })
   async list(
     @CurrentUser() user: AuthUser,
-    @Query() query: OperatorEmptyLegQueryDto,
+    @Query() query: OperatorEmptyLegListQueryDto,
   ): Promise<Paginated<OperatorEmptyLegResponseDto>> {
     const page = await this.emptyLegs.operatorList(user, query);
     return new Paginated(

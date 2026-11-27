@@ -12,6 +12,7 @@ import {
 } from './support/data.js';
 import { withPrisma } from './support/db.js';
 import { aircraftBody } from './support/fleet.js';
+import { pagedReferences, threeDepartures } from './support/list-sort.js';
 import { listedJet, searchFor } from './support/pricing.js';
 import { csrfHeaders, signIn } from './support/session.js';
 
@@ -213,6 +214,46 @@ function setStatus(reference: string, status: 'COMPLETED' | 'SCHEDULED') {
     prisma.booking.update({ where: { reference }, data: { status } }),
   );
 }
+
+test.describe('GET /operator/bookings sort', () => {
+  test('orders by departure across pages, keeps the default, rejects unknown values and stays scoped', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    const contexts = { request, playwright, baseURL };
+    const { reference } = await booking(contexts);
+    const detail = await request.get(`operator/bookings/${reference}`);
+    const departure = (await detail.json()).data.itinerary.legs[0]
+      .departureAt as string;
+    const { earlier, later } = await threeDepartures(reference, departure);
+
+    const get = (url: string) => request.get(url);
+    expect(await pagedReferences(get, 'operator/bookings', 3)).toEqual([
+      later,
+      earlier,
+      reference,
+    ]);
+    expect(
+      await pagedReferences(get, 'operator/bookings?sort=created_desc', 3),
+    ).toEqual([later, earlier, reference]);
+    expect(
+      await pagedReferences(get, 'operator/bookings?sort=departure_asc', 3),
+    ).toEqual([earlier, reference, later]);
+    expect(
+      await pagedReferences(get, 'operator/bookings?sort=departure_desc', 3),
+    ).toEqual([later, reference, earlier]);
+
+    const invalid = await request.get('operator/bookings?sort=price_asc');
+    expect(invalid.status()).toBe(400);
+    expect((await invalid.json()).error.code).toBe('VALIDATION_ERROR');
+
+    const other = await playwright.request.newContext({ baseURL });
+    await listedJet({ request: other, playwright, baseURL });
+    const theirs = await other.get('operator/bookings?sort=departure_asc');
+    expect((await theirs.json()).data).toHaveLength(0);
+  });
+});
 
 test.describe('GET /operator/bookings', () => {
   test('lists upcoming trips of the caller’s operator only, with filters', async ({
