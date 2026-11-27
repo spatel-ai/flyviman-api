@@ -18614,6 +18614,12 @@
               }
             ]
           },
+          "holdExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the booking’s hold on the aircraft lapses: an unpaid `AWAITING_PAYMENT` booking is closed as `EXPIRED` by the hold-expiry job after this time (a payment waiting at the gateway delays the close). Null when the booking holds no aircraft. Read-only; the owner sees it."
+          },
           "bookingMode": {
             "type": "string",
             "enum": [
@@ -18689,6 +18695,7 @@
           "status",
           "paymentStatus",
           "amountDue",
+          "holdExpiresAt",
           "bookingMode",
           "paymentModel",
           "price",
