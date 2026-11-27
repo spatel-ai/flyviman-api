@@ -8,8 +8,14 @@ import {
 } from '@playwright/test';
 import { POC_ORIGIN } from '../playwright.config.js';
 import type { AccountName } from './support/accounts.js';
-import { latestLinkToken, PASSWORD, uniqueEmail } from './support/data.js';
-import { approvedOperator } from './support/fleet.js';
+import {
+  latestLinkToken,
+  PASSWORD,
+  registerCustomer,
+  uniqueEmail,
+} from './support/data.js';
+import { aircraftBody, approvedOperator } from './support/fleet.js';
+import { listedJet, locationId, searchFor } from './support/pricing.js';
 import { cookie, csrfHeaders, signIn } from './support/session.js';
 
 /**
@@ -344,5 +350,133 @@ test.describe('cross-tenant', () => {
       expect.objectContaining({ id: memberId, status: 'INVITED' }),
     );
     await rival.dispose();
+  });
+
+  test('another operator, and staff without the aircraft, cannot see or decide a change request', async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    // Operator A (`request`): a priced jet, a booking request and a change request on it.
+    const trip = await listedJet({ request, playwright, baseURL });
+    expect(
+      (
+        await request.put(`operator/aircraft/${trip.aircraftId}/pricing`, {
+          headers: await csrfHeaders(request),
+          data: {
+            hourlyRateMinor: 18_000_000,
+            taxInclusive: false,
+            commissionInclusive: false,
+            minBillableHours: null,
+          },
+        })
+      ).status(),
+    ).toBe(200);
+    const searched = await searchFor(request, trip);
+    const customer = await playwright.request.newContext({ baseURL });
+    await registerCustomer(customer);
+    const created = await customer.post('bookings', {
+      headers: {
+        ...(await csrfHeaders(customer)),
+        'Idempotency-Key': randomUUID(),
+      },
+      data: {
+        searchId: searched.searchId,
+        resultId: searched.result.resultId,
+        cancellationTermsVersion: searched.termsVersion,
+        expectedTotalMinor: searched.result.price.amountMinor,
+        currency: 'INR',
+      },
+    });
+    expect(created.status()).toBe(201);
+    const reference = (
+      (await created.json()) as { data: { reference: string } }
+    ).data.reference;
+    const asked = await customer.post(`bookings/${reference}/change-requests`, {
+      headers: await csrfHeaders(customer),
+      data: { details: 'Could we leave an hour later?' },
+    });
+    expect(asked.status()).toBe(201);
+    const changeId = ((await asked.json()) as { data: { id: string } }).data.id;
+    const decideBody = { decision: 'APPROVED', note: 'Not yours to answer' };
+    const decide = async (actor: APIRequestContext) =>
+      actor.post(`operator/change-requests/${changeId}/decide`, {
+        headers: await csrfHeaders(actor),
+        data: decideBody,
+      });
+
+    // Operator B's administrator neither lists nor decides it.
+    const rival = await playwright.request.newContext({ baseURL });
+    await approvedOperator(rival, playwright, baseURL);
+    const rivalList = await rival.get('operator/change-requests', {
+      params: { pageSize: '100' },
+    });
+    expect(rivalList.status()).toBe(200);
+    expect(
+      ((await rivalList.json()) as { data: { id: string }[] }).data.map(
+        (entry) => entry.id,
+      ),
+    ).not.toContain(changeId);
+    const rivalDecided = await decide(rival);
+    expect(rivalDecided.status()).toBe(404);
+    expect(
+      ((await rivalDecided.json()) as { error: { code: string } }).error.code,
+    ).toBe('NOT_FOUND');
+
+    // Operator A staff with bookings rights but only another aircraft in reach.
+    const other = await request.post('operator/aircraft', {
+      headers: await csrfHeaders(request),
+      data: aircraftBody(
+        await locationId(request, 'BOM'),
+        `VT-${randomUUID().slice(0, 3).toUpperCase()}`,
+      ),
+    });
+    expect(other.status()).toBe(201);
+    const otherId = ((await other.json()) as { data: { id: string } }).data.id;
+    const email = uniqueEmail('staff');
+    const invited = await request.post('operator/staff', {
+      headers: await csrfHeaders(request),
+      data: {
+        email,
+        capabilities: ['MANAGE_BOOKINGS'],
+        allAircraft: false,
+        aircraftIds: [otherId],
+      },
+    });
+    expect(invited.status()).toBe(201);
+    const staff = await playwright.request.newContext({ baseURL });
+    const token = await latestLinkToken(staff, email);
+    expect(
+      (
+        await staff.post('auth/password/reset', {
+          data: { token, password: PASSWORD },
+        })
+      ).status(),
+    ).toBe(204);
+    expect(
+      (
+        await staff.post('auth/login', { data: { email, password: PASSWORD } })
+      ).status(),
+    ).toBe(200);
+    const staffList = await staff.get('operator/change-requests', {
+      params: { pageSize: '100' },
+    });
+    expect(staffList.status()).toBe(200);
+    expect(
+      ((await staffList.json()) as { data: { id: string }[] }).data.map(
+        (entry) => entry.id,
+      ),
+    ).not.toContain(changeId);
+    expect((await decide(staff)).status()).toBe(404);
+
+    // Still open for its own operator.
+    const ownList = await request.get('operator/change-requests');
+    expect(
+      ((await ownList.json()) as { data: { id: string; status: string }[] })
+        .data,
+    ).toContainEqual(
+      expect.objectContaining({ id: changeId, status: 'REQUESTED' }),
+    );
+    await Promise.all([customer.dispose(), rival.dispose(), staff.dispose()]);
   });
 });
